@@ -4,6 +4,7 @@ Pygame-based renderer for real-time preview.
 
 import pygame
 import sys
+import os
 
 
 class PygameRenderer:
@@ -30,13 +31,24 @@ class PygameRenderer:
         self.clock = None
         self._initialized = False
         self._surface = None
+        self._no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
 
     def init(self):
         """Initialize Pygame and create the display."""
         if self._initialized:
             return
         
-        pygame.init()
+        # Désactiver l'accélération matérielle pour éviter les erreurs OpenGL/DRM
+        # dans les conteneurs
+        os.environ['SDL_VIDEODRIVER'] = 'x11'
+        os.environ['SDL_RENDER_DRIVER'] = 'software'
+        
+        # Initialiser Pygame sans le son si NO_SOUND est activé
+        if self._no_sound:
+            # Désactiver l'audio et le joystick, garder uniquement video
+            pygame.init(pygame.VIDEO)
+        else:
+            pygame.init()
         
         # Set up the display
         if self.fullscreen:
