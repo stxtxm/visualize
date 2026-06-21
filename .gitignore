@@ -109,6 +109,9 @@ podman/
 /output/
 /data/
 
+# Dossier de sortie local (dans le projet)
+output/
+
 # ============================================================================
 # Vidéo / Audio (TOUS les fichiers mp4/mp3/wav/etc. sont ignorés)
 # ============================================================================

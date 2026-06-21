@@ -46,6 +46,9 @@ echo ""
 # Créer les dossiers si nécessaire
 mkdir -p "$AUDIO_DIR" "$OUTPUT_DIR"
 
+# Créer le dossier output local si il n'existe pas
+mkdir -p "$(pwd)/output"
+
 # Lancer le conteneur
 podman run --rm \
     --name "$CONTAINER_NAME" \
@@ -57,7 +60,7 @@ podman run --rm \
     --volume "$XAUTHORITY_FILE":"$XAUTHORITY_FILE":ro \
     --volume "$AUDIO_DIR":/audio:ro \
     --volume "$OUTPUT_DIR":/output \
-    --volume "$(pwd)":/app:ro,Z \
+    --volume "$(pwd)":/app:Z \
     "${IMAGE_NAME}:${IMAGE_TAG}" \
     python3 /app/export_menu.py
 
