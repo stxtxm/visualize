@@ -301,7 +301,8 @@ class MainWindow:
                 self.preview_renderer.present()
             
         except Exception as e:
-            self.root.after(0, lambda: self.status_var.set(f"Erreur: {str(e)}"))
+            error_msg = str(e)
+            self.root.after(0, lambda em=error_msg: self.status_var.set(f"Erreur: {em}"))
         finally:
             if hasattr(self, 'analyzer') and self.analyzer:
                 self.analyzer.cleanup()
@@ -422,11 +423,13 @@ class MainWindow:
         """Export loop."""
         try:
             self.recorder.record()
-            self.root.after(0, lambda: self.status_var.set(f"Export terminé: {os.path.basename(filename)}"))
-            self.root.after(0, lambda: messagebox.showinfo("Succès", f"Vidéo exportée vers\n{filename}"))
+            basename = os.path.basename(filename)
+            self.root.after(0, lambda bn=basename: self.status_var.set(f"Export terminé: {bn}"))
+            self.root.after(0, lambda f=filename: messagebox.showinfo("Succès", f"Vidéo exportée vers\n{f}"))
         except Exception as e:
-            self.root.after(0, lambda: self.status_var.set(f"Erreur d'export: {str(e)}"))
-            self.root.after(0, lambda: messagebox.showerror("Erreur", f"Échec de l'export:\n{str(e)}"))
+            error_msg = str(e)
+            self.root.after(0, lambda em=error_msg: self.status_var.set(f"Erreur d'export: {em}"))
+            self.root.after(0, lambda em=error_msg: messagebox.showerror("Erreur", f"Échec de l'export:\n{em}"))
 
     def _get_resolution(self):
         """Get selected resolution."""
