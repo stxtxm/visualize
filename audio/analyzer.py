@@ -123,10 +123,21 @@ class AudioAnalyzer:
         """Démarre le flux audio."""
         self.current_chunk = 0
         self.is_playing = True
+        # Log pour le debug
+        try:
+            from ui.log_display import log_message
+            log_message(f"AudioAnalyzer: Stream démarré (simulated={self.use_simulated})")
+        except:
+            pass
     
     def get_next_chunk(self):
         """Récupère le prochain chunk audio."""
         if not self.is_playing:
+            try:
+                from ui.log_display import log_message
+                log_message("AudioAnalyzer: get_next_chunk appelé mais is_playing=False")
+            except:
+                pass
             return None
         
         start = self.current_chunk * self.chunk_size
