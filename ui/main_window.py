@@ -291,10 +291,12 @@ class MainWindow:
                 
                 # Update and render
                 self.effect_manager.current_effect.update(audio_data, delta_time)
-                self.effect_manager.current_effect.render(self.preview_renderer.get_surface())
+                surface = self.preview_renderer.get_surface()
+                self.effect_manager.current_effect.render(surface)
                 
-                # Capture frame for Tkinter preview
-                frame = self._capture_frame()
+                # Capture frame for Tkinter preview (AVANT present pour éviter deadlock)
+                # On crée une copie de la surface pour éviter les problèmes de verrouillage
+                frame = self._capture_frame_copy(surface)
                 if frame is not None:
                     self.root.after(0, self._update_preview, frame)
                 
@@ -311,21 +313,33 @@ class MainWindow:
             self.is_playing.set(False)
             self.root.after(0, lambda: self.status_var.set("Lecture arrêtée"))
 
-    def _capture_frame(self):
-        """Capture current frame for preview."""
+    def _capture_frame_copy(self, surface):
+        """Capture a copy of the surface for preview (thread-safe)."""
         try:
             import pygame
             import numpy as np
             from PIL import Image, ImageTk
             
-            # Capture Pygame surface
-            surface = self.preview_renderer.get_surface()
-            data = pygame.surfarray.array3d(surface)
+            # Créer une COPIE de la surface pour éviter les deadlocks
+            # pygame.surfarray.array3d verrouille la surface, donc on fait une copie d'abord
+            surface_copy = surface.copy()
+            data = pygame.surfarray.array3d(surface_copy)
             
             # Convert to PIL Image
             img = Image.fromarray(data)
             img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
             return ImageTk.PhotoImage(img)
+        except Exception as e:
+            # En mode debug, on affiche l'erreur
+            import warnings
+            warnings.warn(f"Erreur capture frame: {e}")
+            return None
+    
+    def _capture_frame(self):
+        """Capture current frame for preview (déprécié, garde pour compatibilité)."""
+        try:
+            surface = self.preview_renderer.get_surface()
+            return self._capture_frame_copy(surface)
         except Exception:
             return None
 
