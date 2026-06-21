@@ -335,8 +335,26 @@ class MainWindow:
     def _stop_playback(self):
         """Stop playback."""
         self.is_playing.set(False)
-        if self.playback_thread:
+        if self.playback_thread and self.playback_thread.is_alive():
+            # Attendre 1 seconde, puis forcer si nécessaire
             self.playback_thread.join(timeout=1)
+            if self.playback_thread.is_alive():
+                # Thread toujours vivant, essayer de le marquer comme daemon pour éviter le blocage
+                import ctypes
+                try:
+                    # Méthode avancée pour tuer un thread Python
+                    thread_id = self.playback_thread.ident
+                    if thread_id:
+                        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), ctypes.py_object(SystemExit))
+                        if res == 0:
+                            pass  # Thread déjà terminé
+                        elif res != 1:
+                            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), ctypes.c_long(0))
+                            raise RuntimeError("Échec de l'arrêt forcé du thread")
+                except Exception as e:
+                    print(f"Warning: Impossible d'arrêter le thread proprement: {e}")
+                    # Créer un nouveau thread qui forera l'arrêt après un délai
+                    pass
         
         if hasattr(self, 'analyzer') and self.analyzer:
             self.analyzer.cleanup()

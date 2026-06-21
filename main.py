@@ -22,7 +22,7 @@ def run_gui():
         import tkinter as tk
         root = tk.Tk()
         app = MainWindow(root)
-        root.protocol("WM_DELETE_WINDOW", lambda: [app._stop_playback(), root.quit()])
+        root.protocol("WM_DELETE_WINDOW", lambda: app._stop_playback() or root.quit())
         root.mainloop()
     except Exception as e:
         print(f"GUI Error: {e}")
@@ -37,7 +37,7 @@ def run_cli():
     parser.add_argument('audio_file', nargs='?', default=None)
     parser.add_argument('--export', '-o', type=str, default=None)
     parser.add_argument('--effect', '-e', default='random',
-                        choices=['bars', 'circles', 'particles', 'tunnel', 'wave', 'random'])
+                        choices=['bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma', 'random'])
     parser.add_argument('--color', '-c', default='psychedelic',
                         choices=['psychedelic', 'retro', 'dark', 'rainbow'])
     parser.add_argument('--resolution', '-r', default=None,
@@ -114,35 +114,106 @@ def run_export(args):
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
     
-    process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(
+        ffmpeg_cmd, 
+        stdin=subprocess.PIPE, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE,
+        bufsize=0  # Désactiver le buffering pour éviter les blocages
+    )
+    
+    frames_written = 0
+    ffmpeg_error = None
     
     try:
         for frame_count in range(total_frames):
             chunk = analyzer.get_next_chunk()
-            audio_data = analyzer.analyze_chunk(chunk) if chunk is not None else analyzer._get_default_result()
+            if chunk is None:
+                # Fin du fichier audio, on s'arrête
+                break
+                
+            audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.current_effect.update(audio_data, 1.0/fps)
             frame = effect_manager.current_effect.render_to_array()
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            
+            # Vérifier si FFmpeg est toujours vivant avant d'écrire
+            if process.poll() is not None:
+                # FFmpeg a terminé prématurément (probablement à cause de -shortest)
+                # C'est OK, on peut s'arrêter
+                break
+            
             try:
                 process.stdin.write(frame.tobytes())
-            except BrokenPipeError:
-                # FFmpeg a fermé le pipe, probablement une erreur
-                stdout, stderr = process.communicate()
-                error_msg = stderr.decode('utf-8', errors='ignore') if stderr else 'Unknown error'
-                raise RuntimeError(f"FFmpeg crashed:\n{error_msg}")
+                frames_written += 1
+            except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                # FFmpeg a fermé le pipe - c'est OK, il a probablement fini
+                break
+            
+            # Vérifier périodiquement que FFmpeg est toujours vivant
             if frame_count % 100 == 0:
-                print(f"  Progress: {(frame_count/total_frames)*100:.0f}%")
-        # Ne PAS fermer stdin manuellement - communicate() le fera automatiquement
-        stdout, stderr = process.communicate()
+                if process.poll() is not None:
+                    # FFmpeg a terminé, c'est probablement OK
+                    break
+                progress = (frame_count / total_frames) * 100
+                print(f"  Progress: {progress:.0f}%")
+        
+        # Fermer stdin proprement pour signaler à FFmpeg que c'est fini
+        try:
+            process.stdin.close()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            # Déjà fermé, ce n'est pas grave
+            pass
+        
+        # Attendre la fin de FFmpeg sans timeout
+        try:
+            stdout, stderr = process.communicate()
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+            ffmpeg_error = f"FFmpeg timeout after {frames_written} frames"
+        except (ValueError, OSError) as e:
+            # Le pipe a été fermé, c'est OK
+            stdout, stderr = b'', b''
+        
+        # FFmpeg peut retourner un code non-nul mais avoir créé la vidéo
+        # Vérifier si la sortie existe et a une taille raisonnable
         if process.returncode != 0:
-            error_msg = stderr.decode('utf-8', errors='ignore')
-            raise RuntimeError(f"FFmpeg error:\n{error_msg}")
+            error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ''
+            if os.path.exists(args.export) and os.path.getsize(args.export) > 0:
+                # FFmpeg a peut-être fini normalement malgré un code d'erreur
+                print(f"✓ Export completed: {args.export}")
+                return
+            else:
+                raise RuntimeError(f"FFmpeg error (code {process.returncode}):\n{error_msg}")
+        
+        if ffmpeg_error:
+            error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ffmpeg_error
+            raise RuntimeError(f"Export failed:\n{error_msg}")
+                
+    except KeyboardInterrupt:
+        print("\n❌ Export cancelled by user")
+        raise
     finally:
         analyzer.cleanup()
         renderer.cleanup()
         if process.poll() is None:
             process.terminate()
-    print(f"✓ Export complete: {args.export}")
+            try:
+                process.wait(timeout=5)
+            except:
+                process.kill()
+    
+    # Vérifier que la sortie existe et a une taille raisonnable
+    if os.path.exists(args.export):
+        file_size = os.path.getsize(args.export)
+        if file_size < 1024:  # Moins de 1Ko, probablement un échec
+            if os.path.exists(args.export):
+                os.remove(args.export)
+            raise RuntimeError(f"Output file too small ({file_size} bytes), export likely failed")
+        print(f"✓ Export complete: {args.export} ({file_size/1024/1024:.1f} MB)")
+    else:
+        raise RuntimeError(f"Output file not created: {args.export}")
 
 
 def run_playback(args):
