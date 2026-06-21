@@ -50,6 +50,15 @@ class PlasmaEffect(BaseEffect):
         # Initialiser les points de plasma
         self._init_plasma_points()
     
+    def _init_plasma_points(self):
+        """Initialiser les points de distorsion pour l'effet plasma."""
+        for _ in range(self.num_points):
+            angle = np.random.random() * 2 * np.pi
+            distance = np.random.random() * min(self.width, self.height) * 0.4
+            x = self.center_x + distance * np.cos(angle)
+            y = self.center_y + distance * np.sin(angle)
+            self.plasma_points.append((x, y))
+    
     def update(self, audio_data, delta_time):
         super().update(audio_data, delta_time)
         
