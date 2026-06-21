@@ -93,12 +93,13 @@ def browse_audio_file():
     audio_extensions = ['.mp3', '.wav', '.flac', '.ogg', '.aac']
     
     # Check common directories (dans le conteneur, /audio contient les fichiers)
+    # Prioriser /audio pour éviter de prendre les fichiers dans /app
     search_dirs = [
-        '/audio',  # Dossier monté depuis ~/Music de l'hôte
+        '/audio',  # Dossier monté depuis ~/Music de l'hôte - PRIORITÉ
         os.path.expanduser('~/Music'),
         os.path.expanduser('~'),
-        PROJECT_DIR,
     ]
+    # Ne pas chercher dans PROJECT_DIR (/app) car les fichiers audio ne devraient pas être là
     
     audio_files = []
     for search_dir in search_dirs:
