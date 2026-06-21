@@ -112,7 +112,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         '-crf', preset_config['crf'],
         '-b:v', bitrate,
         '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac',
+        '-c:a', 'libmp3lame',  # Utiliser MP3 au lieu de AAC (plus compatible)
         '-b:a', '192k',
         '-shortest',
         '-threads', '0',
