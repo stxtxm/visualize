@@ -89,42 +89,76 @@ def select_option(prompt, options, option_type=""):
 
 
 def browse_audio_file():
-    """Simple file browser for audio files."""
-    audio_extensions = ['.mp3', '.wav', '.flac', '.ogg', '.aac']
+    """Simple file browser for multimedia files (audio and video)."""
+    # Extensions audio et vidéo supportées
+    media_extensions = ['.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', 
+                       '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv']
     
     # Check common directories (dans le conteneur, /audio contient les fichiers)
     # Prioriser /audio pour éviter de prendre les fichiers dans /app
     search_dirs = [
         '/audio',  # Dossier monté depuis ~/Music de l'hôte - PRIORITÉ
         os.path.expanduser('~/Music'),
+        os.path.expanduser('~/Videos'),
         os.path.expanduser('~'),
     ]
-    # Ne pas chercher dans PROJECT_DIR (/app) car les fichiers audio ne devraient pas être là
+    # Ne pas chercher dans PROJECT_DIR (/app) car les fichiers multimédia ne devraient pas être là
     
-    audio_files = []
+    media_files = []
     for search_dir in search_dirs:
         if os.path.exists(search_dir):
             for root, dirs, files in os.walk(search_dir):
                 for file in files:
-                    if any(file.lower().endswith(ext) for ext in audio_extensions):
-                        audio_files.append(os.path.join(root, file))
+                    if any(file.lower().endswith(ext) for ext in media_extensions):
+                        full_path = os.path.join(root, file)
+                        media_files.append(full_path)
     
-    if not audio_files:
-        return input("📁 Chemin vers fichier audio : ").strip()
+    # Supprimer les doublons
+    media_files = list(set(media_files))
     
-    print("\n📁 Fichiers audio trouvés :")
+    # Trier par nom de fichier
+    media_files.sort()
+    
+    if not media_files:
+        return input("📁 Chemin vers fichier multimédia : ").strip()
+    
+    print("\n📁 FICHIERS MULTIMÉDIA TROUVÉS :")
     print("-" * 70)
-    for i, file in enumerate(audio_files[:50], 1):  # Limit to 50 files
-        rel_path = os.path.relpath(file, os.path.expanduser('~'))
-        print(f"  [{i}] {rel_path}")
+    for i, file in enumerate(media_files[:50], 1):  # Limite à 50 fichiers
+        # Afficher le nom du fichier uniquement (sans le chemin complet)
+        filename = os.path.basename(file)
+        # Obtenir la taille du fichier
+        try:
+            size_mb = os.path.getsize(file) / (1024 * 1024)
+            size_str = f"{size_mb:.1f} Mo"
+        except:
+            size_str = "?"
+        
+        # Obtenir la durée si possible (pour les fichiers audio/vidéo)
+        try:
+            import subprocess as sp
+            result = sp.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', file],
+                stdout=sp.PIPE, stderr=sp.PIPE, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                duration = float(result.stdout.strip())
+                duration_str = f" ({int(duration//60)}:{int(duration%60):02d})"
+            else:
+                duration_str = ""
+        except:
+            duration_str = ""
+        
+        print(f"  [{i}] {filename} - {size_str}{duration_str}")
     print()
     
-    choice = input(f"📌 Sélectionner un fichier (1-{min(len(audio_files), 50)}) ou entrer le chemin : ").strip()
+    choice = input(f"📌 Sélectionner un fichier (1-{min(len(media_files), 50)}) ou entrer le chemin : ").strip()
     
     if choice.isdigit():
         idx = int(choice) - 1
-        if 0 <= idx < len(audio_files):
-            return audio_files[idx]
+        if 0 <= idx < len(media_files):
+            return media_files[idx]
     
     return choice
 
