@@ -50,6 +50,28 @@ echo ""
 echo "Appuyez sur Ctrl+C pour arrêter"
 echo ""
 
+# Vérifier si NO_SOUND est activé
+if [ "${NO_SOUND}" = "1" ] || [ "${NO_SOUND}" = "true" ]; then
+    # Mode sans son - désactiver PulseAudio et ALSA
+    echo "Mode: SANS SON (NO_SOUND=1)"
+    PULSE_VOLUMES=""
+    DEV_SND=""
+    PULSE_ENV=""
+    PULSE_COOKIE_ENV=""
+    PULSE_COOKIE_VOL=""
+    SDL_AUDIO="--env SDL_AUDIODRIVER=dummy"
+    SDL_VIDEO="--env SDL_VIDEODRIVER=x11 --env SDL_RENDER_DRIVER=software"
+else
+    # Mode avec son - activer PulseAudio
+    PULSE_VOLUMES="--volume /run/user/\"${UID}\"/pulse:/run/user/\"${UID}\"/pulse:ro"
+    DEV_SND="--device /dev/snd"
+    PULSE_ENV="--env PULSE_SERVER=unix:/run/user/\"${UID}\"/pulse/pulseaudio.socket --env PULSE_COOKIE=/run/user/\"${UID}\"/pulse/cookie"
+    PULSE_COOKIE_ENV="--env PULSE_COOKIE=/run/user/\"${UID}\"/pulse/cookie"
+    PULSE_COOKIE_VOL="--volume /run/user/\"${UID}\"/pulse/cookie:/run/user/\"${UID}\"/pulse/cookie:ro"
+    SDL_AUDIO=""
+    SDL_VIDEO=""
+fi
+
 # Lancer le conteneur avec toutes les options nécessaires
 podman run --rm \
     --name "$CONTAINER_NAME" \
@@ -62,14 +84,16 @@ podman run --rm \
     --env DISPLAY \
     --env XAUTHORITY="$XAUTHORITY_FILE" \
     --volume "$XAUTHORITY_FILE":"$XAUTHORITY_FILE":ro \
-    --volume /run/user/"${UID}"/pulse:/run/user/"${UID}"/pulse:ro \
-    --env PULSE_SERVER=unix:/run/user/"${UID}"/pulse/pulseaudio.socket \
-    --env PULSE_COOKIE=/run/user/"${UID}"/pulse/cookie \
-    --volume /run/user/"${UID}"/pulse/cookie:/run/user/"${UID}"/pulse/cookie:ro \
-    --volume "$AUDIO_DIR":/audio:ro \
-    --volume "$OUTPUT_DIR":/output \
+    $PULSE_VOLUMES \
+    $PULSE_ENV \
+    $PULSE_COOKIE_ENV \
+    $PULSE_COOKIE_VOL \
+    $SDL_AUDIO \
+    $SDL_VIDEO \
+    --volume "$(pwd)/input":/app/input:ro,Z \
+    --volume "$(pwd)/output":/app/output:Z \
     --volume "$(pwd)":/app:ro,Z \
-    --device /dev/snd \
+    $DEV_SND \
     "${IMAGE_NAME}:${IMAGE_TAG}" \
     python3 /app/main.py
 

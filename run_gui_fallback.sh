@@ -78,6 +78,9 @@ else
         --volume "$(pwd)/output":/app/output:Z \
         --volume "$(pwd)":/app:ro,Z \
         --env NO_SOUND=1 \
+        --env SDL_VIDEODRIVER=x11 \
+        --env SDL_RENDER_DRIVER=software \
+        --env SDL_AUDIODRIVER=dummy \
         psychedelic-visualizer:latest \
         python3 /app/main.py
 fi
