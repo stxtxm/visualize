@@ -120,7 +120,8 @@ def browse_audio_file():
     media_files.sort()
     
     if not media_files:
-        return input("📁 Chemin vers fichier multimédia : ").strip()
+        print("❌ Aucun fichier multimédia trouvé dans /audio, ~/Music ou ~/Videos")
+        return input("📁 Entrez le chemin complet vers un fichier audio/vidéo : ").strip()
     
     print("\n📁 FICHIERS MULTIMÉDIA TROUVÉS :")
     print("-" * 70)

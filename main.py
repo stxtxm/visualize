@@ -101,6 +101,19 @@ def run_export(args):
     print(f"  Duration: {audio_duration:.0f}s, Frames: {total_frames}")
     
     ffmpeg_cmd = build_ffmpeg_cmd(width, height, fps, args.audio_file, args.export, args.preset)
+    
+    # Débogage : afficher la commande FFmpeg
+    print(f"  FFmpeg cmd: {' '.join(ffmpeg_cmd)}")
+    
+    # Vérifier que le fichier audio existe
+    if not os.path.exists(args.audio_file):
+        raise FileNotFoundError(f"Audio file not found: {args.audio_file}")
+    
+    # Vérifier que le dossier de sortie existe
+    output_dir = os.path.dirname(args.export)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
     process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     try:
@@ -110,13 +123,20 @@ def run_export(args):
             effect_manager.current_effect.update(audio_data, 1.0/fps)
             frame = effect_manager.current_effect.render_to_array()
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            process.stdin.write(frame.tobytes())
+            try:
+                process.stdin.write(frame.tobytes())
+            except BrokenPipeError:
+                # FFmpeg a fermé le pipe, probablement une erreur
+                stdout, stderr = process.communicate()
+                error_msg = stderr.decode('utf-8', errors='ignore') if stderr else 'Unknown error'
+                raise RuntimeError(f"FFmpeg crashed:\n{error_msg}")
             if frame_count % 100 == 0:
                 print(f"  Progress: {(frame_count/total_frames)*100:.0f}%")
         # Ne PAS fermer stdin manuellement - communicate() le fera automatiquement
         stdout, stderr = process.communicate()
         if process.returncode != 0:
-            raise RuntimeError(stderr.decode('utf-8', errors='ignore'))
+            error_msg = stderr.decode('utf-8', errors='ignore')
+            raise RuntimeError(f"FFmpeg error:\n{error_msg}")
     finally:
         analyzer.cleanup()
         renderer.cleanup()
