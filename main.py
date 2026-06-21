@@ -19,7 +19,12 @@ def has_gui():
 def run_gui():
     try:
         from ui.main_window import MainWindow
+        from ui.log_display import start_log_capture
         import tkinter as tk
+        
+        # Démarrer la capture des logs
+        start_log_capture()
+        
         root = tk.Tk()
         app = MainWindow(root)
         root.protocol("WM_DELETE_WINDOW", lambda: app._stop_playback() or root.quit())

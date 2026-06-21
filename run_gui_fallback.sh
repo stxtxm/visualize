@@ -29,8 +29,8 @@ else
     echo "⚠ PulseAudio non détecté - mode NO_SOUND activé"
 fi
 
-# Autoriser X11
-xhost +local: 2>/dev/null
+# Autoriser X11 (non bloquant, timeout 2s)
+timeout 2 xhost +local: 2>/dev/null || true
 
 echo ""
 echo "Démarrage du conteneur..."
@@ -62,11 +62,11 @@ if [ "$PULSE_AVAILABLE" = true ]; then
         python3 /app/main.py
 else
     # Lancer sans PulseAudio (mode NO_SOUND)
+    # Note: On retire --tty et --interactive pour éviter les problèmes
+    # quand Tkinter s'exécute dans un conteneur
     echo "Mode: SANS SON (NO_SOUND=1)"
     podman run --rm \
         --name "psychedelic-visualizer-gui" \
-        --interactive \
-        --tty \
         --net=host \
         --ipc=host \
         --security-opt label=disable \
