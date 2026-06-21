@@ -1,0 +1,202 @@
+# Visualisateur Psychédélique - .gitignore
+# https://github.com/github/gitignore/blob/main/Python.gitignore
+
+# ============================================================================
+# OS / Editor
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DS_Store?
+*.pem
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+Thumbs.db:enc
+ehthumbs.db
+ehthumbs_vista.db
+*.tmp
+*.temp
+
+# IDE / Editor
+# ============================================================================
+
+# VS Code
+.vscode/
+*.code-workspace
+*.code-workspace.json
+
+# JetBrains (PyCharm, IntelliJ)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+
+# ============================================================================
+# Python
+# ============================================================================
+
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ============================================================================
+# Conteneurs (Podman / Docker)
+# ============================================================================
+
+# Fichiers temporaires Podman
+.podman/
+.podman-*
+containers/
+podman/
+
+# Images et conteneurs Docker
+.docker/
+
+# Dossiers montés comme volumes (pour éviter de commiter des données locales)
+/audio/
+/output/
+/data/
+
+# ============================================================================
+# Vidéo / Audio (fichiers générés ou temporaires)
+# ============================================================================
+
+# Fichiers vidéo générés par l'export
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.gif
+
+# Fichiers audio temporaires générés pendant les tests
+# (les fichiers source dans audio/ sont gardés)
+test_audio.*
+test_*.mp3
+test_*.wav
+sample.*
+
+# Fichiers temporaires FFmpeg
+*.mpg
+*.mpeg
+*.ts
+*.m2ts
+
+# ============================================================================
+# Fichiers de configuration locale
+# ============================================================================
+
+# Fichiers de configuration qui ne doivent pas être partagés
+.env
+.env.local
+.env.*.local
+config.local.json
+config.local.yml
+secrets.yml
+
+# ============================================================================
+# Logs et cache
+# ============================================================================
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+*.cache
+
+# ============================================================================
+# Système
+# ============================================================================
+
+# Fichiers temporaires
+*.tmp
+*.temp
+*~
+
+# Fichiers de verrouillage
+*.lock
+
+# ============================================================================
+# Exceptions (à garder dans le dépôt)
+# ============================================================================
+
+# Fichiers de configuration par défaut (sans données sensibles)
+!.env.example
+!.env.default
+!config.default.json
+!config.default.yml
+
+# Documentation
+!*.md
+!.gitignore
+
+# Scripts exécutables
+!*.sh
+!Makefile
+!Dockerfile
+
+# Code source Python
+!*.py
+!requirements.txt
+!setup.py
+
+# Tests
+!tests/
+
+# ============================================================================
+# Fin
+# ============================================================================
