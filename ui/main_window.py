@@ -154,6 +154,12 @@ class MainWindow:
             command=self._export_video
         ).pack(side=tk.LEFT, padx=5)
         
+        ttk.Button(
+            button_frame,
+            text="📝 Logs",
+            command=self._show_logs
+        ).pack(side=tk.LEFT, padx=5)
+        
         # Preview frame
         preview_frame = ttk.LabelFrame(main_frame, text="Aperçu", padding="5")
         preview_frame.pack(fill=tk.BOTH, expand=True)
@@ -455,6 +461,17 @@ class MainWindow:
         }
         return resolutions.get(resolution, (1920, 1080))
 
+    def _show_logs(self):
+        """Affiche la fenêtre des logs."""
+        try:
+            from ui.log_display import show_log_window
+            # Créer une nouvelle fenêtre pour les logs
+            log_root = tk.Toplevel(self.root)
+            log_root.title("Logs - Visualisateur Psychédélique")
+            show_log_window(log_root)
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Impossible d'afficher les logs: {e}")
+    
     def run(self):
         """Run the main loop."""
         self.root.mainloop()
