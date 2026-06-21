@@ -43,10 +43,13 @@ class PygameRenderer:
         os.environ['SDL_VIDEODRIVER'] = 'x11'
         os.environ['SDL_RENDER_DRIVER'] = 'software'
         
-        # Initialiser Pygame sans le son si NO_SOUND est activé
+        # Initialiser Pygame
+        # pygame.VIDEO n'existe pas dans Pygame 2.x, on initialise manuellement
         if self._no_sound:
-            # Désactiver l'audio et le joystick, garder uniquement video
-            pygame.init(pygame.VIDEO)
+            # Initialiser uniquement les sous-systèmes nécessaires (sans audio)
+            pygame.display.init()
+            pygame.time.init()
+            pygame.font.init()
         else:
             pygame.init()
         
