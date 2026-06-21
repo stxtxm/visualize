@@ -38,6 +38,15 @@ class BaseEffect:
                 (255, 0, 255),    # Magenta
                 (0, 255, 255),    # Cyan
             ],
+            'winamp_classic': [
+                (0, 255, 0),      # Vert Winamp classique
+                (0, 200, 0),      # Vert légèrement plus sombre
+                (0, 180, 0),      # Vert moyen
+                (0, 128, 0),      # Vert foncé
+                (255, 255, 0),    # Jaune vif
+                (200, 200, 0),    # Jaune moyen
+                (150, 150, 0),    # Jaune foncé
+            ],
             'dark': [
                 (32, 32, 32),     # Gris foncé
                 (64, 64, 255),    # Bleu

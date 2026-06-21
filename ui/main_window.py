@@ -95,7 +95,7 @@ class MainWindow:
         self.effect_combo = ttk.Combobox(
             control_frame,
             textvariable=self.selected_effect,
-            values=['random', 'bars', 'circles', 'particles', 'tunnel', 'wave'],
+            values=['random', 'bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma'],
             state='readonly',
             width=12
         )
@@ -106,7 +106,7 @@ class MainWindow:
         self.color_combo = ttk.Combobox(
             control_frame,
             textvariable=self.selected_color,
-            values=['psychedelic', 'retro', 'dark', 'rainbow'],
+            values=['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow'],
             state='readonly',
             width=12
         )
@@ -179,14 +179,20 @@ class MainWindow:
         self.status_var.set(f"Préglage: {preset['name']}")
     
     def _open_file(self):
-        """Open file dialog to select audio file."""
+        """Open file dialog to select audio file from input directory."""
         filetypes = [
             ('Fichiers audio', '*.mp3 *.wav *.flac *.ogg *.aac'),
             ('Tous les fichiers', '*.*')
         ]
         
+        # Commencer dans le dossier input du projet
+        initial_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'input')
+        if not os.path.exists(initial_dir):
+            initial_dir = os.path.expanduser('~')
+        
         filename = filedialog.askopenfilename(
             title="Sélectionner un fichier audio",
+            initialdir=initial_dir,
             filetypes=filetypes
         )
         

@@ -15,6 +15,7 @@ EFFECT_MAP = {
     'tunnel': 'TunnelEffect',
     'wave': 'WaveEffect',
     'spectrum': 'SpectrumEffect',
+    'plasma': 'PlasmaEffect',
 }
 
 
@@ -151,4 +152,4 @@ class EffectManager:
     def get_available_palettes():
         """Get list of available color palettes."""
         from effects.base import BaseEffect
-        return ['psychedelic', 'retro', 'dark', 'rainbow']
+        return ['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow']

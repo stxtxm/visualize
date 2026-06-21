@@ -43,13 +43,15 @@ def print_presets():
 
 
 def print_effects():
-    effects = ['bars', 'circles', 'particles', 'tunnel', 'wave', 'random']
+    effects = ['bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma', 'random']
     effect_names = {
         'bars': '📊 Barres (égaliseur)',
         'circles': '⭕ Cercles pulsants',
         'particles': '✨ Particules',
         'tunnel': '🌀 Tunnel psychédélique',
         'wave': '🌊 Vagues',
+        'spectrum': '🎵 Spectre circulaire (Winamp)',
+        'plasma': '🔮 Plasma psychédélique',
         'random': '🎲 Aléatoire'
     }
     print("\n🎨 EFFETS VISUELS :")
@@ -60,10 +62,11 @@ def print_effects():
 
 
 def print_colors():
-    colors = ['psychedelic', 'retro', 'dark', 'rainbow']
+    colors = ['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow']
     color_names = {
         'psychedelic': '🌈 Psychédélique (couleurs vives)',
         'retro': '💿 Rétro (style Winamp)',
+        'winamp_classic': '🎚️ Winamp Classic (vert et jaune)',
         'dark': '🌑 Sombre (pour fond noir)',
         'rainbow': '🌟 Arc-en-ciel (dégradé fluide)'
     }
@@ -99,6 +102,14 @@ def browse_audio_file():
     # UNIQUEMENT le dossier /app/input/ est analysé
     input_dir = '/app/input'
     
+    # Vérifier que le dossier existe
+    if not os.path.exists(input_dir):
+        print(f"❌ Le dossier {input_dir} n'existe pas!")
+        print("   Dans le conteneur, les fichiers doivent être dans /app/input/")
+        print("   Sur l'hôte, placez vos fichiers dans ./input/ du projet")
+        # Retourner vers input_dir quand même, l'utilisateur devra entrer le chemin
+        return input("📁 Entrez le chemin complet vers un fichier : ").strip()
+    
     media_files = []
     if os.path.exists(input_dir):
         for file in os.listdir(input_dir):
@@ -112,9 +123,10 @@ def browse_audio_file():
     if not media_files:
         print("❌ Aucun fichier multimédia trouvé dans /app/input/")
         print("   Placez vos fichiers audio/vidéo dans le dossier 'input/' du projet")
+        print("   Exemples: gruffius.mp3, musique.wav, video.mp4")
         return input("📁 Entrez le chemin complet vers un fichier : ").strip()
     
-    print("\n📁 FICHIERS MULTIMÉDIA TROUVÉS :")
+    print("\n📁 FICHIERS MULTIMÉDIA DISPONIBLES DANS /app/input/:")
     print("-" * 70)
     for i, file in enumerate(media_files[:50], 1):  # Limite à 50 fichiers
         # Afficher le nom du fichier uniquement (sans le chemin complet)
@@ -127,6 +139,7 @@ def browse_audio_file():
             size_str = "?"
         
         # Obtenir la durée si possible (pour les fichiers audio/vidéo)
+        duration_str = ""
         try:
             import subprocess as sp
             result = sp.run(
@@ -136,21 +149,32 @@ def browse_audio_file():
             )
             if result.returncode == 0:
                 duration = float(result.stdout.strip())
-                duration_str = f" ({int(duration//60)}:{int(duration%60):02d})"
-            else:
-                duration_str = ""
+                mins = int(duration // 60)
+                secs = int(duration % 60)
+                duration_str = f" ({mins}:{secs:02d})"
         except:
-            duration_str = ""
+            pass
         
         print(f"  [{i}] {filename} - {size_str}{duration_str}")
     print()
+    print(f"  (Seuls les fichiers dans /app/input/ sont affichés)")
+    print()
     
-    choice = input(f"📌 Sélectionner un fichier (1-{min(len(media_files), 50)}) ou entrer le chemin : ").strip()
+    choice = input(f"📌 Sélectionner un fichier (1-{min(len(media_files), 50)}) ou entrer un chemin : ").strip()
     
     if choice.isdigit():
         idx = int(choice) - 1
         if 0 <= idx < len(media_files):
+            print(f"✅ Fichier sélectionné: {os.path.basename(media_files[idx])}")
             return media_files[idx]
+    
+    # Si l'utilisateur entre un chemin manuellement, vérifier qu'il existe
+    # et qu'il est dans input_dir ou un sous-dossier
+    if choice and not os.path.isabs(choice):
+        # Path relatif - vérifier s'il existe dans input_dir
+        test_path = os.path.join(input_dir, choice)
+        if os.path.exists(test_path):
+            return test_path
     
     return choice
 
@@ -191,8 +215,8 @@ def main():
     
     # Sélection de l'effet
     print_effects()
-    effects = ['bars', 'circles', 'particles', 'tunnel', 'wave', 'random']
-    effect = select_option("🎨 Sélectionner un effet (1-6) [1=barres] : ", effects)
+    effects = ['bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma', 'random']
+    effect = select_option("🎨 Sélectionner un effet (1-8) [1=barres] : ", effects)
     
     # Sélection de la palette
     print_colors()
