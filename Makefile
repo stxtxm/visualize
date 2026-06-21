@@ -1,4 +1,4 @@
-.PHONY: help build run run-cli run-menu clean stop test test-audio test-effects test-quality rebuild
+.PHONY: help build run run-cli run-menu run-no-sound run-fallback clean stop test test-audio test-effects test-quality rebuild
 
 # Nom de l'image
 IMAGE_NAME := psychedelic-visualizer
@@ -46,6 +46,10 @@ help:
 	@echo "  make test              - Lancer tous les tests"
 	@echo "  make test-quality      - Tester les présélections"
 	@echo "  make test-effects      - Tester les effets"
+	@echo ""
+	@echo "Modes de lancement:"
+	@echo "  make run-no-sound      - Lancer la GUI sans son (NO_SOUND=1)"
+	@echo "  make run-fallback      - Lancer la GUI avec fallback automatique PulseAudio"
 
 # Construire l'image
 build:
@@ -63,6 +67,16 @@ run:
 	@echo "Lancement de l'interface graphique..."
 	@echo "Dossiers: Audio=$(AUDIO_DIR) Output=$(OUTPUT_DIR)"
 	AUDIO_DIR=$(AUDIO_DIR) OUTPUT_DIR=$(OUTPUT_DIR) ./podman-run.sh
+
+# Lancer la GUI sans son (NO_SOUND=1)
+run-no-sound:
+	@echo "Lancement de la GUI sans son (NO_SOUND=1)..."
+	AUDIO_DIR=$(AUDIO_DIR) OUTPUT_DIR=$(OUTPUT_DIR) NO_SOUND=1 ./podman-run.sh
+
+# Lancer la GUI avec fallback automatique (recommandé)
+run-fallback:
+	@echo "Lancement de la GUI avec fallback automatique..."
+	AUDIO_DIR=$(AUDIO_DIR) OUTPUT_DIR=$(OUTPUT_DIR) ./run_gui_fallback.sh
 
 # Lancer le menu CLI
 run-menu:
