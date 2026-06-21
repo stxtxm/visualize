@@ -89,39 +89,30 @@ def select_option(prompt, options, option_type=""):
 
 
 def browse_audio_file():
-    """Simple file browser for multimedia files (audio and video)."""
+    """Simple file browser for multimedia files (audio and video).
+    NE CHERCHE QUE DANS /app/input/ qui contient les fichiers à analyser.
+    """
     # Extensions audio et vidéo supportées
     media_extensions = ['.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', 
                        '.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv']
     
-    # Check common directories (dans le conteneur, /audio contient les fichiers)
-    # Prioriser /audio pour éviter de prendre les fichiers dans /app
-    search_dirs = [
-        '/audio',  # Dossier monté depuis ~/Music de l'hôte - PRIORITÉ
-        os.path.expanduser('~/Music'),
-        os.path.expanduser('~/Videos'),
-        os.path.expanduser('~'),
-    ]
-    # Ne pas chercher dans PROJECT_DIR (/app) car les fichiers multimédia ne devraient pas être là
+    # UNIQUEMENT le dossier /app/input/ est analysé
+    input_dir = '/app/input'
     
     media_files = []
-    for search_dir in search_dirs:
-        if os.path.exists(search_dir):
-            for root, dirs, files in os.walk(search_dir):
-                for file in files:
-                    if any(file.lower().endswith(ext) for ext in media_extensions):
-                        full_path = os.path.join(root, file)
-                        media_files.append(full_path)
-    
-    # Supprimer les doublons
-    media_files = list(set(media_files))
+    if os.path.exists(input_dir):
+        for file in os.listdir(input_dir):
+            full_path = os.path.join(input_dir, file)
+            if os.path.isfile(full_path) and any(file.lower().endswith(ext) for ext in media_extensions):
+                media_files.append(full_path)
     
     # Trier par nom de fichier
     media_files.sort()
     
     if not media_files:
-        print("❌ Aucun fichier multimédia trouvé dans /audio, ~/Music ou ~/Videos")
-        return input("📁 Entrez le chemin complet vers un fichier audio/vidéo : ").strip()
+        print("❌ Aucun fichier multimédia trouvé dans /app/input/")
+        print("   Placez vos fichiers audio/vidéo dans le dossier 'input/' du projet")
+        return input("📁 Entrez le chemin complet vers un fichier : ").strip()
     
     print("\n📁 FICHIERS MULTIMÉDIA TROUVÉS :")
     print("-" * 70)

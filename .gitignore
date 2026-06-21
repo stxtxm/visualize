@@ -112,6 +112,9 @@ podman/
 # Dossier de sortie local (dans le projet)
 output/
 
+# Dossier d'entrée pour les fichiers audio/vidéo à analyser
+input/
+
 # ============================================================================
 # Vidéo / Audio (TOUS les fichiers mp4/mp3/wav/etc. sont ignorés)
 # ============================================================================
