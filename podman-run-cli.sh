@@ -86,17 +86,23 @@ echo "=========================================="
 echo ""
 echo "Entrée:  $AUDIO_FILE"
 echo "Sortie:  $OUTPUT_FILE"
-echo "Options: $@"
+echo ""
+echo "⚠️  La vidéo sera sauvegardée dans: ~/Videos/"
 echo ""
 
 # Utilisation du répertoire courant comme /data
+# Monter le dossier de sortie et ~/Videos
 DATA_DIR="$(pwd)"
+mkdir -p "$OUTPUT_DIR"
+
 podman run --rm \
     --name "$CONTAINER_NAME" \
     --volume "$DATA_DIR":/data:Z \
+    --volume "$OUTPUT_DIR":/output \
+    --volume "${HOME}/Videos":/host_videos \
     "${IMAGE_NAME}:${IMAGE_TAG}" \
     python3 /app/main.py /data/$(basename "$AUDIO_FILE") \
-    --export /data/$(basename "$OUTPUT_FILE") \
+    --export /output/$(basename "$OUTPUT_FILE") \
     --no-gui \
     "$@"
 

@@ -174,9 +174,14 @@ def main():
     # Sélection du fichier de sortie
     print("\n💾 FICHIER DE SORTIE")
     print("-" * 70)
+    print("⚠️  Dans le conteneur, utilisez /output/ comme dossier de sortie")
+    print("    Exemple: /output/ma_video.mp4")
+    print("    Cela correspondra à ~/Videos/ma_video.mp4 sur votre hôte")
+    print()
+    # Dans le conteneur, /output est monté sur ~/Videos de l'hôte
+    # Utiliser /output comme dossier de sortie par défaut
     default_output = os.path.join(
-        os.path.expanduser('~'),
-        'Videos',
+        '/output',
         f"{os.path.splitext(os.path.basename(audio_file))[0]}_export.mp4"
     )
     output_file = input(f"📄 Chemin de sortie [{default_output}] : ").strip()
