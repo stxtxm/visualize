@@ -52,12 +52,21 @@ class PlasmaEffect(BaseEffect):
     
     def _init_plasma_points(self):
         """Initialiser les points de distorsion pour l'effet plasma."""
+        import random
         for _ in range(self.num_points):
-            angle = np.random.random() * 2 * np.pi
-            distance = np.random.random() * min(self.width, self.height) * 0.4
+            angle = random.random() * 2 * np.pi
+            distance = random.random() * min(self.width, self.height) * 0.4
             x = self.center_x + distance * np.cos(angle)
             y = self.center_y + distance * np.sin(angle)
-            self.plasma_points.append((x, y))
+            self.plasma_points.append({
+                'x': float(x),
+                'y': float(y),
+                'vx': random.uniform(-0.5, 0.5),
+                'vy': random.uniform(-0.5, 0.5),
+                'phase': random.random() * 2 * np.pi,
+                'size': random.randint(10, 50),
+                'color': random.random() * 2 * np.pi
+            })
     
     def update(self, audio_data, delta_time):
         super().update(audio_data, delta_time)
