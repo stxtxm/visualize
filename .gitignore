@@ -110,10 +110,10 @@ podman/
 /data/
 
 # ============================================================================
-# Vidéo / Audio (fichiers générés ou temporaires)
+# Vidéo / Audio (TOUS les fichiers mp4/mp3/wav/etc. sont ignorés)
 # ============================================================================
 
-# Fichiers vidéo générés par l'export
+# TOUS les fichiers vidéo
 *.mp4
 *.mkv
 *.avi
@@ -121,12 +121,13 @@ podman/
 *.webm
 *.gif
 
-# Fichiers audio temporaires générés pendant les tests
-# (les fichiers source dans audio/ sont gardés)
-test_audio.*
-test_*.mp3
-test_*.wav
-sample.*
+# TOUS les fichiers audio (y compris mp3, wav, etc.)
+*.mp3
+*.wav
+*.aac
+*.flac
+*.ogg
+*.m4a
 
 # Fichiers temporaires FFmpeg
 *.mpg
