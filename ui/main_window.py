@@ -282,9 +282,23 @@ class MainWindow:
             self.preview_renderer.init()
             
             # Main loop
+            iteration = 0
+            try:
+                from ui.log_display import log_message
+                log_message("Playback: Boucle de lecture démarrée")
+            except:
+                pass
+            
             while self.is_playing.get():
+                iteration += 1
+                
                 # Handle events
                 if not self.preview_renderer.handle_events():
+                    try:
+                        from ui.log_display import log_message
+                        log_message(f"Playback: Événement QUIT à itération {iteration}")
+                    except:
+                        pass
                     self.is_playing.set(False)
                     break
                 
@@ -293,7 +307,23 @@ class MainWindow:
                 
                 # Get audio data
                 chunk = self.analyzer.get_next_chunk()
+                if chunk is None:
+                    try:
+                        from ui.log_display import log_message
+                        log_message(f"Playback: Chunk None à itération {iteration} - ARRET")
+                    except:
+                        pass
+                    break
+                    
                 audio_data = self.analyzer.analyze_chunk(chunk)
+                
+                # Log tous les 20 itérations
+                if iteration % 20 == 0:
+                    try:
+                        from ui.log_display import log_message
+                        log_message(f"Playback: Itération {iteration} - Volume={audio_data.get('volume', 0):.4f}")
+                    except:
+                        pass
                 
                 # Update and render
                 self.effect_manager.current_effect.update(audio_data, delta_time)
@@ -307,6 +337,12 @@ class MainWindow:
                     self.root.after(0, self._update_preview, frame)
                 
                 self.preview_renderer.present()
+            
+            try:
+                from ui.log_display import log_message
+                log_message(f"Playback: Boucle terminée après {iteration} itérations")
+            except:
+                pass
             
         except Exception as e:
             error_msg = str(e)
