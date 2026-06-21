@@ -113,7 +113,7 @@ def run_export(args):
             process.stdin.write(frame.tobytes())
             if frame_count % 100 == 0:
                 print(f"  Progress: {(frame_count/total_frames)*100:.0f}%")
-        process.stdin.close()
+        # Ne PAS fermer stdin manuellement - communicate() le fera automatiquement
         stdout, stderr = process.communicate()
         if process.returncode != 0:
             raise RuntimeError(stderr.decode('utf-8', errors='ignore'))

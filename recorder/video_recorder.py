@@ -166,10 +166,8 @@ class VideoRecorder:
                 if total_frames > 0 and frame_count >= total_frames:
                     break
             
+            # Ne PAS fermer stdin manuellement - communicate() le fera automatiquement
             # Close the pipe
-            self._process.stdin.close()
-            
-            # Wait for FFmpeg to finish
             stdout, stderr = self._process.communicate()
             
             if self._process.returncode != 0:
