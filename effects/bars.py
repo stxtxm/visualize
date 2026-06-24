@@ -2,7 +2,25 @@
 Effet de barres de fréquence style égaliseur.
 """
 
-import numpy as np
+import sys
+import os
+
+# Importer numpy conditionnellement
+HAS_NUMPY = False
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
+# Importer pygame conditionnellement
+HAS_PYGAME = False
+try:
+    import pygame
+    HAS_PYGAME = True
+except ImportError:
+    HAS_PYGAME = False
+
 from effects.base import BaseEffect
 
 
@@ -87,6 +105,10 @@ class BarEffect(BaseEffect):
     
     def render(self, surface):
         """Rendu des barres sur la surface Pygame."""
+        # Si pygame n'est pas disponible, ne rien faire
+        if not HAS_PYGAME:
+            return
+        
         import pygame
         surface.fill((0, 0, 0))
         
@@ -162,6 +184,10 @@ class BarEffect(BaseEffect):
     
     def render_to_array(self):
         """Rendu vers un tableau numpy pour l'export vidéo."""
+        if not HAS_NUMPY:
+            # Si numpy n'est pas disponible, retourner None ou une liste
+            return None
+        
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         
         for i in range(self.num_bars):
@@ -225,3 +251,7 @@ class BarEffect(BaseEffect):
                         frame[yy, x + self.bar_width - 1] = border_color
         
         return frame
+    
+    def cleanup(self):
+        """Nettoyer les ressources."""
+        pass  # Rien à nettoyer pour l'instant

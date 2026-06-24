@@ -105,7 +105,7 @@ podman/
 .docker/
 
 # Dossiers montés comme volumes (pour éviter de commiter des données locales)
-/audio/
+# Note: /audio/ était dans cette liste mais c'est un module source qui doit être versionné
 /output/
 /data/
 

@@ -30,6 +30,18 @@ class MockAudioData:
         self.beat = iteration % 10 == 0
         self.beat_strength = self.volume if self.beat else 0
         self.bpm = 120
+    
+    def __getitem__(self, key):
+        """Permet d'accéder aux attributs comme un dictionnaire."""
+        return getattr(self, key)
+    
+    def get(self, key, default=None):
+        """Permet d'utiliser .get() comme un dictionnaire."""
+        return getattr(self, key, default)
+    
+    def __contains__(self, key):
+        """Permet d'utiliser 'in' comme un dictionnaire."""
+        return hasattr(self, key)
 
 
 class MockAudioAnalyzer:

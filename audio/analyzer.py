@@ -2,9 +2,26 @@
 Module d'analyse audio utilisant FFT pour extraire les caractéristiques du son.
 """
 
-import numpy as np
 import math
 from collections import deque
+import os
+import sys
+
+# Importer numpy conditionnellement - vérifier NO_SOUND AVANT l'import
+no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
+
+HAS_NUMPY = False
+if not no_sound:
+    try:
+        import numpy as np
+        HAS_NUMPY = True
+    except ImportError:
+        HAS_NUMPY = False
+        import warnings
+        warnings.warn("numpy non disponible, utilisation de données audio simulées")
+else:
+    # En mode NO_SOUND, on n'a pas besoin de numpy
+    HAS_NUMPY = False
 
 
 class AudioAnalyzer:
@@ -34,15 +51,19 @@ class AudioAnalyzer:
         self.total_chunks = 0
         self.use_simulated = False
         
-        # Vérifier si NO_SOUND est activé
+        # Vérifier si NO_SOUND est activé ou si numpy n'est pas disponible
         import os
         no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
+        
+        # Si numpy n'est pas disponible, forcer le mode simulé
+        if not HAS_NUMPY:
+            no_sound = True
         
         # Charger le fichier audio avec pydub
         if no_sound:
             # Mode sans son: générer des données simulées
             import warnings
-            warnings.warn("NO_SOUND activé. Utilisation de données audio simulées.")
+            warnings.warn("NO_SOUND activé ou numpy non disponible. Utilisation de données audio simulées.")
             self._init_simulated_data(sample_rate, chunk_size)
         else:
             try:
@@ -59,7 +80,11 @@ class AudioAnalyzer:
                 self._init_simulated_data(sample_rate, chunk_size)
         
         # Configuration de l'analyse
-        self.fft_window = np.hanning(chunk_size)
+        if HAS_NUMPY:
+            self.fft_window = np.hanning(chunk_size)
+        else:
+            # Alternative sans numpy pour la fenêtre de Hann
+            self.fft_window = [0.5 * (1 - math.cos(2 * math.pi * i / (chunk_size - 1))) for i in range(chunk_size)]
         
         # 16 bandes de fréquence pour une analyse plus fine
         self.freq_bands = [
@@ -110,12 +135,29 @@ class AudioAnalyzer:
         # Générer des données audio simulées (sinusoïdale)
         duration = 10.0  # 10 secondes par défaut
         num_samples = int(sample_rate * duration)
-        t = np.linspace(0, duration, num_samples)
-        # Mélange de plusieurs fréquences
-        self.audio_data = np.sin(2 * np.pi * 440 * t) * 0.3  # 440 Hz
-        self.audio_data += np.sin(2 * np.pi * 220 * t) * 0.2  # 220 Hz
-        self.audio_data += np.sin(2 * np.pi * 880 * t) * 0.1  # 880 Hz
-        self.audio_data = (self.audio_data * 32767).astype(np.int16)
+        
+        if HAS_NUMPY:
+            # Version avec numpy
+            t = np.linspace(0, duration, num_samples)
+            # Mélange de plusieurs fréquences
+            self.audio_data = np.sin(2 * np.pi * 440 * t) * 0.3  # 440 Hz
+            self.audio_data += np.sin(2 * np.pi * 220 * t) * 0.2  # 220 Hz
+            self.audio_data += np.sin(2 * np.pi * 880 * t) * 0.1  # 880 Hz
+            self.audio_data = (self.audio_data * 32767).astype(np.int16)
+        else:
+            # Version sans numpy
+            import math
+            self.audio_data = []
+            for i in range(num_samples):
+                t = i / sample_rate
+                sample = (math.sin(2 * math.pi * 440 * t) * 0.3 + 
+                         math.sin(2 * math.pi * 220 * t) * 0.2 + 
+                         math.sin(2 * math.pi * 880 * t) * 0.1)
+                # Convertir en int16
+                self.audio_data.append(int(sample * 32767))
+            # Convertir en liste d'entiers
+            self.audio_data = [int(x) for x in self.audio_data]
+        
         self.total_chunks = len(self.audio_data) // chunk_size
         self.audio = None
 
@@ -157,6 +199,11 @@ class AudioAnalyzer:
         chunk = self.audio_data[start:end]
         self.current_chunk += 1
         
+        # Si on utilise des listes (mode sans numpy), convertir en tableau compatible
+        if not HAS_NUMPY and isinstance(chunk, list):
+            # Retourner tel quel, le code appelant devra gérer
+            pass
+        
         return chunk
     
     def analyze_chunk(self, chunk):
@@ -178,6 +225,10 @@ class AudioAnalyzer:
                 'treble': float          # Niveau des aigus [0, 1] (3000-20000 Hz)
             }
         """
+        # Si numpy n'est pas disponible, utiliser l'analyse simulée
+        if not HAS_NUMPY:
+            return self._analyze_chunk_simulated(chunk)
+        
         if chunk is None or len(chunk) < self.chunk_size:
             return self._get_default_result()
         
@@ -245,6 +296,87 @@ class AudioAnalyzer:
             'volume_smooth': float(smoothed_volume),
             'frequency_bands': [float(x) for x in smoothed_bands],
             'spectrum': [float(x) for x in fft_magnitude],
+            'beat': bpm_result['is_beat'],
+            'beat_strength': bpm_result['beat_strength'],
+            'bpm': bpm_result['bpm'],
+            'bpm_confidence': bpm_result['bpm_confidence'],
+            'bass': float(smoothed_bass),
+            'mids': float(smoothed_mid),
+            'treble': float(smoothed_treble)
+        }
+    
+    def _analyze_chunk_simulated(self, chunk):
+        """Analyse simulée sans numpy."""
+        import math
+        import random
+        
+        if chunk is None or len(chunk) < self.chunk_size:
+            return self._get_default_result()
+        
+        # Calculer un volume simulé à partir des données
+        if isinstance(chunk, list):
+            # Calculer RMS manuellement
+            sum_sq = sum(x * x for x in chunk)
+            rms = math.sqrt(sum_sq / len(chunk)) if len(chunk) > 0 else 0
+            # Normaliser (supposer que les valeurs sont dans la plage int16)
+            volume = min((rms / 32768.0) * 3, 1.0)
+        else:
+            # Si c'est un tableau numpy mais qu'on est en mode simulé, utiliser une valeur par défaut
+            volume = 0.5 + 0.3 * math.sin(self.current_chunk * 0.5)
+        
+        # Lissage du volume
+        self.volume_history.append(volume)
+        smoothed_volume = sum(self.volume_history) / len(self.volume_history) if self.volume_history else volume
+        
+        # Générer des bandes de fréquence simulées
+        import time
+        iteration = self.current_chunk + (int(time.time() * 1000) % 1000)
+        frequency_bands = []
+        for i, (low, high) in enumerate(self.freq_bands):
+            # Simuler des variations basées sur l'itération et la bande
+            variation = 0.5 + 0.3 * math.sin(iteration * 0.1 + i * 0.5)
+            frequency_bands.append(min(max(variation, 0.0), 1.0))
+        
+        # Calculer les niveaux bass, mids, treble
+        bass_level = sum(frequency_bands[i] for i in self.bass_band_indices) / len(self.bass_band_indices) if self.bass_band_indices else 0.0
+        mid_level = sum(frequency_bands[i] for i in self.mid_band_indices) / len(self.mid_band_indices) if self.mid_band_indices else 0.0
+        treble_level = sum(frequency_bands[i] for i in self.treble_band_indices) / len(self.treble_band_indices) if self.treble_band_indices else 0.0
+        
+        # Stocker dans l'historique pour le lissage
+        self.bass_history.append(bass_level)
+        self.mid_history.append(mid_level)
+        self.treble_history.append(treble_level)
+        
+        # Lisser les niveaux
+        smoothed_bass = sum(self.bass_history) / len(self.bass_history) if self.bass_history else bass_level
+        smoothed_mid = sum(self.mid_history) / len(self.mid_history) if self.mid_history else mid_level
+        smoothed_treble = sum(self.treble_history) / len(self.treble_history) if self.treble_history else treble_level
+        
+        # Détection de BPM et beats (le bpm_detector gère déjà le mode simulé)
+        bpm_result = self.bpm_detector.detect(chunk)
+        
+        # Stocker l'historique des fréquences pour le lissage
+        self.freq_history.append(frequency_bands)
+        smoothed_bands = []
+        if self.freq_history:
+            # Moyenne simple des bandes
+            num_history = len(self.freq_history)
+            for i in range(len(frequency_bands)):
+                avg = sum(freq[i] for freq in self.freq_history) / num_history
+                smoothed_bands.append(avg)
+        else:
+            smoothed_bands = frequency_bands
+        
+        # Générer un spectre simulé
+        spectrum = [0.0] * (self.chunk_size // 2)
+        for i in range(len(spectrum)):
+            spectrum[i] = random.uniform(0.1, 0.8) * math.exp(-i / (self.chunk_size / 4))
+        
+        return {
+            'volume': float(volume),
+            'volume_smooth': float(smoothed_volume),
+            'frequency_bands': [float(x) for x in smoothed_bands],
+            'spectrum': spectrum,
             'beat': bpm_result['is_beat'],
             'beat_strength': bpm_result['beat_strength'],
             'bpm': bpm_result['bpm'],

@@ -2,8 +2,14 @@
 OpenCV-based renderer for video export.
 """
 
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+    HAS_NUMPY = True
+except ImportError:
+    HAS_CV2 = False
+    HAS_NUMPY = False
 
 
 class CV2Renderer:
