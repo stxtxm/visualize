@@ -2,8 +2,14 @@
 Classe de base pour tous les effets visuels.
 """
 
-import numpy as np
 import math
+
+# Importer numpy conditionnellement (peut ne pas être disponible)
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
 
 
 class BaseEffect:

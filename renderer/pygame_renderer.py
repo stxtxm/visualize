@@ -2,9 +2,16 @@
 Pygame-based renderer for real-time preview.
 """
 
-import pygame
 import sys
 import os
+
+# Importer pygame conditionnellement
+HAS_PYGAME = False
+try:
+    import pygame
+    HAS_PYGAME = True
+except ImportError:
+    HAS_PYGAME = False
 
 
 class PygameRenderer:
@@ -28,14 +35,27 @@ class PygameRenderer:
         self.fullscreen = fullscreen
         self.fps = fps
         self.screen = None
-        self.clock = None
         self._initialized = False
         self._surface = None
         self._no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
+        
+        # Si pygame n'est pas disponible, créer un mock clock
+        if not HAS_PYGAME:
+            class MockClock:
+                def tick(self, fps):
+                    return 33  # ~33ms pour 30 FPS
+            self.clock = MockClock()
+        else:
+            self.clock = None
 
     def init(self):
         """Initialize Pygame and create the display."""
         if self._initialized:
+            return
+        
+        # Si pygame n'est pas disponible, ne pas initialiser
+        if not HAS_PYGAME:
+            self._initialized = False
             return
         
         # Désactiver l'accélération matérielle pour éviter les erreurs OpenGL/DRM
@@ -78,12 +98,31 @@ class PygameRenderer:
 
     def get_surface(self):
         """Get the rendering surface."""
+        if not HAS_PYGAME:
+            # Initialiser un mock clock si nécessaire
+            if self.clock is None:
+                class MockClock:
+                    def tick(self, fps):
+                        return 33  # ~30ms pour 30 FPS
+                self.clock = MockClock()
+            
+            # Retourner un mock surface si pygame n'est pas disponible
+            class MockSurface:
+                def fill(self, color):
+                    pass
+                def get_size(self):
+                    return (self.width, self.height)
+            return MockSurface()
+        
         if not self._initialized:
             self.init()
         return self._surface
 
     def handle_events(self):
         """Handle Pygame events. Returns True if should continue."""
+        if not HAS_PYGAME or not self._initialized:
+            return True
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -97,7 +136,7 @@ class PygameRenderer:
 
     def _toggle_fullscreen(self):
         """Toggle fullscreen mode."""
-        if self.screen is None:
+        if not HAS_PYGAME or not self._initialized or self.screen is None:
             return
         
         current_flags = self.screen.get_flags()
@@ -122,6 +161,9 @@ class PygameRenderer:
 
     def present(self):
         """Present the rendered surface to the display."""
+        if not HAS_PYGAME or not self._initialized:
+            return
+        
         if self._surface is not None and self.screen is not None:
             # Scale surface to screen if needed
             if self._surface.get_size() != self.screen.get_size():
@@ -136,11 +178,21 @@ class PygameRenderer:
 
     def clear(self):
         """Clear the rendering surface."""
+        if not HAS_PYGAME or not self._initialized:
+            return
+        
         if self._surface is not None:
             self._surface.fill((0, 0, 0))
 
     def cleanup(self):
         """Clean up Pygame resources."""
+        if not HAS_PYGAME:
+            self._initialized = False
+            self.screen = None
+            self.clock = None
+            self._surface = None
+            return
+        
         if self._initialized:
             pygame.quit()
             self._initialized = False
