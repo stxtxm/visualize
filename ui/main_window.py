@@ -26,6 +26,7 @@ class MainWindow:
         """
         self.root = root
         self.is_playing = tk.BooleanVar(value=False)
+        self._is_playing_event = threading.Event()  # Pour une synchronisation thread-safe
         self.audio_file = tk.StringVar(value="")
         self.selected_effect = tk.StringVar(value="random")
         self.selected_color = tk.StringVar(value="psychedelic")
@@ -220,6 +221,7 @@ class MainWindow:
     def _start_playback(self):
         """Start playback and preview."""
         self.is_playing.set(True)
+        self._is_playing_event.set()  # Mettre à jour l'Event pour le thread
         
         # Stop existing thread if any
         if self.playback_thread and self.playback_thread.is_alive():
@@ -232,6 +234,7 @@ class MainWindow:
         except Exception as e:
             self.status_var.set(f"Erreur: {str(e)}")
             self.is_playing.set(False)
+            self._is_playing_event.clear()
             return
         
         # Get resolution
@@ -249,6 +252,7 @@ class MainWindow:
         except Exception as e:
             self.status_var.set(f"Erreur: {str(e)}")
             self.is_playing.set(False)
+            self._is_playing_event.clear()
             return
         
         # Create effect manager
@@ -264,6 +268,7 @@ class MainWindow:
         except Exception as e:
             self.status_var.set(f"Erreur: {str(e)}")
             self.is_playing.set(False)
+            self._is_playing_event.clear()
             return
         
         # Start playback in a separate thread
@@ -289,7 +294,7 @@ class MainWindow:
             except:
                 pass
             
-            while self.is_playing.get():
+            while self._is_playing_event.is_set():
                 iteration += 1
                 
                 # Handle events
@@ -299,7 +304,7 @@ class MainWindow:
                         log_message(f"Playback: Événement QUIT à itération {iteration}")
                     except:
                         pass
-                    self.is_playing.set(False)
+                    self._is_playing_event.clear()
                     break
                 
                 # Get delta time
@@ -353,13 +358,20 @@ class MainWindow:
             if hasattr(self, 'preview_renderer') and self.preview_renderer:
                 self.preview_renderer.cleanup()
             self.is_playing.set(False)
+            self._is_playing_event.clear()
             self.root.after(0, lambda: self.status_var.set("Lecture arrêtée"))
 
     def _capture_frame_copy(self, surface):
         """Capture a copy of the surface for preview (thread-safe)."""
         try:
-            import pygame
-            import numpy as np
+            # Vérifier si pygame est disponible
+            try:
+                import pygame
+                import numpy as np
+            except ImportError:
+                # pygame non disponible, retourner None
+                return None
+            
             from PIL import Image, ImageTk
             
             # Créer une COPIE de la surface pour éviter les deadlocks
@@ -392,6 +404,8 @@ class MainWindow:
     def _stop_playback(self):
         """Stop playback."""
         self.is_playing.set(False)
+        self._is_playing_event.clear()  # Arrêter le thread proprement
+        
         if self.playback_thread and self.playback_thread.is_alive():
             # Attendre 1 seconde, puis forcer si nécessaire
             self.playback_thread.join(timeout=1)
