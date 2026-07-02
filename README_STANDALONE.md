@@ -1,32 +1,59 @@
-# Builds Standalone - Visualisateur Psychédélique
+# Build AppImage - Visualisateur Psychédélique
 
-> **Application standalone optimisée pour la fluidité et la portabilité**
-> Fonctionne sur Fedora, Debian, Ubuntu, Linux Mint et autres distributions Linux
-
----
-
-## 📦 Formats Disponibles
-
-| Format | Taille Estimée | Portabilité | Usage Recommandé | Dépendances Hôte |
-|--------|---------------|-------------|------------------|------------------|
-| **AppImage** | ~150-200 MB | ⭐⭐⭐⭐⭐ | Distribution publique | Aucune |
-| **Bundle Portable** | ~80-100 MB | ⭐⭐⭐⭐ | Usage personnel | Python 3.x, libs système |
+> **Application portable semi-standalone** — fonctionne sur Fedora, Debian, Ubuntu, Linux Mint et toute distribution Linux.
+> Build via Podman (Docker) pour un environnement reproductible.
 
 ---
 
-## 🚀 Commandes de Build
+## 📦 Format : AppImage
+
+| Format | Taille | Portabilité | Usage |
+|--------|--------|-------------|-------|
+| **AppImage** | ~180-200 MB | ⭐⭐⭐⭐ | Distribution publique — nécessite Python 3.11 sur la machine cible |
+
+---
+
+## 🔧 Prérequis pour l'utilisation
+
+L'AppImage utilise **Python 3.11 du système hôte** pour éviter les problèmes de compatibilité des bibliothèques système.
+
+### Sur Fedora
+```bash
+sudo dnf install python3.11 python3.11-pip python3.11-tkinter
+```
+
+### Sur Debian/Ubuntu
+```bash
+sudo apt install python3.11 python3.11-pip python3.11-tk
+```
+
+### Autres dépendances recommandées (pour audio/vidéo)
+```bash
+# Fedora
+sudo dnf install SDL2 SDL2_mixer SDL2_image SDL2_ttf portaudio pulseaudio ffmpeg
+
+# Debian/Ubuntu
+sudo apt install libsdl2-2.0-0 libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libsdl2-ttf-2.0-0 portaudio19-dev pulseaudio ffmpeg
+```
+
+### Vérification des prérequis
+```bash
+# Vérifier Python 3.11
+python3.11 --version
+
+# Vérifier tkinter
+python3.11 -c "import tkinter; print('tkinter OK')"
+```
+
+---
+
+## 🚀 Build de l'AppImage
 
 ### Depuis le répertoire du projet :
 
 ```bash
-# Build TOUT (AppImage + Bundle Portable)
-make standalone-all
-
-# Build AppImage SEULEMENT (recommandé pour distribution)
+# Build AppImage (recommandé pour distribution)
 make standalone-appimage
-
-# Build Bundle Portable SEULEMENT (pour usage perso)
-make standalone-portable
 
 # Nettoyer les builds
 make standalone-clean
@@ -35,27 +62,11 @@ make standalone-clean
 ### Ou via le script directement :
 
 ```bash
-# Build AppImage
-./build_standalone.sh appimage
-
-# Build Bundle Portable
-./build_standalone.sh portable
-
-# Build Docker (pour dev)
-./build_standalone.sh docker
-
-# Tout build
-./build_standalone.sh all
-
-# Aide
-./build_standalone.sh help
+./build_standalone.sh
 ```
 
----
+Le résultat se trouve dans `dist_standalone/` :
 
-## 📂 Structure des Fichiers Générés
-
-### AppImage
 ```
 dist_standalone/
 └── Visualisateur_Psychedelic.AppImage    # Fichier exécutable unique
@@ -67,233 +78,29 @@ chmod +x dist_standalone/Visualisateur_Psychedelic.AppImage
 ./dist_standalone/Visualisateur_Psychedelic.AppImage
 ```
 
-### Bundle Portable
-```
-dist_standalone/
-└── Visualisateur_Psychedelic_Linux.tar.gz    # Archive complète
-    (ou .zip si zip est installé)
-```
+---
 
-**Contenu de l'archive :**
-```
-Visualisateur_Psychedelic_Linux/
-├── app/                          # Code source
-│   ├── main.py
-│   ├── audio/
-│   ├── effects/
-│   ├── renderer/
-│   ├── ui/
-│   ├── utils/
-│   ├── recorder/
-│   └── assets/
-├── bin/                         # Python virtualenv
-│   ├── python3
-│   ├── pip
-│   └── ...
-├── lib/                         # Dépendances Python
-│   └── python3.11/site-packages/
-│       ├── numpy/
-│       ├── opencv_python/
-│       ├── pygame/
-│       └── ...
-└── run_visualisateur.sh          # Script de lancement intelligent
-```
+## ✅ Ce qui est inclus dans l'AppImage
 
-**Utilisation :**
-```bash
-# Extraire l'archive
-tar xzf dist_standalone/Visualisateur_Psychedelic_Linux.tar.gz
+- **Dépendances Python** (numpy, pygame, opencv, pydub, Pillow, scipy)
+- **Code source complet** de l'application
 
-# Lancer
-cd Visualisateur_Psychedelic_Linux
-./run_visualisateur.sh
-```
+**Ce qui n'est PAS inclus (utilisé depuis le système hôte) :**
+- Python 3.11 (exécutable)
+- Bibliothèques système (SDL2, PortAudio, PulseAudio, ALSA, OpenGL, X11, Tcl/Tk)
+- FFmpeg
 
 ---
 
-## ⚙️ Optimisations pour la Fluidité
+## 🔊 Son dans l'AppImage
 
-### Problème résolu : Son Saccadé
+L'AppImage détecte automatiquement le système audio au lancement :
 
-Les builds standalone incluent des **optimisations spécifiques** pour éviter les saccades :
-
-1. **`SDL_AUDIO_BUFFER_SIZE=1024`** - Buffer audio réduit pour minimiser la latence
-2. **Détection automatique du système audio** :
-   - Essaye PulseAudio d'abord (recommandé)
-   - Fallback vers ALSA si PulseAudio non disponible
-   - Mode `NO_SOUND=1` avec driver `dummy` si aucun système audio
-3. **Gestion intelligente des dépendances** dans les scripts de lancement
-
-### Performances
-
-| Configuration | FPS Attendus | Latence Audio | Taille |
-|--------------|-------------|---------------|-------|
-| Preset `dev` | 15 FPS | ~15ms | 720p |
-| Preset `fast` | 20 FPS | ~20ms | 720p |
-| Preset `normal` | 30 FPS | ~30ms | 1080p |
-| Preset `high` | 60 FPS | ~50ms | 1080p |
-
----
-
-## 🔧 Prérequis pour le Build
-
-### Sur Fedora (recommandé)
-
-```bash
-# Podman (déjà installé par défaut)
-sudo dnf update podman
-
-# Outils de build
-sudo dnf install wget tar gzip python3-venv python3-pip
-
-# Pour les dépendances système (si build en local)
-sudo dnf install python3-devel gcc portaudio-devel \
-    SDL2-devel SDL2_image-devel SDL2_mixer-devel SDL2_ttf-devel \
-    ffmpeg-devel libX11-devel tk-devel
-```
-
-### Sur Debian/Ubuntu
-
-```bash
-# Podman
-sudo apt install podman
-
-# Outils de build
-sudo apt install wget tar gzip python3-venv python3-pip
-
-# Pour les dépendances système
-sudo apt install python3-dev g++ libportaudio2 libportaudio-dev \
-    libsdl2-2.0-0 libsdl2-dev libsdl2-image-2.0-0 libsdl2-image-dev \
-    libsdl2-mixer-2.0-0 libsdl2-mixer-dev libsdl2-ttf-2.0-0 libsdl2-ttf-dev \
-    ffmpeg libavcodec-dev libtk-dev python3-tk
-```
-
-### Sur Arch Linux
-
-```bash
-sudo pacman -S podman wget tar gzip python python-pip
-sudo pacman -S portaudio sdl2 ffmpeg tk
-```
-
----
-
-## 🎯 Workflows Typiques
-
-### 1. Développement Normal (dans conteneur)
-
-```bash
-# Builder l'image de dev
-make build
-
-# Lancer la GUI
-make run
-
-# ou avec fallback audio
-make run-fallback
-```
-
-### 2. Build pour Distribution (AppImage)
-
-```bash
-# Builder l'AppImage
-make standalone-appimage
-
-# Le résultat est dans dist_standalone/
-ls -lh dist_standalone/
-
-# Tester l'AppImage
-chmod +x dist_standalone/Visualisateur_Psychedelic.AppImage
-./dist_standalone/Visualisateur_Psychedelic.AppImage
-```
-
-### 3. Build pour Usage Personnel (Bundle Portable)
-
-```bash
-# Builder le bundle portable
-make standalone-portable
-
-# Extraire et tester
-cd /tmp
-tar xzf /chemin/vers/visualize/dist_standalone/Visualisateur_Psychedelic_Linux.tar.gz
-cd Visualisateur_Psychedelic_Linux
-./run_visualisateur.sh
-```
-
-### 4. Build Tout
-
-```bash
-# Build AppImage + Bundle Portable + Docker
-make standalone-all
-
-# Nettoyer
-make standalone-clean
-```
-
----
-
-## 🐛 Dépannage
-
-### ❌ "linuxdeploy non trouvé"
-
-**Solution :** Le script le télécharge automatiquement depuis GitHub. Vérifie ta connexion internet.
-
-```bash
-# Téléchargement manuel
-wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-chmod +x linuxdeploy-x86_64.AppImage
-```
-
-### ❌ "python3-venv non trouvé"
-
-**Solution :** Installe le package pour créer des virtual environments.
-
-```bash
-# Fedora
-sudo dnf install python3-virtualenv
-
-# Debian/Ubuntu
-sudo apt install python3-venv
-
-# Arch
-sudo pacman -S python-pip python-wheel
-```
-
-### ❌ "Dépendances Python manquantes"
-
-**Solution :** Le script installe automatiquement les dépendances depuis `requirements.txt`. Si échec :
-
-```bash
-# Installer manuellement
-pip install -r requirements.txt
-```
-
-### ❌ "AppImage ne se lance pas"
-
-**Solution :** Vérifie les permissions et les dépendances.
-
-```bash
-# Donner les permissions
-chmod +x Visualisateur_Psychedelic.AppImage
-
-# Vérifier les dépendances avec ldd
-ldd Visualisateur_Psychedelic.AppImage
-
-# Lancer avec debug
-./Visualisateur_Psychedelic.AppImage --appimage-extract-and-run
-```
-
-### ❌ "Pas de son dans l'AppImage"
-
-**Solution :** L'AppImage inclut un fallback automatique :
-
-1. **PulseAudio** (priorité) - Vérifie que PulseAudio est actif :
-   ```bash
-   pulseaudio --check && echo "PulseAudio OK" || echo "PulseAudio non démarré"
-   ```
-
-2. **ALSA** (fallback) - Si `/dev/snd` existe
-
-3. **Mode sans son** - Si aucun système audio n'est disponible
+| Système audio | Comportement |
+|---------------|-------------|
+| **PulseAudio** | Utilisé par défaut (meilleure latence) |
+| **ALSA** | Fallback automatique si /dev/snd existe |
+| **Aucun** | Mode dummy silencieux (NO_SOUND=1 activé) |
 
 Pour forcer un mode :
 ```bash
@@ -304,126 +111,87 @@ SDL_AUDIODRIVER=alsa ./Visualisateur_Psychedelic.AppImage
 NO_SOUND=1 ./Visualisateur_Psychedelic.AppImage
 ```
 
-### ❌ "L'AppImage est lente"
+---
 
-**Solutions :**
+## 🔧 Prérequis pour le Build
 
-1. **Réduire la résolution** : Utilise le preset `dev` ou `fast`
-2. **Fermer d'autres applications** : Le rendu vidéo consomme des ressources
-3. **Vérifier les pilotes graphiques** :
-   ```bash
-   glxinfo | grep "OpenGL renderer"
-   ```
+### Sur Fedora
+```bash
+sudo dnf install podman wget tar gzip python3-venv python3-pip
+```
+
+### Sur Debian/Ubuntu
+```bash
+sudo apt install podman wget tar gzip python3-venv python3-pip
+```
+
+Le build se fait **dans un conteneur Podman** — pas besoin d'installer les dépendances Python en local.
 
 ---
 
-## 📊 Comparaison des Formats
+## 📋 Workflows
 
-### AppImage
+### 1. Build AppImage
+```bash
+make standalone-appimage
+ls -lh dist_standalone/
+```
 
-**✅ Avantages :**
-- Zéro installation sur la machine cible
-- Fonctionne sur toutes les distributions Linux
-- Intégration avec le menu des applications
-- Un seul fichier à distribuer
-- Pas de conflits de dépendances
+### 2. Tester l'AppImage
+```bash
+chmod +x dist_standalone/Visualisateur_Psychedelic.AppImage
+./dist_standalone/Visualisateur_Psychedelic.AppImage
+```
 
-**⚠️ Inconvénients :**
-- Taille plus importante (~150-200 MB)
-- Build plus long (nécessite téléchargement de linuxdeploy)
-- Peut ne pas fonctionner sur des systèmes très anciens
-
-**📦 Contenu :**
-- Python 3.11 complet
-- Toutes les dépendances Python (numpy, opencv, pygame, etc.)
-- Bibliothèques système nécessaires
-- Application complète
+### 3. Nettoyer
+```bash
+make standalone-clean
+```
 
 ---
 
-### Bundle Portable
+## 🐛 Dépannage
 
-**✅ Avantages :**
-- Plus léger (~80-100 MB)
-- Facile à mettre à jour (juste remplacer les fichiers)
-- Dépendances Python isolées
-- Peut utiliser les bibliothèques système de l'hôte
+### ❌ AppImage ne se lance pas
+```bash
+# Vérifier les permissions
+chmod +x Visualisateur_Psychedelic.AppImage
 
-**⚠️ Inconvénients :**
-- Nécessite Python 3.x sur la machine hôte
-- Nécessite les bibliothèques système (SDL2, PortAudio, etc.)
-- Moins portable (dépend de l'architecture et des libs système)
+# Vérifier que Python 3.11 est installé
+python3.11 --version
 
-**📦 Contenu :**
-- Python virtual environment
-- Dépendances Python
-- Code source de l'application
-- Script de lancement intelligent
+# Lancer avec debug
+./Visualisateur_Psychedelic.AppImage --appimage-extract-and-run
+```
 
----
+### ❌ Erreur "module not found"
+```bash
+# L'AppImage inclut toutes les dépendances Python nécessaires
+# Si erreur, vérifier que Python 3.11 est bien utilisé
+python3.11 --version
+```
 
-## 🎨 Personnalisation
+### ❌ Pas de son
+```bash
+# Vérifier PulseAudio
+pulseaudio --check && echo "OK" || echo "PulseAudio non démarré"
 
-### Changer l'icône
+# Forcer ALSA
+SDL_AUDIODRIVER=alsa ./Visualisateur_Psychedelic.AppImage
 
-Place une image `icon.png` (256x256) dans le dossier `assets/` avant de builder.
+# Mode sans son
+NO_SOUND=1 ./Visualisateur_Psychedelic.AppImage
+```
 
-### Changer le nom de l'application
-
-Modifie les variables dans `build_standalone.sh` :
-- `APPIMAGE_NAME`
-- Nom dans le fichier `.desktop`
-
-### Optimiser la taille
-
-Pour réduire la taille de l'AppImage :
-
-1. **Utiliser UPX** (compression des exécutables) :
-   ```bash
-   # Installer UPX
-   sudo apt install upx-ucl  # Debian/Ubuntu
-   sudo dnf install upx      # Fedora
-   
-   # Builder avec compression
-   ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage --compression=upx
-   ```
-
-2. **Exclure les fichiers inutiles** :
-   - Tests (`tests/`)
-   - Documentation (`README.md`, etc.)
-   - Fichiers temporaires
+### ❌ Pas de rendu graphique
+```bash
+# Vérifier qu'un serveur X11 est accessible
+echo $DISPLAY
+```
 
 ---
 
 ## 📚 Références
 
-- [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) - Outil de création d'AppImage
-- [linuxdeploy-plugin-python](https://github.com/linuxdeploy/linuxdeploy-plugin-python) - Plugin Python pour linuxdeploy
-- [AppImage](https://appimage.org/) - Format d'application portable pour Linux
-- [Python Virtual Environments](https://docs.python.org/3/library/venv.html) - Documentation officielle
-
----
-
-## 💬 Support
-
-Pour les problèmes :
-
-1. **Vérifie les logs** : Les scripts affichent des informations détaillées
-2. **Vérifie les dépendances** : `ldd` pour les bibliothèques, `pip list` pour Python
-3. **Essaie en mode debug** : Ajoute `set -x` au début des scripts pour voir chaque commande
-
----
-
-## 🎉 Conclusion
-
-Tu as maintenant deux options professionnelles pour distribuer ton application :
-
-- **AppImage** → Pour une distribution large (zéro dépendance)
-- **Bundle Portable** → Pour un usage personnel ou des tests
-
-Les deux sont **optimisés pour la fluidité** avec :
-- Buffer audio réduit
-- Détection automatique du système audio
-- Fallback intelligent si problème
-
-**Recommandation :** Utilise **AppImage** pour la distribution publique et **Bundle Portable** pour toi ou des amis qui ont déjà Python installé.
+- [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy)
+- [AppImage](https://appimage.org/)

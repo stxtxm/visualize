@@ -408,7 +408,3 @@ class AudioAnalyzer:
             return len(self.audio_data) / self.sample_rate
         else:
             return 10.0  # Durée par défaut
-    
-    def get_total_frames(self, fps):
-        """Retourne le nombre total de frames pour un FPS donné."""
-        return int(self.get_duration_seconds() * fps)

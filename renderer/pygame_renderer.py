@@ -1,5 +1,6 @@
 """
 Pygame-based renderer for real-time preview.
+Supports headless mode (no window) for Tkinter integration.
 """
 
 import sys
@@ -18,38 +19,43 @@ class PygameRenderer:
     """
     Renderer using Pygame for real-time preview.
     Handles display, events, and frame rendering.
+    
+    Si no_window=True (défaut pour GUI Tkinter), ne crée PAS de fenêtre
+    et travaille uniquement avec une surface offscreen.
     """
 
-    def __init__(self, width=1920, height=1080, fullscreen=False, fps=60):
+    def __init__(self, width=1920, height=1080, fullscreen=False, fps=60, no_window=True):
         """
         Initialize the Pygame renderer.
         
         Args:
             width: Display width in pixels
             height: Display height in pixels
-            fullscreen: Whether to start in fullscreen mode
+            fullscreen: Whether to start in fullscreen mode (ignoré si no_window=True)
             fps: Target frames per second
+            no_window: Si True, ne crée pas de fenêtre (pour intégration Tkinter)
         """
         self.width = width
         self.height = height
         self.fullscreen = fullscreen
         self.fps = fps
+        self.no_window = no_window
         self.screen = None
         self._initialized = False
         self._surface = None
         self._no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
         
-        # Si pygame n'est pas disponible, créer un mock clock
+        # Si pygame n'est pas disponible, créer un clock mock
         if not HAS_PYGAME:
             class MockClock:
                 def tick(self, fps):
-                    return 33  # ~33ms pour 30 FPS
+                    return 33
             self.clock = MockClock()
         else:
             self.clock = None
 
     def init(self):
-        """Initialize Pygame and create the display."""
+        """Initialize Pygame and create the display (or offscreen surface)."""
         if self._initialized:
             return
         
@@ -58,40 +64,34 @@ class PygameRenderer:
             self._initialized = False
             return
         
-        # Désactiver l'accélération matérielle pour éviter les erreurs OpenGL/DRM
-        # dans les conteneurs
-        os.environ['SDL_VIDEODRIVER'] = 'x11'
-        os.environ['SDL_RENDER_DRIVER'] = 'software'
-        
         # Initialiser Pygame
-        # pygame.VIDEO n'existe pas dans Pygame 2.x, on initialise manuellement
         if self._no_sound:
-            # Initialiser uniquement les sous-systèmes nécessaires (sans audio)
             pygame.display.init()
             pygame.time.init()
             pygame.font.init()
         else:
             pygame.init()
         
-        # Set up the display
-        if self.fullscreen:
-            info = pygame.display.Info()
-            self.width = info.current_w
-            self.height = info.current_h
-            self.screen = pygame.display.set_mode(
-                (self.width, self.height), 
-                pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-            )
+        if self.no_window:
+            # Mode sans fenêtre : juste une surface offscreen
+            self._surface = pygame.Surface((self.width, self.height))
         else:
-            self.screen = pygame.display.set_mode(
-                (self.width, self.height),
-                pygame.HWSURFACE | pygame.DOUBLEBUF
-            )
-        
-        pygame.display.set_caption("Visualisateur Psychédélique")
-        
-        # Create a surface for rendering
-        self._surface = pygame.Surface((self.width, self.height))
+            # Mode avec fenêtre (CLI ou export)
+            if self.fullscreen:
+                info = pygame.display.Info()
+                self.width = info.current_w
+                self.height = info.current_h
+                self.screen = pygame.display.set_mode(
+                    (self.width, self.height), 
+                    pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
+                )
+            else:
+                self.screen = pygame.display.set_mode(
+                    (self.width, self.height),
+                    pygame.HWSURFACE | pygame.DOUBLEBUF
+                )
+            pygame.display.set_caption("Visualisateur Psychédélique")
+            self._surface = pygame.Surface((self.width, self.height))
         
         self.clock = pygame.time.Clock()
         self._initialized = True
@@ -99,19 +99,19 @@ class PygameRenderer:
     def get_surface(self):
         """Get the rendering surface."""
         if not HAS_PYGAME:
-            # Initialiser un mock clock si nécessaire
             if self.clock is None:
                 class MockClock:
                     def tick(self, fps):
-                        return 33  # ~30ms pour 30 FPS
+                        return 33
                 self.clock = MockClock()
             
-            # Retourner un mock surface si pygame n'est pas disponible
             class MockSurface:
                 def fill(self, color):
                     pass
                 def get_size(self):
                     return (self.width, self.height)
+                def copy(self):
+                    return MockSurface(self.width, self.height)
             return MockSurface()
         
         if not self._initialized:
@@ -120,7 +120,7 @@ class PygameRenderer:
 
     def handle_events(self):
         """Handle Pygame events. Returns True if should continue."""
-        if not HAS_PYGAME or not self._initialized:
+        if not HAS_PYGAME or not self._initialized or self.no_window:
             return True
         
         for event in pygame.event.get():
@@ -130,7 +130,6 @@ class PygameRenderer:
                 if event.key == pygame.K_ESCAPE:
                     return False
                 elif event.key == pygame.K_f:
-                    # Toggle fullscreen
                     self._toggle_fullscreen()
         return True
 
@@ -164,8 +163,11 @@ class PygameRenderer:
         if not HAS_PYGAME or not self._initialized:
             return
         
+        if self.no_window:
+            # Rien à présenter (pas de fenêtre)
+            return
+        
         if self._surface is not None and self.screen is not None:
-            # Scale surface to screen if needed
             if self._surface.get_size() != self.screen.get_size():
                 scaled = pygame.transform.scale(
                     self._surface, 
@@ -194,7 +196,9 @@ class PygameRenderer:
             return
         
         if self._initialized:
-            pygame.quit()
+            # pygame.quit() seulement si on n'est pas dans un thread
+            if not self.no_window:
+                pygame.quit()
             self._initialized = False
             self.screen = None
             self.clock = None
@@ -208,3 +212,15 @@ class PygameRenderer:
     def get_frame_size(self):
         """Get the frame dimensions."""
         return (self.width, self.height)
+    
+    def get_frame_as_bytes(self):
+        """
+        Retourne le contenu de la surface comme bytes RGB.
+        Fonctionne sans fenêtre d'affichage.
+        """
+        if not HAS_PYGAME or self._surface is None:
+            return None
+        try:
+            return pygame.image.tostring(self._surface, 'RGB')
+        except Exception:
+            return None

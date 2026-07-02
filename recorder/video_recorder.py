@@ -59,10 +59,8 @@ class VideoRecorder:
             '-r', str(self.fps),
             '-i', 'pipe:0',  # Video input from stdin
             '-i', self.audio_file,  # Audio input
-            '-c:v', 'libx264',
-            '-preset', 'slow',
-            '-crf', '18',  # Quality: 18-23 (18 = very good)
-            '-b:v', bitrate,
+            '-c:v', 'mpeg4',
+            '-qscale:v', '2',
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac',
             '-b:a', '192k',
@@ -154,7 +152,13 @@ class VideoRecorder:
                         pass  # Already correct shape
                 
                 # Write frame to FFmpeg
-                self._process.stdin.write(frame.tobytes())
+                try:
+                    self._process.stdin.write(frame.tobytes())
+                except (BrokenPipeError, ConnectionResetError, ValueError) as e:
+                    # Pipe fermé ou FFmpeg a crashé
+                    print(f"Warning: Pipe error at frame {frame_count}: {e}")
+                    break
+                
                 frame_count += 1
                 
                 # Show progress
@@ -165,14 +169,29 @@ class VideoRecorder:
                 # Check if we've reached the end
                 if total_frames > 0 and frame_count >= total_frames:
                     break
+                
+                # Check if FFmpeg is still alive periodically
+                if frame_count % 200 == 0 and self._process.poll() is not None:
+                    print(f"Warning: FFmpeg exited at frame {frame_count}")
+                    break
             
-            # Ne PAS fermer stdin manuellement - communicate() le fera automatiquement
-            # Close the pipe
-            stdout, stderr = self._process.communicate()
+            # Close stdin to signal FFmpeg that we're done
+            try:
+                self._process.stdin.close()
+            except:
+                pass
+            
+            # Wait for FFmpeg to finish
+            try:
+                stdout, stderr = self._process.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                stdout, stderr = self._process.communicate()
+                raise RuntimeError("FFmpeg timeout - export took too long")
             
             if self._process.returncode != 0:
-                error_msg = stderr.decode('utf-8', errors='ignore')
-                raise RuntimeError(f"FFmpeg error:\n{error_msg}")
+                error_msg = stderr.decode('utf-8', errors='ignore') if stderr else 'Unknown error'
+                raise RuntimeError(f"FFmpeg error (code {self._process.returncode}):\n{error_msg}")
             
             print(f"\nVideo exported successfully: {self.output_file}")
             
@@ -185,73 +204,6 @@ class VideoRecorder:
                     self._process.kill()
             self._process = None
 
-    def create_frame_generator(self, analyzer_class, effect_class, **kwargs):
-        """
-        Create a frame generator for the visualization.
-        
-        Args:
-            analyzer_class: Audio analyzer class
-            effect_class: Effect class
-            **kwargs: Additional arguments for analyzer and effect
-            
-        Returns:
-            generator: A generator that yields frames
-        """
-        from audio.analyzer import AudioAnalyzer
-        from effects.manager import EffectManager
-        from renderer.cv2_renderer import CV2Renderer
-        
-        # Initialize analyzer
-        analyzer = AudioAnalyzer(self.audio_file)
-        analyzer.start_stream()
-        
-        # Initialize renderer
-        renderer = CV2Renderer(
-            width=self.width,
-            height=self.height,
-            fps=self.fps
-        )
-        renderer.init()
-        
-        # Initialize effect manager
-        effect_manager = EffectManager(
-            analyzer=analyzer,
-            renderer=renderer,
-            effect_type=self.effect_type,
-            color_palette=self.color_palette
-        )
-        effect_manager.init()
-        
-        try:
-            audio_duration = self._get_audio_duration(self.audio_file)
-            total_frames = int(audio_duration * self.fps)
-            
-            frame_count = 0
-            while frame_count < total_frames:
-                # Get audio data
-                chunk = analyzer.get_next_chunk()
-                audio_data = analyzer.analyze_chunk(chunk)
-                
-                # Update effect
-                delta_time = 1.0 / self.fps
-                effect_manager.current_effect.update(audio_data, delta_time)
-                
-                # Render frame
-                frame = effect_manager.current_effect.render_to_array()
-                
-                # Ensure frame is in BGR format for FFmpeg
-                # OpenCV uses BGR by default, but our effects use RGB
-                # So we need to convert RGB to BGR
-                if frame.shape[2] == 3:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                
-                yield frame
-                frame_count += 1
-            
-        finally:
-            analyzer.cleanup()
-            renderer.cleanup()
-
     def cleanup(self):
         """Clean up resources."""
         if self._process and self._process.poll() is None:
@@ -261,10 +213,3 @@ class VideoRecorder:
             except:
                 self._process.kill()
         self._process = None
-
-
-# Import cv2 for color conversion
-try:
-    import cv2
-except ImportError:
-    cv2 = None

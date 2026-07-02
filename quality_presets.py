@@ -97,6 +97,10 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     elif width >= 1280:  # 720p
         bitrate = "10M" if bitrate == "5M" else bitrate
     
+    # Try to use 'copy' for audio first (fastest, preserves original quality)
+    # Fallback to libmp3lame if copy fails
+    audio_codec = 'copy'
+    
     cmd = [
         'ffmpeg',
         '-y',
@@ -107,15 +111,13 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         '-r', str(fps),
         '-i', 'pipe:0',
         '-i', audio_file,
-        '-c:v', 'libx264',
-        '-preset', preset_config['ffmpeg_preset'],
-        '-crf', preset_config['crf'],
-        '-b:v', bitrate,
+        '-c:v', 'mpeg4',
+        '-qscale:v', '2',
         '-pix_fmt', 'yuv420p',
-        '-c:a', 'libmp3lame',  # Utiliser MP3 au lieu de AAC (plus compatible)
-        '-b:a', '192k',
+        '-c:a', audio_codec,
         '-shortest',
         '-threads', '0',
+        '-loglevel', 'error',  # Réduire les logs pour éviter le bruit
         output_file
     ]
     return cmd

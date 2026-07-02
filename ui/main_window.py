@@ -237,23 +237,67 @@ class MainWindow:
             self._is_playing_event.clear()
             return
         
+        # Initialize audio player (pour jouer le son sur la carte son)
+        try:
+            from audio.player import AudioPlayer
+            self.audio_player = AudioPlayer(
+                sample_rate=self.analyzer.sample_rate,
+                chunk_size=self.analyzer.chunk_size
+            )
+            self.audio_player.start()
+        except Exception as e:
+            self.status_var.set(f"Erreur audio: {str(e)}")
+            self.audio_player = None
+        
         # Get resolution
         width, height = self._get_resolution()
         
-        # Create renderer for preview
+        # Détecter le renderer à utiliser ET initialiser pygame DANS LE THREAD PRINCIPAL
+        self._has_pygame = False
         try:
-            from renderer.pygame_renderer import PygameRenderer
-            self.preview_renderer = PygameRenderer(
-                width=width,
-                height=height,
-                fullscreen=False,
-                fps=self.fps.get()
-            )
-        except Exception as e:
-            self.status_var.set(f"Erreur: {str(e)}")
-            self.is_playing.set(False)
-            self._is_playing_event.clear()
-            return
+            import pygame as _pg
+            # Initialiser pygame en mode dummy dans le thread PRINCIPAL
+            # Ceci permet à pygame.Surface() de fonctionner
+            _pg.display.init()
+            _pg.time.init()
+            self._has_pygame = True
+        except ImportError:
+            self._has_pygame = False
+        except Exception:
+            self._has_pygame = False
+        
+        # Créer le renderer adapté (toujours dans le thread principal)
+        # La surface Pygame est créée ici, pas dans le thread
+        if self._has_pygame:
+            # Mode Pygame (conteneur) : surface offscreen créée dans le thread PRINCIPAL
+            try:
+                from renderer.headless_renderer import HeadlessRenderer
+                self.preview_renderer = HeadlessRenderer(
+                    width=width,
+                    height=height,
+                    fps=self.fps.get()
+                )
+                # Initialiser la surface ici (thread principal)
+                self.preview_renderer.init()
+            except Exception as e:
+                self.status_var.set(f"Erreur: {str(e)}")
+                self.is_playing.set(False)
+                self._is_playing_event.clear()
+                return
+        else:
+            # Mode sans Pygame (hôte) : ArrayRenderer numpy
+            try:
+                from renderer.array_renderer import ArrayRenderer
+                self.preview_renderer = ArrayRenderer(
+                    width=width,
+                    height=height,
+                    fps=self.fps.get()
+                )
+            except Exception as e:
+                self.status_var.set(f"Erreur: {str(e)}")
+                self.is_playing.set(False)
+                self._is_playing_event.clear()
+                return
         
         # Create effect manager
         try:
@@ -330,14 +374,36 @@ class MainWindow:
                     except:
                         pass
                 
-                # Update and render
-                self.effect_manager.current_effect.update(audio_data, delta_time)
-                surface = self.preview_renderer.get_surface()
-                self.effect_manager.current_effect.render(surface)
+                # Jouer le son sur la carte son (si disponible)
+                if hasattr(self, 'audio_player') and self.audio_player is not None:
+                    self.audio_player.play_chunk(chunk)
                 
-                # Capture frame for Tkinter preview (AVANT present pour éviter deadlock)
-                # On crée une copie de la surface pour éviter les problèmes de verrouillage
-                frame = self._capture_frame_copy(surface)
+                # Update effect state
+                self.effect_manager.current_effect.update(audio_data, delta_time)
+                
+                # Rendu : choisir la méthode selon le renderer disponible
+                if self._has_pygame:
+                    # Mode Pygame : render() utilise pygame.draw.* sur surface offscreen
+                    surface = self.preview_renderer.get_surface()
+                    self.effect_manager.current_effect.render(surface)
+                    frame = self._capture_frame(surface)
+                else:
+                    # Mode sans Pygame : utiliser render_to_array() qui produit un ndarray
+                    surface = self.preview_renderer.get_surface()
+                    arr = self.effect_manager.current_effect.render_to_array()
+                    if arr is not None:
+                        # Copier l'array numpy dans la surface du renderer
+                        h, w = min(arr.shape[0], surface.shape[0]), min(arr.shape[1], surface.shape[1])
+                        surface[:h, :w] = arr[:h, :w]
+                    else:
+                        # Si render_to_array() échoue (numpy absent), remplir de noir
+                        try:
+                            surface.fill(0)
+                        except Exception:
+                            surface[:] = 0
+                    # Capture directement depuis le renderer
+                    frame = self._capture_frame(None)
+                
                 if frame is not None:
                     self.root.after(0, self._update_preview, frame)
                 
@@ -361,42 +427,57 @@ class MainWindow:
             self._is_playing_event.clear()
             self.root.after(0, lambda: self.status_var.set("Lecture arrêtée"))
 
-    def _capture_frame_copy(self, surface):
-        """Capture a copy of the surface for preview (thread-safe)."""
-        try:
-            # Vérifier si pygame est disponible
+    def _capture_frame(self, surface=None):
+        """
+        Capture le frame courant et le convertit en PhotoImage pour Tkinter.
+        Utilise plusieurs méthodes de fallback.
+        """
+        from PIL import Image, ImageTk
+        
+        # Méthode 1: Si on a Pygame + une surface, utiliser pygame.image.tostring()
+        if self._has_pygame and surface is not None:
             try:
                 import pygame
-                import numpy as np
-            except ImportError:
-                # pygame non disponible, retourner None
-                return None
+                # pygame.image.tostring() est stable et fonctionne sans fenêtre d'affichage
+                raw_bytes = pygame.image.tostring(surface, 'RGB')
+                w, h = surface.get_size()
+                img = Image.frombytes('RGB', (w, h), raw_bytes)
+                img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
+                return ImageTk.PhotoImage(img)
+            except Exception as e:
+                try:
+                    from ui.log_display import log_message
+                    log_message(f"Capture Pygame tostring: {e}")
+                except:
+                    pass
+        
+        # Méthode 2: Sans Pygame, utiliser render_to_array() + Pillow
+        if not self._has_pygame:
+            try:
+                if self.effect_manager and self.effect_manager.current_effect:
+                    arr = self.effect_manager.current_effect.render_to_array()
+                    if arr is not None and hasattr(arr, 'shape') and len(arr.shape) == 3:
+                        if arr.shape[0] > 0 and arr.shape[1] > 0:
+                            img = Image.fromarray(arr)
+                            img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
+                            return ImageTk.PhotoImage(img)
+            except Exception:
+                pass
             
-            from PIL import Image, ImageTk
-            
-            # Créer une COPIE de la surface pour éviter les deadlocks
-            # pygame.surfarray.array3d verrouille la surface, donc on fait une copie d'abord
-            surface_copy = surface.copy()
-            data = pygame.surfarray.array3d(surface_copy)
-            
-            # Convert to PIL Image
-            img = Image.fromarray(data)
-            img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
-            return ImageTk.PhotoImage(img)
-        except Exception as e:
-            # En mode debug, on affiche l'erreur
-            import warnings
-            warnings.warn(f"Erreur capture frame: {e}")
-            return None
+            # Méthode 3: renderer.get_frame_as_bytes()
+            try:
+                if hasattr(self.preview_renderer, 'get_frame_as_bytes'):
+                    raw_bytes = self.preview_renderer.get_frame_as_bytes()
+                    if raw_bytes is not None:
+                        size = self.preview_renderer.get_frame_size()
+                        img = Image.frombytes('RGB', size, raw_bytes)
+                        img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
+                        return ImageTk.PhotoImage(img)
+            except Exception:
+                pass
+        
+        return None
     
-    def _capture_frame(self):
-        """Capture current frame for preview (déprécié, garde pour compatibilité)."""
-        try:
-            surface = self.preview_renderer.get_surface()
-            return self._capture_frame_copy(surface)
-        except Exception:
-            return None
-
     def _update_preview(self, frame):
         """Update preview with new frame."""
         self.preview.update_image(frame)
