@@ -142,14 +142,3 @@ class EffectManager:
     def is_initialized(self):
         """Check if effect manager is initialized."""
         return self._initialized
-
-    @staticmethod
-    def get_available_effects():
-        """Get list of available effect types."""
-        return list(EFFECT_MAP.keys())
-
-    @staticmethod
-    def get_available_palettes():
-        """Get list of available color palettes."""
-        from effects.base import BaseEffect
-        return ['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow']

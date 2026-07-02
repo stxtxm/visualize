@@ -1,0 +1,50 @@
+FROM python:3.11-slim
+
+# Installer les dépendances système pour les libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsdl2-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0 \
+    portaudio19-dev \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    libx11-6 libxcb-glx0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir -r requirements.txt
+
+# Vérifier l'installation
+RUN python3 -c "import numpy, pygame, cv2, pydub, PIL; print('Tous les imports OK')"
+
+COPY . /app
+
+# Créer la structure de sortie
+RUN mkdir -p /output/usr/lib/python3.11
+
+# Copier les dépendances Python (site-packages)
+RUN cp -r /usr/local/lib/python3.11/site-packages /output/usr/lib/python3.11/
+
+# Copier l'application
+RUN mkdir -p /output/usr/app && cp -r /app/* /output/usr/app/
+
+# Copier les bibliothèques système SDL2 et audio
+RUN mkdir -p /output/usr/lib && \
+    for lib in \
+        /usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libSDL2_image-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libSDL2_mixer-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libSDL2_ttf-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libportaudio.so.* \
+        /usr/lib/x86_64-linux-gnu/libasound.so.* \
+        /usr/lib/x86_64-linux-gnu/libpulse.so.* \
+        /usr/lib/x86_64-linux-gnu/libpulse-simple.so.* \
+        /usr/lib/x86_64-linux-gnu/libX11.so.* \
+        /usr/lib/x86_64-linux-gnu/libXext.so.* \
+        /usr/lib/x86_64-linux-gnu/libXrender.so.* \
+        /usr/lib/x86_64-linux-gnu/libGL.so.* \
+        /usr/lib/x86_64-linux-gnu/libglib-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libgio-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.* \
+        ; do \
+        cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
+    done

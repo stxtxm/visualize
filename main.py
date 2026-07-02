@@ -18,6 +18,18 @@ def has_gui():
 
 def run_gui():
     try:
+        # Initialiser pygame DANS LE THREAD PRINCIPAL avant toute GUI
+        # Ceci permet à pygame.Surface() et pygame.draw.* de fonctionner
+        # depuis n'importe quel thread sans ouvrir de fenêtre
+        try:
+            import pygame
+            pygame.display.init()
+            pygame.time.init()
+        except ImportError:
+            pass  # pas de pygame = pas de rendu Pygame
+        except Exception:
+            pass
+        
         from ui.main_window import MainWindow
         from ui.log_display import start_log_capture
         import tkinter as tk
@@ -77,7 +89,6 @@ def run_cli():
 def run_export(args):
     from audio.analyzer import AudioAnalyzer
     from effects.manager import EffectManager
-    from renderer.cv2_renderer import CV2Renderer
     from quality_presets import get_preset, RESOLUTIONS, build_ffmpeg_cmd
     import cv2, subprocess, numpy as np
     
@@ -92,11 +103,8 @@ def run_export(args):
     analyzer = AudioAnalyzer(args.audio_file, loop=False)
     analyzer.start_stream()
     
-    renderer = CV2Renderer(width=width, height=height, fps=fps)
-    renderer.init()
-    
     effect_manager = EffectManager(
-        analyzer=analyzer, renderer=renderer,
+        analyzer=analyzer,
         effect_type=args.effect, color_palette=args.color
     )
     effect_manager.init()
@@ -201,7 +209,6 @@ def run_export(args):
         raise
     finally:
         analyzer.cleanup()
-        renderer.cleanup()
         if process.poll() is None:
             process.terminate()
             try:
@@ -223,9 +230,14 @@ def run_export(args):
 
 def run_playback(args):
     from audio.analyzer import AudioAnalyzer
-    from renderer.pygame_renderer import PygameRenderer
     from effects.manager import EffectManager
     from quality_presets import get_preset, RESOLUTIONS
+    
+    try:
+        import pygame
+        _has_pygame = True
+    except ImportError:
+        _has_pygame = False
     
     preset = get_preset(args.preset)
     res = args.resolution or preset['resolution']
@@ -234,7 +246,14 @@ def run_playback(args):
     
     analyzer = AudioAnalyzer(args.audio_file, loop=True)
     analyzer.start_stream()
-    renderer = PygameRenderer(width, height, args.fullscreen, fps)
+    
+    if _has_pygame:
+        from renderer.pygame_renderer import PygameRenderer
+        renderer = PygameRenderer(width, height, args.fullscreen, fps)
+    else:
+        from renderer.array_renderer import ArrayRenderer
+        renderer = ArrayRenderer(width, height, fps)
+    
     renderer.init()
     effect_manager = EffectManager(analyzer, renderer, args.effect, args.color)
     effect_manager.init()
@@ -244,7 +263,14 @@ def run_playback(args):
             chunk = analyzer.get_next_chunk()
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.current_effect.update(audio_data, 1.0/fps)
-            effect_manager.current_effect.render(renderer.get_surface())
+            if _has_pygame:
+                effect_manager.current_effect.render(renderer.get_surface())
+            else:
+                arr = effect_manager.current_effect.render_to_array()
+                if arr is not None:
+                    frame = renderer.get_surface()
+                    h, w = min(arr.shape[0], frame.shape[0]), min(arr.shape[1], frame.shape[1])
+                    frame[:h, :w] = arr[:h, :w]
             renderer.present()
     finally:
         analyzer.cleanup()

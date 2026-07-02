@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Visualisateur Psychédélique
+Comment=Visualisateur audio psychédélique
+Exec=visualisateur
+Icon=org.timo.VisualisateurPsychédélique
+Type=Application
+Categories=AudioVideo;Player;Graphics;
+Terminal=false
