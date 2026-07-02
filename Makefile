@@ -1,4 +1,5 @@
 .PHONY: help build run run-cli run-menu run-no-sound run-fallback clean stop test test-audio test-effects test-quality rebuild
+.PHONY: standalone-all standalone-appimage standalone-portable standalone-docker standalone-windows standalone-clean
 
 # Nom de l'image
 IMAGE_NAME := psychedelic-visualizer
@@ -50,6 +51,13 @@ help:
 	@echo "Modes de lancement:"
 	@echo "  make run-no-sound      - Lancer la GUI sans son (NO_SOUND=1)"
 	@echo "  make run-fallback      - Lancer la GUI avec fallback automatique PulseAudio"
+	@echo ""
+	@echo "Standalone Builds:"
+	@echo "  make standalone-all    - Build TOUS les formats (AppImage + Portable)"
+	@echo "  make standalone-appimage - Build AppImage (recommandé pour distribution)"
+	@echo "  make standalone-portable - Build bundle portable (usage perso)"
+	@echo "  make standalone-docker  - Build image Docker"
+	@echo "  make standalone-clean   - Nettoyer les builds standalone"
 
 # Construire l'image
 build:
@@ -133,3 +141,32 @@ test-audio:
 	@echo "Test de l'analyse audio..."
 	@echo "(Nécessite les dépendances, lancez 'make test' dans le conteneur)"
 	@python3 -m pytest tests/test_audio.py -v 2>/dev/null || python3 -m unittest tests.test_audio -v
+
+# Builds standalone
+standalone-all: standalone-appimage standalone-portable
+	@echo "✓ Tous les builds standalone terminés"
+
+standalone-appimage:
+	@echo "Build AppImage Linux..."
+	chmod +x build_standalone.sh
+	./build_standalone.sh appimage
+
+standalone-portable:
+	@echo "Build bundle portable Linux..."
+	chmod +x build_standalone.sh
+	./build_standalone.sh portable
+
+standalone-docker:
+	@echo "Build image Docker pour dev..."
+	chmod +x build_standalone.sh
+	./build_standalone.sh docker
+
+standalone-windows:
+	@echo "Build Windows EXE..."
+	chmod +x build_standalone.sh
+	./build_standalone.sh windows
+
+standalone-clean:
+	@echo "Nettoyage des builds standalone..."
+	rm -rf dist_standalone/ Visualisateur.AppDir/ build_appimage/ build_venv/
+	@echo "✓ Builds standalone nettoyés"
