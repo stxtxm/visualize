@@ -34,14 +34,17 @@ class CircleEffect(BaseEffect):
         
         if audio_data:
             volume = audio_data.get('volume', 0)
+            energy = audio_data.get('energy', volume)
+            beat_phase = audio_data.get('beat_phase', 0.0)
             freq_bands = audio_data.get('frequency_bands', [])
             
-            # Calculer un facteur de pulsation
-            pulse_factor = 1.0 + volume * 0.5
+            # Calculer un facteur de pulsation plus expressif
+            pulse_factor = 1.0 + max(volume, energy) * 0.8
             
-            # Ajouter un effet de beat
+            # Ajouter un effet de beat et de phase
             if audio_data.get('beat', False):
-                pulse_factor += 0.5
+                pulse_factor += 0.6
+            pulse_factor += beat_phase * 0.25
             
             for i in range(self.num_circles):
                 # Chaque cercle réagit à une bande de fréquence différente
@@ -50,7 +53,7 @@ class CircleEffect(BaseEffect):
                 
                 # Calculer le rayon cible
                 base_radius = min(self.width, self.height) // 2 * (i + 1) / self.num_circles
-                self.target_radii[i] = base_radius * pulse_factor * (0.8 + band_factor * 0.4)
+                self.target_radii[i] = base_radius * pulse_factor * (0.75 + band_factor * 0.5)
                 
                 # Faire tourner les cercles
                 self.angles[i] += delta_time * (0.5 + band_factor * 2)

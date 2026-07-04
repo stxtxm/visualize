@@ -42,19 +42,23 @@ class SpectrumEffect(BaseEffect):
         
         if audio_data:
             volume = audio_data.get('volume', 0)
+            energy = audio_data.get('energy', volume)
             freq_bands = audio_data.get('frequency_bands', [])
             beat = audio_data.get('beat', False)
             beat_strength = audio_data.get('beat_strength', 0)
+            beat_phase = audio_data.get('beat_phase', 0.0)
             bpm = audio_data.get('bpm', 120)
+            spectral_centroid = audio_data.get('spectral_centroid', 0.5)
             
-            # Calculer la rotation en fonction du BPM
+            # Calculer la rotation en fonction du BPM et du centroid spectral
             bpm_normalized = (bpm - 60) / (180 - 60)
-            self.rotation_speed = bpm_normalized * 0.2 + volume * 0.1
+            self.rotation_speed = bpm_normalized * 0.35 + volume * 0.15 + spectral_centroid * 0.1
             
-            # Calculer la pulsation en fonction du volume et des beats
-            self.target_pulse = volume * 0.5
+            # Calculer la pulsation en fonction du volume, de l’énergie et du beat
+            self.target_pulse = max(volume, energy * 0.8)
             if beat:
-                self.target_pulse = min(self.target_pulse + beat_strength * 0.8, 1.0)
+                self.target_pulse = min(self.target_pulse + beat_strength * 0.9, 1.0)
+            self.target_pulse = min(self.target_pulse + beat_phase * 0.15, 1.0)
             
             # Mettre à jour les hauteurs des bandes
             for i in range(self.num_bands):
@@ -63,7 +67,7 @@ class SpectrumEffect(BaseEffect):
                 band_value = freq_bands[band_idx] if band_idx < len(freq_bands) else 0.0
                 
                 # Calculer la hauteur cible avec amplification
-                self.target_heights[i] = band_value * 150 * (1 + volume * 0.5)
+                self.target_heights[i] = band_value * 180 * (1 + energy * 0.65 + spectral_centroid * 0.2)
                 
                 # Lissage
                 self.band_heights[i] = (

@@ -42,9 +42,32 @@ class AudioPlayer:
         self._ffplay_process = None
         self._aplay_process = None
         self._temp_wav = None
-
+        # If running inside AppImage, ensure embedded SDL/Pulse libs are available
+        self._ensure_appimage_audio_paths()
         # Detect available backends
         self._detect_backend()
+
+    def _ensure_appimage_audio_paths(self):
+        """Ensure AppImage embedded audio libraries are available to the runtime."""
+        appdir = os.environ.get('APPDIR') or os.environ.get('SNAP') or None
+        if appdir is None:
+            # Determine if we are running from the local AppImage AppRun layout
+            here = os.path.dirname(os.path.abspath(__file__))
+            candidate = os.path.abspath(os.path.join(here, '..', '..', '..'))
+            if os.path.exists(os.path.join(candidate, 'AppRun')):
+                appdir = candidate
+        if appdir:
+            pygame_libs = os.path.join(appdir, 'usr', 'lib', 'python3.11', 'site-packages', 'pygame.libs')
+            pulseaudio_libs = os.path.join(appdir, 'usr', 'lib', 'pulseaudio')
+            path_parts = []
+            if os.path.isdir(pygame_libs):
+                path_parts.append(pygame_libs)
+            if os.path.isdir(pulseaudio_libs):
+                path_parts.append(pulseaudio_libs)
+            if path_parts:
+                existing = os.environ.get('LD_LIBRARY_PATH', '')
+                new_path = ':'.join(path_parts + [existing]) if existing else ':'.join(path_parts)
+                os.environ['LD_LIBRARY_PATH'] = new_path
 
     def _detect_backend(self):
         """Detect the best available audio playback backend."""
@@ -70,56 +93,18 @@ class AudioPlayer:
             mixer_ok = False
             try:
                 if not pygame.mixer.get_init():
-                    import multiprocessing
-                    # Pygame mixer init can hang on systems without audio devices (e.g. AppImage containers)
-                    init_process = multiprocessing.Process(
-                        target=pygame.mixer.init,
-                        args=(self.sample_rate, -16, self.channels),
-                        daemon=True
-                    )
-                    init_process.start()
-                    init_process.join(timeout=2)
-                    if init_process.is_alive():
-                        init_process.terminate()
-                        init_process.join(timeout=1)
-                        raise RuntimeError("Pygame mixer init timed out")
-                    if init_process.exitcode != 0:
-                        raise RuntimeError("Pygame mixer init failed")
+                    pygame.mixer.init(self.sample_rate, -16, self.channels)
                 mixer_ok = pygame.mixer.get_init()
-            except Exception:
+            except Exception as exc:
                 mixer_ok = False
+                warnings.warn(f"Pygame mixer unavailable: {exc}")
 
             if mixer_ok:
                 backends.append(('pygame', pygame))
-            else:
-                # Even if mixer fails, pygame can still be used for other things
-                pass
         except ImportError:
             pass
 
-        # 4. ffplay (via subprocess)
-        try:
-            result = subprocess.run(
-                ['which', 'ffplay'],
-                capture_output=True, text=True, timeout=2
-            )
-            if result.returncode == 0:
-                backends.append(('ffplay', None))
-        except Exception:
-            pass
-
-        # 5. aplay (via subprocess, ALSA)
-        try:
-            result = subprocess.run(
-                ['which', 'aplay'],
-                capture_output=True, text=True, timeout=2
-            )
-            if result.returncode == 0:
-                backends.append(('aplay', None))
-        except Exception:
-            pass
-
-        # 6. paplay (PulseAudio)
+        # 4. paplay (PulseAudio)
         try:
             result = subprocess.run(
                 ['which', 'paplay'],
@@ -130,7 +115,7 @@ class AudioPlayer:
         except Exception:
             pass
 
-        # 7. pw-play (PipeWire)
+        # 5. pw-play (PipeWire)
         try:
             result = subprocess.run(
                 ['which', 'pw-play'],
@@ -141,10 +126,33 @@ class AudioPlayer:
         except Exception:
             pass
 
+        # 6. aplay (via subprocess, ALSA)
+        try:
+            result = subprocess.run(
+                ['which', 'aplay'],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                backends.append(('aplay', None))
+        except Exception:
+            pass
+
+        # 7. ffplay (via subprocess)
+        try:
+            result = subprocess.run(
+                ['which', 'ffplay'],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                backends.append(('ffplay', None))
+        except Exception:
+            pass
+
         if backends:
             self._backend_name, self._backend = backends[0]
             try:
                 from ui.log_display import log_message
+                log_message(f"AudioPlayer: detected backends {[name for name, _ in backends]}")
                 log_message(f"AudioPlayer: Using backend '{self._backend_name}'")
             except Exception:
                 pass
@@ -370,14 +378,12 @@ class AudioPlayer:
                     )
                 elif self._backend_name == 'paplay':
                     subprocess.run(
-                        ['paplay', '--raw', f'--rate={self.sample_rate}',
-                         f'--channels={self.channels}', '--format=s16le', path],
+                        ['paplay', path],
                         capture_output=True, timeout=5
                     )
                 elif self._backend_name == 'pw-play':
                     subprocess.run(
-                        ['pw-play', '--rate=' + str(self.sample_rate),
-                         '--channels=' + str(self.channels), '--format=s16', path],
+                        ['pw-play', path],
                         capture_output=True, timeout=5
                     )
             except subprocess.TimeoutExpired:

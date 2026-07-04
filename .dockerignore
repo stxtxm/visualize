@@ -1,0 +1,10 @@
+output
+Visualisateur.AppDir
+dist_standalone
+appimagetool-x86_64.AppImage
+Dockerfile.appimage
+.git
+.pytest_cache
+*.log
+*.swp
+__pycache__
