@@ -85,6 +85,14 @@ class TestBaseEffect(unittest.TestCase):
             effect.render_to_array()
 
 
+class TestClassicEffect(unittest.TestCase):
+    """Test classic effect."""
+
+    def test_classic_effect_can_be_imported(self):
+        from effects.classic import ClassicEffect
+        self.assertTrue(callable(ClassicEffect))
+
+
 class TestBarEffect(unittest.TestCase):
     """Test bar effect."""
     

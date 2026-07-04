@@ -6,6 +6,8 @@ import math
 from collections import deque
 import os
 import sys
+import subprocess
+import tempfile
 
 # Importer numpy conditionnellement - vérifier NO_SOUND AVANT l'import
 no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
@@ -25,6 +27,32 @@ else:
 
 
 class AudioAnalyzer:
+    freq_bands = [
+        (20, 150),
+        (150, 500),
+        (500, 2000),
+        (2000, 5000),
+        (5000, 20000),
+    ]
+
+    analysis_bands = [
+        (20, 60),
+        (60, 120),
+        (120, 200),
+        (200, 350),
+        (350, 500),
+        (500, 1000),
+        (1000, 2000),
+        (2000, 3000),
+        (3000, 4000),
+        (4000, 5000),
+        (5000, 6000),
+        (6000, 7000),
+        (7000, 8000),
+        (8000, 10000),
+        (10000, 12000),
+        (12000, 20000),
+    ]
     """
     Analyse un flux audio et extrait les caractéristiques pour la visualisation.
     
@@ -50,6 +78,10 @@ class AudioAnalyzer:
         self.current_chunk = 0
         self.total_chunks = 0
         self.use_simulated = False
+        self.freq_bands = list(self.__class__.freq_bands)
+        self.analysis_bands = list(self.__class__.analysis_bands)
+        self.beat_phase = 0.0
+        self.last_beat_time = 0.0
         
         # Vérifier si NO_SOUND est activé ou si numpy n'est pas disponible
         import os
@@ -68,16 +100,76 @@ class AudioAnalyzer:
         else:
             try:
                 from pydub import AudioSegment
+                from shutil import which
+
+                ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
+                ffprobe_path = os.environ.get('FFPROBE_PATH') or which('ffprobe')
+                if ffmpeg_path:
+                    AudioSegment.converter = ffmpeg_path
+                if ffprobe_path:
+                    AudioSegment.ffprobe = ffprobe_path
+
                 self.audio = AudioSegment.from_file(audio_file)
                 self.audio = self.audio.set_frame_rate(sample_rate)
                 self.audio = self.audio.set_channels(1)  # Mono pour simplification
                 self.audio_data = np.array(self.audio.get_array_of_samples())
                 self.total_chunks = len(self.audio_data) // chunk_size
             except Exception as e:
-                # Si pydub échoue, on génère des données simulées
-                import warnings
-                warnings.warn(f"Erreur pydub: {e}. Utilisation de données audio simulées.")
-                self._init_simulated_data(sample_rate, chunk_size)
+                load_error = e
+                self.audio_data = None
+                self.audio = None
+                from shutil import which
+                ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
+
+                # Fallback using ffmpeg conversion to WAV when pydub cannot parse
+                if ffmpeg_path:
+                    try:
+                        import wave
+                        import struct
+                        tmp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                        tmp_file.close()
+                        ffmpeg_cmd = [
+                            ffmpeg_path,
+                            '-y',
+                            '-i', audio_file,
+                            '-ar', str(sample_rate),
+                            '-ac', '1',
+                            '-f', 'wav',
+                            tmp_file.name,
+                        ]
+                        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
+                        if proc.returncode == 0 and os.path.exists(tmp_file.name):
+                            with wave.open(tmp_file.name, 'rb') as wav_file:
+                                frames = wav_file.readframes(wav_file.getnframes())
+                                self.audio_data = np.array([
+                                    struct.unpack('<h', frames[i:i + 2])[0]
+                                    for i in range(0, len(frames) - (len(frames) % 2), 2)
+                                ], dtype=np.int16)
+                                self.total_chunks = len(self.audio_data) // chunk_size
+                        os.unlink(tmp_file.name)
+                    except Exception:
+                        self.audio_data = None
+
+                if self.audio_data is None and str(audio_file).lower().endswith('.wav'):
+                    try:
+                        import wave
+                        import struct
+                        with wave.open(audio_file, 'rb') as wav_file:
+                            frames = wav_file.readframes(wav_file.getnframes())
+                            self.audio_data = np.array([
+                                struct.unpack('<h', frames[i:i + 2])[0]
+                                for i in range(0, len(frames) - (len(frames) % 2), 2)
+                            ], dtype=np.int16)
+                            self.total_chunks = len(self.audio_data) // chunk_size
+                    except Exception:
+                        self.audio_data = None
+
+                if self.audio_data is None:
+                    import warnings
+                    warnings.warn(
+                        f"Erreur pydub: {load_error}. Fallback vers données audio simulées."
+                    )
+                    self._init_simulated_data(sample_rate, chunk_size)
         
         # Configuration de l'analyse
         if HAS_NUMPY:
@@ -86,30 +178,10 @@ class AudioAnalyzer:
             # Alternative sans numpy pour la fenêtre de Hann
             self.fft_window = [0.5 * (1 - math.cos(2 * math.pi * i / (chunk_size - 1))) for i in range(chunk_size)]
         
-        # 16 bandes de fréquence pour une analyse plus fine
-        self.freq_bands = [
-            (20, 60),     # Sub-bass
-            (60, 120),    # Bass
-            (120, 200),   # Low bass
-            (200, 350),   # Mid bass
-            (350, 500),   # Upper bass
-            (500, 1000),  # Lower mids
-            (1000, 2000), # Mids
-            (2000, 3000), # Upper mids
-            (3000, 4000), # Lower treble
-            (4000, 5000), # Treble
-            (5000, 6000), # Upper treble
-            (6000, 7000), # High treble
-            (7000, 8000), # Very high treble
-            (8000, 10000),# Ultra treble
-            (10000, 12000),
-            (12000, 20000)
-        ]
-        
         # Indices des bandes pour bass, mids, treble
-        self.bass_band_indices = [0, 1, 2, 3, 4]  # 20-500 Hz
-        self.mid_band_indices = [5, 6, 7]       # 500-3000 Hz
-        self.treble_band_indices = [8, 9, 10, 11, 12, 13, 14, 15]  # 3000-20000 Hz
+        self.bass_band_indices = [0, 1]  # 20-500 Hz
+        self.mid_band_indices = [2, 3]   # 500-5000 Hz
+        self.treble_band_indices = [4]  # 5000-20000 Hz
         
         # Historique pour le lissage
         self.volume_history = deque(maxlen=10)
@@ -238,9 +310,10 @@ class AudioAnalyzer:
         # Appliquer la fenêtre de Hann
         windowed = chunk * self.fft_window[:len(chunk)]
         
-        # Calculer le volume (RMS)
+        # Calculer le volume (RMS) plus propre et plus dynamique
         rms = np.sqrt(np.mean(windowed ** 2))
-        volume = min(rms * 3, 1.0)  # Amplifier et limiter à 1
+        energy = float(min(rms * 2.4, 1.0))
+        volume = float(min(rms * 3.2, 1.0))
         
         # Lissage du volume
         self.volume_history.append(volume)
@@ -249,15 +322,23 @@ class AudioAnalyzer:
         # Calculer le spectre FFT
         fft_result = np.fft.rfft(windowed * self.fft_window[:len(windowed)])
         fft_magnitude = np.abs(fft_result)
+        freqs = np.fft.rfftfreq(len(windowed), 1.0 / self.sample_rate)
         
         # Normaliser le spectre
         if len(fft_magnitude) > 0:
             fft_magnitude = fft_magnitude / (np.max(fft_magnitude) + 1e-10)
         
-        # Calculer les bandes de fréquence (16 bandes)
+        # Calculer le centroid spectral et une énergie spectrale plus expressive
+        spectral_energy = float(np.mean(fft_magnitude[1:]))
+        if np.sum(fft_magnitude) > 0:
+            spectral_centroid = float(np.sum(freqs * fft_magnitude) / (np.sum(fft_magnitude) + 1e-10))
+            spectral_centroid = min(max(spectral_centroid / (self.sample_rate / 2.0), 0.0), 1.0)
+        else:
+            spectral_centroid = 0.0
+        
+        # Calculer les bandes de fréquence (5 bandes de sortie)
         frequency_bands = []
         for low, high in self.freq_bands:
-            # Convertir les fréquences en indices
             low_idx = int(low * self.chunk_size / self.sample_rate)
             high_idx = min(int(high * self.chunk_size / self.sample_rate), len(fft_magnitude))
             
@@ -266,8 +347,7 @@ class AudioAnalyzer:
                 continue
             
             band_magnitude = np.mean(fft_magnitude[low_idx:high_idx])
-            # Amplifier pour une meilleure dynamique
-            frequency_bands.append(min(band_magnitude * 8, 1.0))
+            frequency_bands.append(min(band_magnitude * 8.0 + spectral_energy * 0.3, 1.0))
         
         # Calculer les niveaux bass, mids, treble
         bass_level = np.mean([frequency_bands[i] for i in self.bass_band_indices]) if self.bass_band_indices else 0.0
@@ -286,6 +366,17 @@ class AudioAnalyzer:
         
         # Détection de BPM et beats avec le détecteur dédié
         bpm_result = self.bpm_detector.detect(chunk)
+        current_time = self.current_chunk * (self.chunk_size / self.sample_rate)
+        if bpm_result['is_beat']:
+            self.last_beat_time = current_time
+            self.beat_phase = 0.0
+        else:
+            beat_interval = 60.0 / max(bpm_result['bpm'], 40.0)
+            if beat_interval > 0:
+                time_since_last = max(0.0, current_time - self.last_beat_time)
+                self.beat_phase = min(1.0, time_since_last / beat_interval)
+            else:
+                self.beat_phase = 0.0
         
         # Stocker l'historique des fréquences pour le lissage
         self.freq_history.append(frequency_bands)
@@ -298,6 +389,9 @@ class AudioAnalyzer:
             'spectrum': [float(x) for x in fft_magnitude],
             'beat': bpm_result['is_beat'],
             'beat_strength': bpm_result['beat_strength'],
+            'beat_phase': float(self.beat_phase),
+            'energy': float(energy),
+            'spectral_centroid': float(spectral_centroid),
             'bpm': bpm_result['bpm'],
             'bpm_confidence': bpm_result['bpm_confidence'],
             'bass': float(smoothed_bass),
@@ -328,13 +422,13 @@ class AudioAnalyzer:
         self.volume_history.append(volume)
         smoothed_volume = sum(self.volume_history) / len(self.volume_history) if self.volume_history else volume
         
-        # Générer des bandes de fréquence simulées
+        # Générer des bandes de fréquence simulées plus expressives
         import time
         iteration = self.current_chunk + (int(time.time() * 1000) % 1000)
         frequency_bands = []
         for i, (low, high) in enumerate(self.freq_bands):
-            # Simuler des variations basées sur l'itération et la bande
-            variation = 0.5 + 0.3 * math.sin(iteration * 0.1 + i * 0.5)
+            variation = 0.35 + 0.4 * math.sin(iteration * 0.12 + i * 0.45)
+            variation += 0.2 * math.sin(iteration * 0.04 + i * 0.18)
             frequency_bands.append(min(max(variation, 0.0), 1.0))
         
         # Calculer les niveaux bass, mids, treble
@@ -367,10 +461,22 @@ class AudioAnalyzer:
         else:
             smoothed_bands = frequency_bands
         
-        # Générer un spectre simulé
+        # Générer un spectre simulé plus riche
         spectrum = [0.0] * (self.chunk_size // 2)
         for i in range(len(spectrum)):
             spectrum[i] = random.uniform(0.1, 0.8) * math.exp(-i / (self.chunk_size / 4))
+        
+        beat_phase = 0.0
+        if bpm_result['is_beat']:
+            self.last_beat_time = self.current_chunk * (self.chunk_size / self.sample_rate)
+            self.beat_phase = 0.0
+        else:
+            beat_interval = 60.0 / max(bpm_result['bpm'], 40.0)
+            if beat_interval > 0:
+                time_since_last = max(0.0, self.current_chunk * (self.chunk_size / self.sample_rate) - self.last_beat_time)
+                self.beat_phase = min(1.0, time_since_last / beat_interval)
+            else:
+                self.beat_phase = 0.0
         
         return {
             'volume': float(volume),
@@ -379,6 +485,9 @@ class AudioAnalyzer:
             'spectrum': spectrum,
             'beat': bpm_result['is_beat'],
             'beat_strength': bpm_result['beat_strength'],
+            'beat_phase': float(self.beat_phase),
+            'energy': float(volume),
+            'spectral_centroid': float(0.45 + 0.1 * math.sin(self.current_chunk * 0.25)),
             'bpm': bpm_result['bpm'],
             'bpm_confidence': bpm_result['bpm_confidence'],
             'bass': float(smoothed_bass),
@@ -390,9 +499,19 @@ class AudioAnalyzer:
         """Retourne un résultat par défaut."""
         return {
             'volume': 0.0,
+            'volume_smooth': 0.0,
             'frequency_bands': [0.0] * len(self.freq_bands),
             'spectrum': [],
-            'beat': False
+            'beat': False,
+            'beat_strength': 0.0,
+            'beat_phase': 0.0,
+            'energy': 0.0,
+            'spectral_centroid': 0.0,
+            'bpm': 120.0,
+            'bpm_confidence': 0.0,
+            'bass': 0.0,
+            'mids': 0.0,
+            'treble': 0.0,
         }
     
     def cleanup(self):

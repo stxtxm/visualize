@@ -3,7 +3,9 @@ FROM python:3.11-slim
 # Installer les dépendances système pour les libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsdl2-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0 \
-    portaudio19-dev \
+    portaudio19-dev ffmpeg \
+    libpulse0 libdc1394-25 libraw1394-11 libiec61883-0 \
+    pulseaudio-utils pipewire-bin alsa-utils \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     libx11-6 libxcb-glx0 \
     && rm -rf /var/lib/apt/lists/*
@@ -27,6 +29,14 @@ RUN cp -r /usr/local/lib/python3.11/site-packages /output/usr/lib/python3.11/
 # Copier l'application
 RUN mkdir -p /output/usr/app && cp -r /app/* /output/usr/app/
 
+# Copier FFmpeg et ses utilitaires
+RUN mkdir -p /output/usr/bin && \
+    for bin in ffmpeg ffprobe paplay pw-play aplay which; do \
+        if [ -x "/usr/bin/$bin" ]; then \
+            cp -nL "/usr/bin/$bin" "/output/usr/bin/$bin"; \
+        fi; \
+    done
+
 # Copier les bibliothèques système SDL2 et audio
 RUN mkdir -p /output/usr/lib && \
     for lib in \
@@ -36,6 +46,7 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libSDL2_ttf-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libportaudio.so.* \
         /usr/lib/x86_64-linux-gnu/libasound.so.* \
+        /usr/lib/x86_64-linux-gnu/libpulsedsp.so* \
         /usr/lib/x86_64-linux-gnu/libpulse.so.* \
         /usr/lib/x86_64-linux-gnu/libpulse-simple.so.* \
         /usr/lib/x86_64-linux-gnu/libX11.so.* \
@@ -47,4 +58,31 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
+    done
+
+# Copier la bibliothèque FFmpeg runtime requise par ffmpeg/ffprobe
+RUN mkdir -p /output/usr/lib && \
+    for lib in \
+        /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
+        /usr/lib/x86_64-linux-gnu/libavdevice.so.* \
+        /usr/lib/x86_64-linux-gnu/libavfilter.so.* \
+        /usr/lib/x86_64-linux-gnu/libavformat.so.* \
+        /usr/lib/x86_64-linux-gnu/libavutil.so.* \
+        /usr/lib/x86_64-linux-gnu/libpostproc.so.* \
+        /usr/lib/x86_64-linux-gnu/libswresample.so.* \
+        /usr/lib/x86_64-linux-gnu/libswscale.so.* \
+        /usr/lib/x86_64-linux-gnu/libdc1394.so.* \
+        /usr/lib/x86_64-linux-gnu/libraw1394.so.* \
+        /usr/lib/x86_64-linux-gnu/libiec61883.so.* \
+        ; do \
+        cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
+    done
+
+# Ajouter aussi les bibliothèques PulseAudio depuis /usr/lib64/pulseaudio ou /usr/lib/x86_64-linux-gnu/pulseaudio
+RUN mkdir -p /output/usr/lib/pulseaudio && \
+    for lib in \
+        /usr/lib64/pulseaudio/libpulsecommon*.so* /usr/lib64/pulseaudio/libpulsedsp.so* /usr/lib64/pulseaudio/libpulse-simple*.so* /usr/lib64/pulseaudio/libpulse.so* \
+        /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsedsp.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulse-simple*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulse.so* \
+        /usr/lib/x86_64-linux-gnu/libpulse-simple.so* /usr/lib/x86_64-linux-gnu/libpulse.so* ; do \
+        cp -nL "$lib" /output/usr/lib/pulseaudio/ 2>/dev/null || true; \
     done

@@ -28,8 +28,8 @@ class MainWindow:
         self.is_playing = tk.BooleanVar(value=False)
         self._is_playing_event = threading.Event()  # Pour une synchronisation thread-safe
         self.audio_file = tk.StringVar(value="")
-        self.selected_effect = tk.StringVar(value="random")
-        self.selected_color = tk.StringVar(value="psychedelic")
+        self.selected_effect = tk.StringVar(value="classic")
+        self.selected_color = tk.StringVar(value="winamp_classic")
         self.resolution = tk.StringVar(value="1080p")
         self.fps = tk.IntVar(value=60)
         self.selected_preset = tk.StringVar(value="normal")
@@ -96,7 +96,7 @@ class MainWindow:
         self.effect_combo = ttk.Combobox(
             control_frame,
             textvariable=self.selected_effect,
-            values=['random', 'bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma'],
+            values=['classic', 'random', 'bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma'],
             state='readonly',
             width=12
         )

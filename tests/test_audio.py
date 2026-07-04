@@ -91,7 +91,25 @@ class TestAudioLoading(unittest.TestCase):
 
 class TestAudioAnalysis(unittest.TestCase):
     """Test audio analysis functions."""
-    
+
+    def test_analyze_chunk_exposes_enhanced_audio_metrics(self):
+        """Test that richer audio metrics are returned for better visual sync."""
+        from audio.analyzer import AudioAnalyzer
+
+        analyzer = AudioAnalyzer('/tmp/placeholder.wav', chunk_size=1024, sample_rate=44100, loop=False)
+        chunk = np.zeros(1024, dtype=np.int16)
+        chunk[0:64] = 1000
+
+        result = analyzer.analyze_chunk(chunk)
+
+        self.assertIn('energy', result)
+        self.assertIn('spectral_centroid', result)
+        self.assertIn('beat_phase', result)
+        self.assertGreaterEqual(result['energy'], 0.0)
+        self.assertLessEqual(result['energy'], 1.0)
+        self.assertGreaterEqual(result['spectral_centroid'], 0.0)
+        self.assertLessEqual(result['spectral_centroid'], 1.0)
+
     def test_analyze_chunk_with_none(self):
         """Test analyze_chunk with None input."""
         from audio.analyzer import AudioAnalyzer

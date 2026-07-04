@@ -16,6 +16,7 @@ EFFECT_MAP = {
     'wave': 'WaveEffect',
     'spectrum': 'SpectrumEffect',
     'plasma': 'PlasmaEffect',
+    'classic': 'ClassicEffect',
 }
 
 

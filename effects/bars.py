@@ -62,13 +62,17 @@ class BarEffect(BaseEffect):
             spectrum = audio_data['spectrum']
             spectrum_len = len(spectrum)
             volume = audio_data.get('volume', 0)
+            energy = audio_data.get('energy', volume)
             beat = audio_data.get('beat', False)
             beat_strength = audio_data.get('beat_strength', 0)
+            beat_phase = audio_data.get('beat_phase', 0.0)
+            spectral_centroid = audio_data.get('spectral_centroid', 0.5)
             
-            # Calculer la pulsation globale
-            self.target_pulse = volume * 0.3
+            # Calculer la pulsation globale plus marquée
+            self.target_pulse = max(volume * 0.35, energy * 0.45)
             if beat:
-                self.target_pulse = min(self.target_pulse + beat_strength * 0.5, 1.0)
+                self.target_pulse = min(self.target_pulse + beat_strength * 0.6, 1.0)
+            self.target_pulse = min(self.target_pulse + beat_phase * 0.2 + spectral_centroid * 0.1, 1.0)
             
             for i in range(self.num_bars):
                 # Calculer l'index dans le spectre
@@ -76,8 +80,8 @@ class BarEffect(BaseEffect):
                 if spec_idx < spectrum_len:
                     # Amplifier et normaliser la hauteur
                     # Les basses (premières barres) ont plus d'amplitude
-                    bass_boost = 1.0 + (1.0 - i / self.num_bars) * 0.8
-                    self.target_heights[i] = spectrum[spec_idx] * self.height * 1.8 * bass_boost
+                    bass_boost = 1.0 + (1.0 - i / self.num_bars) * 0.9
+                    self.target_heights[i] = spectrum[spec_idx] * self.height * 2.0 * bass_boost * (1.0 + energy * 0.35)
                 else:
                     self.target_heights[i] = 0
                 
