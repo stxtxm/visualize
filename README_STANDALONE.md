@@ -96,11 +96,12 @@ chmod +x dist_standalone/Visualisateur_Psychedelic.AppImage
 
 L'AppImage détecte automatiquement le système audio au lancement :
 
-| Système audio | Comportement |
-|---------------|-------------|
-| **PulseAudio** | Utilisé par défaut (meilleure latence) |
-| **ALSA** | Fallback automatique si /dev/snd existe |
-| **Aucun** | Mode dummy silencieux (NO_SOUND=1 activé) |
+ | Système audio | Comportement |
+ |---------------|-------------|
+ | **PipeWire** | Utilise ffplay comme fallback (compatible avec Fedora 44) |
+ | **PulseAudio** | Utilisé par défaut (meilleure latence) |
+ | **ALSA** | Fallback automatique si /dev/snd existe |
+ | **Aucun** | Mode dummy silencieux (NO_SOUND=1 activé) |
 
 Pour forcer un mode :
 ```bash
@@ -176,12 +177,32 @@ python3.11 --version
 # Vérifier PulseAudio
 pulseaudio --check && echo "OK" || echo "PulseAudio non démarré"
 
+# Fedora 44 (PipeWire) - installer ffplay si absent
+sudo dnf install ffmpeg
+
 # Forcer ALSA
 SDL_AUDIODRIVER=alsa ./Visualisateur_Psychedelic.AppImage
 
 # Mode sans son
 NO_SOUND=1 ./Visualisateur_Psychedelic.AppImage
 ```
+
+### 🔧 Fedora 44 / PipeWire (dépannage spécifique)
+
+Sur Fedora 44 qui utilise **PipeWire** par défaut au lieu de PulseAudio, l'AppImage utilise ffplay comme backend audio pour éviter les conflits de bibliothèques.
+
+```bash
+# Vérifier que ffplay est installé
+which ffplay || sudo dnf install ffmpeg
+
+# Vérifier PipeWire
+pgrep -x "pipewire" && echo "PipeWire détecté" || echo "PulseAudio ou autre"
+
+# Relancer l'AppImage (ffplay sera utilisé automatiquement)
+./Visualisateur_Psychedelic.AppImage
+```
+
+Pour vérifier les logs d'erreur audio, cliquez sur le bouton "📝 Logs" dans l'interface.
 
 ### ❌ Pas de rendu graphique
 ```bash

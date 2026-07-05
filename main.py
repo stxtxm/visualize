@@ -16,17 +16,23 @@ def has_gui():
         return False
 
 
+def has_pygame():
+    try:
+        import pygame
+        return True
+    except:
+        return False
+
+
 def run_gui():
     try:
         # Initialiser pygame DANS LE THREAD PRINCIPAL avant toute GUI
-        # Ceci permet à pygame.Surface() et pygame.draw.* de fonctionner
-        # depuis n'importe quel thread sans ouvrir de fenêtre
         try:
             import pygame
             pygame.display.init()
             pygame.time.init()
         except ImportError:
-            pass  # pas de pygame = pas de rendu Pygame
+            pass
         except Exception:
             pass
         
@@ -41,9 +47,145 @@ def run_gui():
         app = MainWindow(root)
         root.protocol("WM_DELETE_WINDOW", lambda: app._stop_playback() or root.quit())
         root.mainloop()
+    except ImportError as e:
+        if 'tkinter' in str(e) and has_pygame():
+            _run_pygame_fallback()
+        else:
+            print(f"GUI Error: {e}")
+            print("Installez python3-tkinter ou utilisez --no-gui avec un fichier audio.")
+            sys.exit(1)
     except Exception as e:
         print(f"GUI Error: {e}")
         sys.exit(1)
+
+
+def _run_pygame_fallback():
+    """
+    Fallback quand tkinter n'est pas disponible.
+    Ouvre une fenêtre Pygame plein écran avec lecture immédiate.
+    L'utilisateur peut glisser-déposer un fichier audio ou utiliser le CLI.
+    """
+    import pygame
+    from audio.analyzer import AudioAnalyzer
+    from effects.manager import EffectManager
+    from quality_presets import get_preset, RESOLUTIONS
+    
+    pygame.display.init()
+    pygame.time.init()
+    
+    # Plein écran
+    info = pygame.display.Info()
+    width, height = info.current_w, info.current_h
+    
+    # Résolution réduite pour les performances si l'écran est trop grand
+    if width > 1920:
+        width = 1920
+        height = 1080
+    
+    screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN | pygame.DOUBLEBUF)
+    pygame.display.set_caption("Visualisateur Psychédélique")
+    
+    preset = get_preset('normal')
+    fps = 60
+    clock = pygame.time.Clock()
+    
+    # Police pour les messages
+    try:
+        font = pygame.font.Font(None, 36)
+        small_font = pygame.font.Font(None, 24)
+    except Exception:
+        font = None
+        small_font = None
+    
+    analyzer = None
+    audio_player = None
+    effect_manager = None
+    audio_file = None
+    is_playing = False
+    
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_SPACE:
+                    if is_playing:
+                        if analyzer:
+                            analyzer.cleanup()
+                        if audio_player:
+                            audio_player.cleanup()
+                        if effect_manager:
+                            effect_manager.cleanup()
+                        is_playing = False
+                    else:
+                        pass
+            elif event.type == pygame.DROPFILE:
+                # Glisser-déposer un fichier audio
+                try:
+                    if analyzer:
+                        analyzer.cleanup()
+                    if audio_player:
+                        audio_player.cleanup()
+                    
+                    analyzer = AudioAnalyzer(event.file)
+                    analyzer.start_stream()
+                    
+                    from audio.player import AudioPlayer
+                    audio_player = AudioPlayer(
+                        sample_rate=analyzer.sample_rate,
+                        chunk_size=analyzer.chunk_size
+                    )
+                    audio_player.start()
+                    
+                    effect_manager = EffectManager(
+                        analyzer=analyzer,
+                        renderer=None,
+                        effect_type='random',
+                        color_palette='psychedelic'
+                    )
+                    effect_manager.init()
+                    is_playing = True
+                    audio_file = event.file
+                except Exception as e:
+                    print(f"Erreur chargement {event.file}: {e}")
+        
+        # Rendu
+        screen.fill((0, 0, 0))
+        
+        if is_playing and analyzer and effect_manager and audio_player:
+            chunk = analyzer.get_next_chunk()
+            if chunk is not None:
+                audio_data = analyzer.analyze_chunk(chunk)
+                audio_player.play_chunk(chunk)
+                effect_manager.current_effect.update(audio_data, clock.get_time() / 1000.0)
+                effect_manager.current_effect.render(screen)
+        
+        # Infos à l'écran
+        if font and small_font:
+            if not is_playing:
+                text = font.render("Glissez un fichier audio ici", True, (255, 255, 255))
+                text_rect = text.get_rect(center=(width // 2, height // 2))
+                screen.blit(text, text_rect)
+                
+                hint = small_font.render("ou lancez: python3 main.py chemin/vers/audio.mp3", True, (200, 200, 200))
+                hint_rect = hint.get_rect(center=(width // 2, height // 2 + 40))
+                screen.blit(hint, hint_rect)
+            else:
+                # Afficher le nom du fichier
+                name = small_font.render(os.path.basename(audio_file or ""), True, (200, 200, 200))
+                screen.blit(name, (10, 10))
+        
+        pygame.display.flip()
+        clock.tick(fps)
+    
+    if analyzer:
+        analyzer.cleanup()
+    if effect_manager:
+        effect_manager.cleanup()
+    pygame.quit()
 
 
 def run_cli():
@@ -71,10 +213,18 @@ def run_cli():
         run_gui()
         return
     
+    # Fallback: pas de tkinter mais pygame dispo → lancer le mode plein écran
+    if len(sys.argv) == 1 and not has_gui() and has_pygame():
+        print("tkinter non disponible - lancement en mode Pygame plein écran")
+        print("Glissez un fichier audio dans la fenêtre ou utilisez: python3 main.py <fichier>")
+        _run_pygame_fallback()
+        return
+    
     # Need audio file
     if not args.audio_file:
-        run_gui()
-        return
+        print("Utilisation: python3 main.py <fichier_audio>")
+        print("  ou installez python3-tkinter pour la GUI")
+        sys.exit(1)
     
     if not os.path.exists(args.audio_file):
         print(f"Error: {args.audio_file} not found")
@@ -115,9 +265,6 @@ def run_export(args):
     
     ffmpeg_cmd = build_ffmpeg_cmd(width, height, fps, args.audio_file, args.export, args.preset)
     
-    # Débogage : afficher la commande FFmpeg
-    print(f"  FFmpeg cmd: {' '.join(ffmpeg_cmd)}")
-    
     # Vérifier que le fichier audio existe
     if not os.path.exists(args.audio_file):
         raise FileNotFoundError(f"Audio file not found: {args.audio_file}")
@@ -132,7 +279,7 @@ def run_export(args):
         stdin=subprocess.PIPE, 
         stdout=subprocess.PIPE, 
         stderr=subprocess.PIPE,
-        bufsize=0  # Désactiver le buffering pour éviter les blocages
+        bufsize=0
     )
     
     frames_written = 0
@@ -142,7 +289,6 @@ def run_export(args):
         for frame_count in range(total_frames):
             chunk = analyzer.get_next_chunk()
             if chunk is None:
-                # Fin du fichier audio, on s'arrête
                 break
                 
             audio_data = analyzer.analyze_chunk(chunk)
@@ -150,51 +296,38 @@ def run_export(args):
             frame = effect_manager.current_effect.render_to_array()
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             
-            # Vérifier si FFmpeg est toujours vivant avant d'écrire
             if process.poll() is not None:
-                # FFmpeg a terminé prématurément (probablement à cause de -shortest)
-                # C'est OK, on peut s'arrêter
                 break
             
             try:
                 process.stdin.write(frame.tobytes())
                 frames_written += 1
-            except (BrokenPipeError, ConnectionResetError, OSError) as e:
-                # FFmpeg a fermé le pipe - c'est OK, il a probablement fini
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 break
             
-            # Vérifier périodiquement que FFmpeg est toujours vivant
             if frame_count % 100 == 0:
                 if process.poll() is not None:
-                    # FFmpeg a terminé, c'est probablement OK
                     break
                 progress = (frame_count / total_frames) * 100
                 print(f"  Progress: {progress:.0f}%")
         
-        # Fermer stdin proprement pour signaler à FFmpeg que c'est fini
         try:
             process.stdin.close()
         except (BrokenPipeError, ConnectionResetError, OSError):
-            # Déjà fermé, ce n'est pas grave
             pass
         
-        # Attendre la fin de FFmpeg sans timeout
         try:
             stdout, stderr = process.communicate()
         except subprocess.TimeoutExpired:
             process.kill()
             stdout, stderr = process.communicate()
             ffmpeg_error = f"FFmpeg timeout after {frames_written} frames"
-        except (ValueError, OSError) as e:
-            # Le pipe a été fermé, c'est OK
+        except (ValueError, OSError):
             stdout, stderr = b'', b''
         
-        # FFmpeg peut retourner un code non-nul mais avoir créé la vidéo
-        # Vérifier si la sortie existe et a une taille raisonnable
         if process.returncode != 0:
             error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ''
             if os.path.exists(args.export) and os.path.getsize(args.export) > 0:
-                # FFmpeg a peut-être fini normalement malgré un code d'erreur
                 print(f"✓ Export completed: {args.export}")
                 return
             else:
@@ -216,10 +349,9 @@ def run_export(args):
             except:
                 process.kill()
     
-    # Vérifier que la sortie existe et a une taille raisonnable
     if os.path.exists(args.export):
         file_size = os.path.getsize(args.export)
-        if file_size < 1024:  # Moins de 1Ko, probablement un échec
+        if file_size < 1024:
             if os.path.exists(args.export):
                 os.remove(args.export)
             raise RuntimeError(f"Output file too small ({file_size} bytes), export likely failed")

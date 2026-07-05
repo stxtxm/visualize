@@ -7,6 +7,7 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 import os
 import sys
+import time
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -26,9 +27,9 @@ class MainWindow:
         """
         self.root = root
         self.is_playing = tk.BooleanVar(value=False)
-        self._is_playing_event = threading.Event()  # Pour une synchronisation thread-safe
+        self._is_playing_event = threading.Event()
         self.audio_file = tk.StringVar(value="")
-        self.selected_effect = tk.StringVar(value="classic")
+        self.selected_effect = tk.StringVar(value="Neon Equalizer")
         self.selected_color = tk.StringVar(value="winamp_classic")
         self.resolution = tk.StringVar(value="1080p")
         self.fps = tk.IntVar(value=60)
@@ -40,142 +41,162 @@ class MainWindow:
         self.effect_manager = None
         self.recorder = None
         
+        # Frame skipping: skip frames if rendering is too slow
+        self._frame_skip_counter = 0
+        self._frame_skip_threshold = 0
+        self._last_frame_time = 0.0
+        self._frame_times = []
+        
+        # Pre-allocated PhotoImage for thread-safe updates
+        self._pending_frame = None
+        self._frame_lock = threading.Lock()
+        
         self._setup_ui()
 
     def _setup_ui(self):
-        """Set up the user interface."""
-        self.root.title("Visualisateur Psychédélique")
-        self.root.geometry("1000x700")
-        self.root.minsize(800, 600)
+        """Set up a modernized cyberpunk side-by-side UI."""
+        # Couleurs du thème cyberpunk / Winamp modernisé
+        self.BG_DARK = "#09090d"     # Fond principal ultra-sombre
+        self.BG_PANEL = "#12121d"    # Fond du panneau latéral (sidebar)
+        self.BG_CARD = "#1b1b2a"     # Fond des cartes/champs de saisie
+        self.FG_LIGHT = "#e2e2ee"    # Texte principal clair
+        self.FG_MUTED = "#85859e"    # Texte secondaire grisé
+        
+        self.NEON_CYAN = "#00e5ff"   # Cyan fluo
+        self.NEON_PINK = "#ff007f"   # Rose fluo
+        self.NEON_GREEN = "#39ff14"  # Vert fluo
+        self.NEON_AMBER = "#ffaa00"  # Orange fluo
+        
+        self.root.title("Visualisateur Psychédélique 2.0")
+        self.root.geometry("1150x680")
+        self.root.minsize(950, 600)
+        self.root.configure(bg=self.BG_DARK)
+        
+        # Appliquer le style global TTK
+        style = ttk.Style()
+        style.theme_use('default')
+        style.configure('.', background=self.BG_DARK, foreground=self.FG_LIGHT)
+        style.configure('TFrame', background=self.BG_DARK)
+        
+        # Style pour les ComboBox de façon propre
+        style.map('TCombobox', fieldbackground=[('readonly', self.BG_CARD)],
+                              selectbackground=[('readonly', self.NEON_CYAN)],
+                              selectforeground=[('readonly', '#000000')],
+                              background=[('readonly', self.BG_CARD)])
+        style.configure('TCombobox', foreground=self.FG_LIGHT, fieldbackground=self.BG_CARD,
+                        bordercolor=self.BG_PANEL, arrowcolor=self.NEON_CYAN,
+                        font=('Helvetica', 9))
         
         # Main container
-        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame = tk.Frame(self.root, bg=self.BG_DARK, padx=12, pady=12)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Header
-        header_frame = ttk.Frame(main_frame)
-        header_frame.pack(fill=tk.X, pady=(0, 10))
+        # LEFT PANEL (SIDEBAR CONTROLS)
+        left_panel = tk.Frame(main_frame, bg=self.BG_PANEL, width=280, padx=15, pady=15, bd=1, relief="solid", highlightbackground=self.NEON_CYAN, highlightcolor=self.NEON_CYAN)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
+        left_panel.pack_propagate(False) # Garder sa taille fixe
         
-        ttk.Label(
-            header_frame,
-            text="Visualisateur Psychédélique",
-            font=('Helvetica', 16, 'bold')
-        ).pack(side=tk.LEFT)
+        # Branding
+        title_label = tk.Label(left_panel, text="PSYCHEDELIC", font=('Helvetica', 16, 'bold'), fg=self.NEON_CYAN, bg=self.BG_PANEL)
+        title_label.pack(anchor=tk.W, pady=(0, 2))
+        sub_label = tk.Label(left_panel, text="VISUALIZER v2.0", font=('Helvetica', 9, 'bold'), fg=self.NEON_PINK, bg=self.BG_PANEL)
+        sub_label.pack(anchor=tk.W, pady=(0, 20))
         
-        # Controls
-        control_frame = ttk.Frame(main_frame)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
+        # --- SECTION FILE ---
+        lbl_file = tk.Label(left_panel, text="FICHIER AUDIO", font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
+        lbl_file.pack(anchor=tk.W, pady=(0, 4))
         
-        # File selection
-        ttk.Label(control_frame, text="Fichier audio:").grid(row=0, column=0, sticky=tk.W)
-        ttk.Entry(
-            control_frame,
-            textvariable=self.audio_file,
-            width=50
-        ).grid(row=0, column=1, sticky=tk.W, padx=5)
-        ttk.Button(
-            control_frame,
-            text="Parcourir...",
-            command=self._open_file
-        ).grid(row=0, column=2, sticky=tk.W, padx=5)
+        file_container = tk.Frame(left_panel, bg=self.BG_PANEL)
+        file_container.pack(fill=tk.X, pady=(0, 15))
         
-        # Preset selection (quality/speed)
-        ttk.Label(control_frame, text="Préglage:").grid(row=0, column=3, sticky=tk.W, padx=(10, 0))
-        self.preset_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.selected_preset,
-            values=['dev', 'fast', 'normal', 'high', '4k'],
-            state='readonly',
-            width=8
-        )
-        self.preset_combo.grid(row=0, column=4, sticky=tk.W, padx=5)
-        self.preset_combo.bind('<<ComboboxSelected>>', self._preset_changed)
+        self.entry_file = tk.Entry(file_container, textvariable=self.audio_file, bg=self.BG_CARD, fg=self.FG_LIGHT, insertbackground=self.FG_LIGHT, bd=0, font=('Helvetica', 9), highlightthickness=1, highlightbackground="#2a2a3e", highlightcolor=self.NEON_CYAN)
+        self.entry_file.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
         
-        # Effect selection
-        ttk.Label(control_frame, text="Effet:").grid(row=0, column=5, sticky=tk.W, padx=(10, 0))
-        self.effect_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.selected_effect,
-            values=['classic', 'random', 'bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma'],
-            state='readonly',
-            width=12
-        )
-        self.effect_combo.grid(row=0, column=6, sticky=tk.W, padx=5)
+        btn_browse = tk.Button(file_container, text="...", command=self._open_file, bg="#252538", fg=self.FG_LIGHT, activebackground="#35354e", activeforeground=self.FG_LIGHT, bd=0, padx=8, font=('Helvetica', 9, 'bold'), cursor="hand2")
+        btn_browse.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Color palette selection
-        ttk.Label(control_frame, text="Couleurs:").grid(row=1, column=3, sticky=tk.W, padx=(10, 0), pady=(5, 0))
-        self.color_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.selected_color,
-            values=['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow'],
-            state='readonly',
-            width=12
-        )
-        self.color_combo.grid(row=1, column=4, sticky=tk.W, padx=5, pady=(5, 0))
+        # Hover effect helper
+        def add_hover(widget, hover_bg, normal_bg):
+            widget.bind("<Enter>", lambda e: widget.configure(bg=hover_bg))
+            widget.bind("<Leave>", lambda e: widget.configure(bg=normal_bg))
+            
+        add_hover(btn_browse, "#35354e", "#252538")
         
-        # Second row of controls
-        ttk.Label(control_frame, text="Résolution:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
-        self.resolution_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.resolution,
-            values=['1080p', '1440p', '4K'],
-            state='readonly',
-            width=8
-        )
-        self.resolution_combo.grid(row=1, column=1, sticky=tk.W, padx=5, pady=(5, 0))
+        # --- SECTION CONTROLS ---
+        def create_dropdown(parent, label_text, variable, values, cmd=None):
+            lbl = tk.Label(parent, text=label_text, font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
+            lbl.pack(anchor=tk.W, pady=(8, 4))
+            combo = ttk.Combobox(parent, textvariable=variable, values=values, state='readonly')
+            combo.pack(fill=tk.X, pady=(0, 10))
+            if cmd:
+                combo.bind('<<ComboboxSelected>>', cmd)
+            return combo
+            
+        create_dropdown(left_panel, "RÉSOLUTION EXPORT", self.resolution, ['1080p', '1440p', '4K'])
+        create_dropdown(left_panel, "PRESET DE QUALITÉ", self.selected_preset, ['dev', 'fast', 'normal', 'high', '4k'], self._preset_changed)
         
-        ttk.Label(control_frame, text="FPS:").grid(row=1, column=2, sticky=tk.W, pady=(5, 0))
-        self.fps_spin = ttk.Spinbox(
-            control_frame,
-            from_=30, to=120,
-            textvariable=self.fps,
-            width=5
-        )
-        self.fps_spin.grid(row=1, column=3, sticky=tk.W, padx=5, pady=(5, 0))
+        # Spacer
+        left_panel.grid_rowconfigure(9, weight=1)
         
-        # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=5)
+        # --- ACTION BUTTONS (PLAY/STOP) ---
+        btn_container = tk.Frame(left_panel, bg=self.BG_PANEL)
+        btn_container.pack(side=tk.BOTTOM, fill=tk.X, pady=(15, 0))
         
-        ttk.Button(
-            button_frame,
-            text="▶ Lecture",
-            command=self._toggle_playback
-        ).pack(side=tk.LEFT, padx=5)
+        # Lecture
+        self.btn_play = tk.Button(btn_container, text="▶  LECTURE", command=self._toggle_playback, bg=self.NEON_GREEN, fg="#05050a", activebackground="#a2ff8e", activeforeground="#05050a", bd=0, pady=6, font=('Helvetica', 10, 'bold'), cursor="hand2")
+        self.btn_play.pack(fill=tk.X, pady=(0, 8))
+        add_hover(self.btn_play, "#a2ff8e", self.NEON_GREEN)
         
-        ttk.Button(
-            button_frame,
-            text="⏹ Arrêter",
-            command=self._stop_playback
-        ).pack(side=tk.LEFT, padx=5)
+        # Arrêter
+        self.btn_stop = tk.Button(btn_container, text="⏹  ARRÊTER", command=self._stop_playback, bg=self.NEON_PINK, fg="#ffffff", activebackground="#ff52a2", activeforeground="#ffffff", bd=0, pady=6, font=('Helvetica', 10, 'bold'), cursor="hand2")
+        self.btn_stop.pack(fill=tk.X, pady=(0, 15))
+        add_hover(self.btn_stop, "#ff52a2", self.NEON_PINK)
         
-        ttk.Button(
-            button_frame,
-            text="🎥 Exporter Vidéo",
-            command=self._export_video
-        ).pack(side=tk.LEFT, padx=5)
+        # Export & Logs row
+        secondary_btn_frame = tk.Frame(btn_container, bg=self.BG_PANEL)
+        secondary_btn_frame.pack(fill=tk.X)
         
-        ttk.Button(
-            button_frame,
-            text="📝 Logs",
-            command=self._show_logs
-        ).pack(side=tk.LEFT, padx=5)
+        btn_export = tk.Button(secondary_btn_frame, text="🎥 EXPORTER", command=self._export_video, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
+        btn_export.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        add_hover(btn_export, "#3a3a55", "#2a2a3e")
         
-        # Preview frame
-        preview_frame = ttk.LabelFrame(main_frame, text="Aperçu", padding="5")
-        preview_frame.pack(fill=tk.BOTH, expand=True)
+        btn_logs = tk.Button(secondary_btn_frame, text="📝 LOGS", command=self._show_logs, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
+        btn_logs.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
+        add_hover(btn_logs, "#3a3a55", "#2a2a3e")
         
-        self.preview = PreviewFrame(preview_frame, width=800, height=450)
+        # RIGHT PANEL (PREVIEW + STATUS)
+        right_panel = tk.Frame(main_frame, bg=self.BG_DARK)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Title of Aperçu
+        preview_title = tk.Label(right_panel, text="ÉCRAN DE PREVIEW", font=('Helvetica', 9, 'bold'), fg=self.NEON_CYAN, bg=self.BG_DARK)
+        preview_title.pack(anchor=tk.W, pady=(0, 8))
+        
+        # Preview screen container with glowing border
+        preview_border = tk.Frame(right_panel, bg=self.NEON_CYAN, bd=1)
+        preview_border.pack(fill=tk.BOTH, expand=True)
+        
+        self.preview = PreviewFrame(preview_border, width=800, height=450, bd=0, highlightthickness=0)
         self.preview.pack(fill=tk.BOTH, expand=True)
         
-        # Status bar
-        self.status_var = tk.StringVar(value="Prêt")
-        ttk.Label(
-            main_frame,
-            textvariable=self.status_var,
-            relief=tk.SUNKEN,
-            anchor=tk.W
-        ).pack(fill=tk.X, pady=(5, 0))
+        # Status Bar
+        self.status_var = tk.StringVar(value="PRÊT")
+        status_frame = tk.Frame(right_panel, bg="#111116", height=24, bd=0)
+        status_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        led_status = tk.Label(status_frame, text="●", font=('Helvetica', 10), fg=self.NEON_CYAN, bg="#111116", padx=5)
+        led_status.pack(side=tk.LEFT)
+        
+        # Update led status dynamically when playback state changes
+        def update_led(*args):
+            if self.is_playing.get():
+                led_status.configure(fg=self.NEON_GREEN)
+            else:
+                led_status.configure(fg=self.NEON_CYAN)
+        self.is_playing.trace_add("write", update_led)
+        
+        status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
+        status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
     def _preset_changed(self, event=None):
         """Update resolution and FPS when preset changes."""
@@ -192,7 +213,6 @@ class MainWindow:
             ('Tous les fichiers', '*.*')
         ]
         
-        # Commencer dans le dossier input du projet
         initial_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'input')
         if not os.path.exists(initial_dir):
             initial_dir = os.path.expanduser('~')
@@ -221,91 +241,92 @@ class MainWindow:
     def _start_playback(self):
         """Start playback and preview."""
         self.is_playing.set(True)
-        self._is_playing_event.set()  # Mettre à jour l'Event pour le thread
+        self._is_playing_event.set()
         
         # Stop existing thread if any
         if self.playback_thread and self.playback_thread.is_alive():
             self._stop_playback()
         
-        # Initialize analyzer
+        # Initialize analyzer (RAM-efficient streaming mode)
         try:
             from audio.analyzer import AudioAnalyzer
-            self.analyzer = AudioAnalyzer(self.audio_file.get())
+            self.analyzer = AudioAnalyzer(self.audio_file.get(), load_file=False)
         except Exception as e:
             self.status_var.set(f"Erreur: {str(e)}")
             self.is_playing.set(False)
             self._is_playing_event.clear()
             return
         
-        # Initialize audio player (pour jouer le son sur la carte son)
+        # Initialize audio player
         try:
             from audio.player import AudioPlayer
             self.audio_player = AudioPlayer(
                 sample_rate=self.analyzer.sample_rate,
-                chunk_size=self.analyzer.chunk_size
+                chunk_size=self.analyzer.chunk_size,
+                channels=2
             )
-            self.audio_player.start()
+            # Démarrer la lecture en flux direct depuis le fichier
+            self.audio_player.start_from_file(self.audio_file.get(), loop=self.analyzer.loop, analyzer=self.analyzer)
         except Exception as e:
+            import traceback
+            print(f"[MAIN] AudioPlayer init FAILED: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             self.status_var.set(f"Erreur audio: {str(e)}")
             self.audio_player = None
         
-        # Get resolution
-        width, height = self._get_resolution()
-        
-        # Détecter le renderer à utiliser ET initialiser pygame DANS LE THREAD PRINCIPAL
+        # Détecter le renderer à utiliser
         self._has_pygame = False
         try:
+            import os as _os
+            _os.environ['SDL_VIDEODRIVER'] = 'dummy'
+            _os.environ['SDL_AUDIODRIVER'] = 'dummy'
             import pygame as _pg
-            # Initialiser pygame en mode dummy dans le thread PRINCIPAL
-            # Ceci permet à pygame.Surface() de fonctionner
-            _pg.display.init()
-            _pg.time.init()
+            if not _pg.get_init():
+                _pg.init()
             self._has_pygame = True
         except ImportError:
             self._has_pygame = False
         except Exception:
             self._has_pygame = False
         
-        # Créer le renderer adapté (toujours dans le thread principal)
-        # La surface Pygame est créée ici, pas dans le thread
-        if self._has_pygame:
-            # Mode Pygame (conteneur) : surface offscreen créée dans le thread PRINCIPAL
-            try:
+        # Créer le renderer adapté
+        try:
+            if self._has_pygame:
                 from renderer.headless_renderer import HeadlessRenderer
                 self.preview_renderer = HeadlessRenderer(
-                    width=width,
-                    height=height,
+                    width=HeadlessRenderer.RENDER_WIDTH,
+                    height=HeadlessRenderer.RENDER_HEIGHT,
                     fps=self.fps.get()
                 )
-                # Initialiser la surface ici (thread principal)
+                # Init here (main thread) for pygame display init
                 self.preview_renderer.init()
-            except Exception as e:
-                self.status_var.set(f"Erreur: {str(e)}")
-                self.is_playing.set(False)
-                self._is_playing_event.clear()
-                return
-        else:
-            # Mode sans Pygame (hôte) : ArrayRenderer numpy
-            try:
+            else:
                 from renderer.array_renderer import ArrayRenderer
                 self.preview_renderer = ArrayRenderer(
-                    width=width,
-                    height=height,
+                    width=800,
+                    height=450,
                     fps=self.fps.get()
                 )
-            except Exception as e:
-                self.status_var.set(f"Erreur: {str(e)}")
-                self.is_playing.set(False)
-                self._is_playing_event.clear()
-                return
+        except Exception as e:
+            self.status_var.set(f"Erreur: {str(e)}")
+            self.is_playing.set(False)
+            self._is_playing_event.clear()
+            return
         
-        # Create effect manager
+        # Create effect manager with reduced resolution
         try:
             from effects.manager import EffectManager
+            effect_name_map = {
+                "Neon Equalizer": "neon_equalizer",
+                "Psychedelic Plasma": "psychedelic_plasma",
+                "3D Cyber Tunnel": "3d_cyber_tunnel"
+            }
+            effect_key = effect_name_map.get(self.selected_effect.get(), "neon_equalizer")
+            
             self.effect_manager = EffectManager(
                 analyzer=self.analyzer,
                 renderer=self.preview_renderer,
-                effect_type=self.selected_effect.get(),
+                effect_type=effect_key,
                 color_palette=self.selected_color.get()
             )
             self.effect_manager.init()
@@ -314,6 +335,11 @@ class MainWindow:
             self.is_playing.set(False)
             self._is_playing_event.clear()
             return
+        
+        # Reset frame skipping
+        self._frame_skip_counter = 0
+        self._frame_skip_threshold = 0
+        self._frame_times = []
         
         # Start playback in a separate thread
         self.playback_thread = threading.Thread(
@@ -330,7 +356,6 @@ class MainWindow:
             self.analyzer.start_stream()
             self.preview_renderer.init()
             
-            # Main loop
             iteration = 0
             try:
                 from ui.log_display import log_message
@@ -343,69 +368,65 @@ class MainWindow:
                 
                 # Handle events
                 if not self.preview_renderer.handle_events():
-                    try:
-                        from ui.log_display import log_message
-                        log_message(f"Playback: Événement QUIT à itération {iteration}")
-                    except:
-                        pass
                     self._is_playing_event.clear()
                     break
                 
-                # Get delta time
+                # Get delta time (this also limits FPS via SimpleClock.tick)
                 delta_time = self.preview_renderer.clock.tick(self.fps.get()) / 1000.0
-                
+
                 # Get audio data
+                if not hasattr(self, 'audio_player') or self.audio_player is None or not self.audio_player.is_playing:
+                    break
+
                 chunk = self.analyzer.get_next_chunk()
                 if chunk is None:
-                    try:
-                        from ui.log_display import log_message
-                        log_message(f"Playback: Chunk None à itération {iteration} - ARRET")
-                    except:
-                        pass
                     break
                     
                 audio_data = self.analyzer.analyze_chunk(chunk)
                 
-                # Log tous les 20 itérations
-                if iteration % 20 == 0:
-                    try:
-                        from ui.log_display import log_message
-                        log_message(f"Playback: Itération {iteration} - Volume={audio_data.get('volume', 0):.4f}")
-                    except:
-                        pass
+                # Adaptive frame skipping: if we're falling behind, skip some frames
+                target_frame_time = 1.0 / max(self.fps.get(), 1)
+                if delta_time > target_frame_time * 1.5:
+                    # We're behind, increase skip threshold
+                    self._frame_skip_threshold = min(3, self._frame_skip_threshold + 1)
+                elif delta_time < target_frame_time * 0.8:
+                    # We're ahead, decrease skip threshold
+                    self._frame_skip_threshold = max(0, self._frame_skip_threshold - 1)
                 
-                # Jouer le son sur la carte son (si disponible)
-                if hasattr(self, 'audio_player') and self.audio_player is not None:
-                    self.audio_player.play_chunk(chunk)
+                self._frame_skip_counter += 1
+
+                if self._frame_skip_counter <= self._frame_skip_threshold:
+                    # Skip this frame (still update effect for audio sync)
+                    self.effect_manager.current_effect.update(audio_data, delta_time)
+                    continue
+                self._frame_skip_counter = 0
                 
                 # Update effect state
                 self.effect_manager.current_effect.update(audio_data, delta_time)
                 
-                # Rendu : choisir la méthode selon le renderer disponible
+                # Rendu en résolution réduite (800x450)
                 if self._has_pygame:
-                    # Mode Pygame : render() utilise pygame.draw.* sur surface offscreen
                     surface = self.preview_renderer.get_surface()
                     self.effect_manager.current_effect.render(surface)
                     frame = self._capture_frame(surface)
                 else:
-                    # Mode sans Pygame : utiliser render_to_array() qui produit un ndarray
                     surface = self.preview_renderer.get_surface()
                     arr = self.effect_manager.current_effect.render_to_array()
                     if arr is not None:
-                        # Copier l'array numpy dans la surface du renderer
                         h, w = min(arr.shape[0], surface.shape[0]), min(arr.shape[1], surface.shape[1])
                         surface[:h, :w] = arr[:h, :w]
                     else:
-                        # Si render_to_array() échoue (numpy absent), remplir de noir
                         try:
                             surface.fill(0)
                         except Exception:
                             surface[:] = 0
-                    # Capture directement depuis le renderer
                     frame = self._capture_frame(None)
                 
                 if frame is not None:
-                    self.root.after(0, self._update_preview, frame)
+                    # Store frame and schedule update in main thread
+                    with self._frame_lock:
+                        self._pending_frame = frame
+                    self.root.after(0, self._update_preview_from_pending)
                 
                 self.preview_renderer.present()
             
@@ -419,6 +440,11 @@ class MainWindow:
             error_msg = str(e)
             self.root.after(0, lambda em=error_msg: self.status_var.set(f"Erreur: {em}"))
         finally:
+            if hasattr(self, 'audio_player') and self.audio_player:
+                try:
+                    self.audio_player.cleanup()
+                except Exception:
+                    pass
             if hasattr(self, 'analyzer') and self.analyzer:
                 self.analyzer.cleanup()
             if hasattr(self, 'preview_renderer') and self.preview_renderer:
@@ -427,31 +453,38 @@ class MainWindow:
             self._is_playing_event.clear()
             self.root.after(0, lambda: self.status_var.set("Lecture arrêtée"))
 
+    def _update_preview_from_pending(self):
+        """Update preview with the latest pending frame (called in main thread)."""
+        with self._frame_lock:
+            if self._pending_frame is not None:
+                self.preview.update_image(self._pending_frame)
+                self._pending_frame = None
+
     def _capture_frame(self, surface=None):
         """
         Capture le frame courant et le convertit en PhotoImage pour Tkinter.
-        Utilise plusieurs méthodes de fallback.
+        Optimisé : utilise pygame.image.tostring() directement sans redimensionnement
+        car le rendu est déjà en 800x450.
         """
         from PIL import Image, ImageTk
         
-        # Méthode 1: Si on a Pygame + une surface, utiliser pygame.image.tostring()
+        # Méthode 1: Pygame surface (déjà en 800x450)
         if self._has_pygame and surface is not None:
             try:
                 import pygame
-                # pygame.image.tostring() est stable et fonctionne sans fenêtre d'affichage
                 raw_bytes = pygame.image.tostring(surface, 'RGB')
                 w, h = surface.get_size()
                 img = Image.frombytes('RGB', (w, h), raw_bytes)
-                img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
+                # Pas besoin de resize, le rendu est déjà à la bonne résolution
                 return ImageTk.PhotoImage(img)
             except Exception as e:
                 try:
                     from ui.log_display import log_message
-                    log_message(f"Capture Pygame tostring: {e}")
+                    log_message(f"Capture Pygame: {e}")
                 except:
                     pass
         
-        # Méthode 2: Sans Pygame, utiliser render_to_array() + Pillow
+        # Méthode 2: Sans Pygame, render_to_array()
         if not self._has_pygame:
             try:
                 if self.effect_manager and self.effect_manager.current_effect:
@@ -459,54 +492,52 @@ class MainWindow:
                     if arr is not None and hasattr(arr, 'shape') and len(arr.shape) == 3:
                         if arr.shape[0] > 0 and arr.shape[1] > 0:
                             img = Image.fromarray(arr)
-                            img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
+                            # Resize to preview size if needed
+                            if arr.shape[1] != self.preview.width or arr.shape[0] != self.preview.height:
+                                img = img.resize((self.preview.width, self.preview.height), Image.BILINEAR)
                             return ImageTk.PhotoImage(img)
             except Exception:
                 pass
             
-            # Méthode 3: renderer.get_frame_as_bytes()
+            # Méthode 3: get_frame_as_bytes()
             try:
                 if hasattr(self.preview_renderer, 'get_frame_as_bytes'):
                     raw_bytes = self.preview_renderer.get_frame_as_bytes()
                     if raw_bytes is not None:
                         size = self.preview_renderer.get_frame_size()
                         img = Image.frombytes('RGB', size, raw_bytes)
-                        img = img.resize((self.preview.width, self.preview.height), Image.LANCZOS)
                         return ImageTk.PhotoImage(img)
             except Exception:
                 pass
         
         return None
-    
-    def _update_preview(self, frame):
-        """Update preview with new frame."""
-        self.preview.update_image(frame)
 
     def _stop_playback(self):
         """Stop playback."""
         self.is_playing.set(False)
-        self._is_playing_event.clear()  # Arrêter le thread proprement
+        self._is_playing_event.clear()
+        
+        # Arrêter le lecteur audio en premier pour libérer les tubes/pipes bloqués
+        if hasattr(self, 'audio_player') and self.audio_player:
+            try:
+                self.audio_player.cleanup()
+            except Exception:
+                pass
         
         if self.playback_thread and self.playback_thread.is_alive():
-            # Attendre 1 seconde, puis forcer si nécessaire
-            self.playback_thread.join(timeout=1)
+            self.playback_thread.join(timeout=0.2)
             if self.playback_thread.is_alive():
-                # Thread toujours vivant, essayer de le marquer comme daemon pour éviter le blocage
                 import ctypes
                 try:
-                    # Méthode avancée pour tuer un thread Python
                     thread_id = self.playback_thread.ident
                     if thread_id:
                         res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), ctypes.py_object(SystemExit))
                         if res == 0:
-                            pass  # Thread déjà terminé
+                            pass
                         elif res != 1:
                             ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), ctypes.c_long(0))
-                            raise RuntimeError("Échec de l'arrêt forcé du thread")
                 except Exception as e:
                     print(f"Warning: Impossible d'arrêter le thread proprement: {e}")
-                    # Créer un nouveau thread qui forera l'arrêt après un délai
-                    pass
         
         if hasattr(self, 'analyzer') and self.analyzer:
             self.analyzer.cleanup()
@@ -522,7 +553,6 @@ class MainWindow:
             messagebox.showerror("Erreur", "Veuillez sélectionner un fichier audio d'abord.")
             return
         
-        # Ask for output file
         filename = filedialog.asksaveasfilename(
             title="Enregistrer la vidéo",
             defaultextension=".mp4",
@@ -532,10 +562,8 @@ class MainWindow:
         if not filename:
             return
         
-        # Get resolution
         width, height = self._get_resolution()
         
-        # Create recorder with preset
         try:
             from recorder.video_recorder import VideoRecorder
             from quality_presets import get_preset, build_ffmpeg_cmd
@@ -551,7 +579,6 @@ class MainWindow:
                 effect_type=self.selected_effect.get(),
                 color_palette=self.selected_color.get()
             )
-            # Override FFmpeg command with preset
             self.recorder._ffmpeg_cmd = build_ffmpeg_cmd(
                 width, height, self.fps.get(), 
                 self.audio_file.get(), filename, self.selected_preset.get()
@@ -560,7 +587,6 @@ class MainWindow:
             messagebox.showerror("Erreur", f"Échec de la création du recorder: {str(e)}")
             return
         
-        # Start export in a thread
         export_thread = threading.Thread(
             target=self._export_loop,
             args=(filename,),
@@ -596,7 +622,6 @@ class MainWindow:
         """Affiche la fenêtre des logs."""
         try:
             from ui.log_display import show_log_window
-            # Créer une nouvelle fenêtre pour les logs
             log_root = tk.Toplevel(self.root)
             log_root.title("Logs - Visualisateur Psychédélique")
             show_log_window(log_root)

@@ -108,152 +108,107 @@ class BarEffect(BaseEffect):
         )
     
     def render(self, surface):
-        """Rendu des barres sur la surface Pygame."""
-        # Si pygame n'est pas disponible, ne rien faire
+        """Rendu des barres style égaliseur classique Winamp."""
         if not HAS_PYGAME:
             return
         
         import pygame
-        surface.fill((0, 0, 0))
+        surface.fill((10, 10, 15)) # Fond sombre rétro
+        
+        # Grille d'arrière-plan rétro
+        grid_color = (25, 25, 35)
+        for gy in range(0, self.height, 20):
+            pygame.draw.line(surface, grid_color, (0, gy), (self.width, gy), 1)
+            
+        block_h = 4
+        block_gap = 2
+        block_total = block_h + block_gap
+        max_blocks = self.height // block_total
         
         for i in range(self.num_bars):
-            # Calculer la hauteur avec un minimum pour la visibilité
-            bar_height = max(int(self.bar_heights[i] * (1 + self.pulse * 0.2)), 2)
+            # Hauteur normalisée
+            norm_height = self.bar_heights[i] / self.height
+            norm_height = max(0.0, min(1.0, norm_height * (1.0 + self.pulse * 0.2)))
+            num_blocks = int(norm_height * max_blocks)
             
-            # Calculer la couleur (dépend de la position et du temps)
-            color_idx = (i + int(self.time * 10)) % len(self.colors)
-            color = self.colors[color_idx]
-            
-            # Dessiner la barre avec effet de dégradé
             x = i * self.bar_width
-            y_start = self.height - bar_height
-            
-            # Dessiner la barre principale avec dégradé
-            for h in range(0, bar_height, max(1, bar_height // 10)):
-                # Calculer la couleur avec transparence
-                alpha_factor = 1.0 - (h / bar_height) * self.gradient_intensity
-                bar_color = (
-                    min(int(color[0] * alpha_factor), 255),
-                    min(int(color[1] * alpha_factor), 255),
-                    min(int(color[2] * alpha_factor), 255)
-                )
-                yy = self.height - 1 - h
-                pygame.draw.line(
-                    surface,
-                    bar_color,
-                    (x + self.bar_width // 2, self.height - 1),
-                    (x + self.bar_width // 2, yy),
-                    max(1, self.bar_width // 2)
-                )
-            
-            # Dessiner les pics (peak hold)
-            if self.peak_decay[i] > 0:
-                peak_height = min(int(self.peak_values[i] * (self.peak_decay[i] / self.peak_hold_time)), self.height)
-                peak_y = self.height - peak_height
-                peak_color = (
-                    min(int(color[0] * 1.8), 255),
-                    min(int(color[1] * 1.8), 255),
-                    min(int(color[2] * 1.8), 255)
-                )
-                # Dessiner une ligne fine pour le pic
-                pygame.draw.line(
-                    surface,
-                    peak_color,
-                    (x + self.bar_width // 2, peak_y),
-                    (x + self.bar_width // 2, peak_y - 5),
-                    max(1, self.bar_width // 3)
-                )
-            
-            # Dessiner une bordure lumineuse
-            if bar_height > 2:
-                border_color = (
-                    min(int(color[0] * 1.5), 255),
-                    min(int(color[1] * 1.5), 255),
-                    min(int(color[2] * 1.5), 255)
-                )
-                pygame.draw.line(
-                    surface,
-                    border_color,
-                    (x, y_start),
-                    (x, y_start + bar_height - 1),
-                    self.border_thickness
-                )
-                pygame.draw.line(
-                    surface,
-                    border_color,
-                    (x + self.bar_width, y_start),
-                    (x + self.bar_width, y_start + bar_height - 1),
-                    self.border_thickness
-                )
+            w = self.bar_width - 2
+            if w < 1:
+                w = 1
+                
+            # Blocs empilés de bas en haut
+            for b in range(num_blocks):
+                by = self.height - (b + 1) * block_total
+                
+                height_ratio = b / max_blocks
+                if height_ratio < 0.6:
+                    color = (0, 235, 100) # Vert
+                elif height_ratio < 0.85:
+                    color = (235, 235, 0) # Jaune
+                else:
+                    color = (255, 0, 50) # Rouge
+                    
+                pygame.draw.rect(surface, color, (x, by, w, block_h))
+                
+            # Pic flottant (peak hold)
+            peak_ratio = self.peak_values[i] / self.height
+            if peak_ratio > 0.02:
+                peak_block = int(peak_ratio * max_blocks)
+                peak_by = self.height - (peak_block + 1) * block_total
+                peak_by = max(0, min(self.height - block_total, peak_by))
+                
+                peak_color = (0, 240, 255) # Cyan néon
+                pygame.draw.rect(surface, peak_color, (x, peak_by, w, 2))
     
     def render_to_array(self):
-        """Rendu vers un tableau numpy pour l'export vidéo."""
-        if not HAS_NUMPY:
-            # Si numpy n'est pas disponible, retourner None ou une liste
-            return None
+        """Rendu vers un tableau numpy pour l'export vidéo (style Winamp)."""
+        import cv2
         
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        frame[:, :] = [15, 10, 10] # Fond BGR sombre
+        
+        # Grille
+        grid_color = (35, 25, 25)
+        for gy in range(0, self.height, 20):
+            cv2.line(frame, (0, gy), (self.width, gy), grid_color, 1)
+            
+        block_h = 4
+        block_gap = 2
+        block_total = block_h + block_gap
+        max_blocks = self.height // block_total
         
         for i in range(self.num_bars):
-            bar_height = max(int(self.bar_heights[i] * (1 + self.pulse * 0.2)), 2)
-            color_idx = (i + int(self.time * 10)) % len(self.colors)
-            color = self.colors[color_idx]
+            norm_height = self.bar_heights[i] / self.height
+            norm_height = max(0.0, min(1.0, norm_height * (1.0 + self.pulse * 0.2)))
+            num_blocks = int(norm_height * max_blocks)
             
             x = i * self.bar_width
-            
-            # Dessiner la barre avec dégradé
-            for h in range(bar_height):
-                alpha_factor = 1.0 - (h / bar_height) * self.gradient_intensity
-                bar_color = (
-                    min(int(color[0] * alpha_factor), 255),
-                    min(int(color[1] * alpha_factor), 255),
-                    min(int(color[2] * alpha_factor), 255)
-                )
-                yy = self.height - 1 - h
-                if 0 <= yy < self.height:
-                    # Dessiner une ligne horizontale pour la barre
-                    start_x = max(0, x)
-                    end_x = min(self.width, x + self.bar_width)
-                    if start_x < end_x:
-                        frame[yy, start_x:end_x] = bar_color
-            
-            # Dessiner les pics (peak hold)
-            if self.peak_decay[i] > 0:
-                peak_height = min(int(self.peak_values[i] * (self.peak_decay[i] / self.peak_hold_time)), self.height)
-                peak_y = self.height - peak_height
-                peak_color = (
-                    min(int(color[0] * 1.8), 255),
-                    min(int(color[1] * 1.8), 255),
-                    min(int(color[2] * 1.8), 255)
-                )
-                # Dessiner une ligne fine pour le pic
-                for h in range(5):
-                    yy = peak_y - h
-                    if 0 <= yy < self.height:
-                        start_x = max(0, x + self.bar_width // 2 - self.bar_width // 6)
-                        end_x = min(self.width, x + self.bar_width // 2 + self.bar_width // 6)
-                        if start_x < end_x:
-                            frame[yy, start_x:end_x] = peak_color
-            
-            # Dessiner une bordure lumineuse
-            if bar_height > 2:
-                border_color = (
-                    min(int(color[0] * 1.5), 255),
-                    min(int(color[1] * 1.5), 255),
-                    min(int(color[2] * 1.5), 255)
-                )
-                # Bordure gauche
-                yy_start = self.height - bar_height
-                for h in range(bar_height):
-                    yy = yy_start + h
-                    if 0 <= yy < self.height and x >= 0 and x < self.width:
-                        frame[yy, x] = border_color
-                # Bordure droite
-                for h in range(bar_height):
-                    yy = yy_start + h
-                    if 0 <= yy < self.height and x + self.bar_width - 1 >= 0 and x + self.bar_width - 1 < self.width:
-                        frame[yy, x + self.bar_width - 1] = border_color
-        
+            w = self.bar_width - 2
+            if w < 1:
+                w = 1
+                
+            for b in range(num_blocks):
+                by = self.height - (b + 1) * block_total
+                
+                height_ratio = b / max_blocks
+                if height_ratio < 0.6:
+                    color = (100, 235, 0) # BGR Vert
+                elif height_ratio < 0.85:
+                    color = (0, 235, 235) # BGR Jaune
+                else:
+                    color = (50, 0, 255) # BGR Rouge
+                    
+                cv2.rectangle(frame, (x, by), (x + w, by + block_h), color, -1)
+                
+            peak_ratio = self.peak_values[i] / self.height
+            if peak_ratio > 0.02:
+                peak_block = int(peak_ratio * max_blocks)
+                peak_by = self.height - (peak_block + 1) * block_total
+                peak_by = max(0, min(self.height - block_total, peak_by))
+                
+                peak_color = (255, 240, 0) # BGR Cyan
+                cv2.rectangle(frame, (x, peak_by), (x + w, peak_by + 2), peak_color, -1)
+                
         return frame
     
     def cleanup(self):

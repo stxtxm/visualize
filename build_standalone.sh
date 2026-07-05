@@ -30,7 +30,7 @@ if [ ! -f "appimagetool-x86_64.AppImage" ]; then
     chmod +x appimagetool-x86_64.AppImage
 fi
 
-# Créer le Dockerfile de build - APPROCHE FINALE : site-packages + libs système (Python système requis)
+# Créer le Dockerfile de build
 cat > Dockerfile.appimage << 'DOCKERFILE_EOF'
 FROM python:3.11-slim
 
@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils pipewire-bin alsa-utils \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     libx11-6 libxcb-glx0 \
+    libportaudio2 libportaudiocpp0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -50,7 +51,7 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r requirements.txt
 
 # Vérifier l'installation
-RUN python3 -c "import numpy, pygame, cv2, pydub, PIL; print('Tous les imports OK')"
+RUN python3 -c "import numpy, pygame, cv2, pydub, PIL, sounddevice; print('Tous les imports OK')"
 
 # Créer la structure de sortie
 RUN mkdir -p /output/usr/lib/python3.11
@@ -58,15 +59,15 @@ RUN mkdir -p /output/usr/lib/python3.11
 # Copier les dépendances Python (site-packages)
 RUN cp -r /usr/local/lib/python3.11/site-packages /output/usr/lib/python3.11/
 
-# Copier les exécutables utiles (ffmpeg/ffprobe)
+# Copier les exécutables utiles (ffmpeg/ffprobe/ffplay)
 RUN mkdir -p /output/usr/bin && \
-    for bin in ffmpeg ffprobe paplay pw-play aplay which; do \
+    for bin in ffmpeg ffprobe ffplay paplay pw-play aplay which; do \
         if [ -x "/usr/bin/$bin" ]; then \
             cp -nL "/usr/bin/$bin" "/output/usr/bin/$bin"; \
         fi; \
     done
 
-# Copier les bibliothèques système SDL2 et audio
+# Copier les bibliothèques système SDL2, audio et PortAudio
 RUN mkdir -p /output/usr/lib && \
     for lib in \
         /usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.* \
@@ -85,6 +86,8 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libglib-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libgio-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libjack.so.* \
+        /usr/lib/x86_64-linux-gnu/libdbus-1.so.* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
@@ -107,11 +110,11 @@ RUN mkdir -p /output/usr/lib && \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
 
-# Ajouter aussi les bibliothèques PulseAudio depuis /usr/lib64/pulseaudio ou /usr/lib/x86_64-linux-gnu/pulseaudio
+# Ajouter aussi les bibliothèques PulseAudio
 RUN mkdir -p /output/usr/lib/pulseaudio && \
     for lib in \
-        /usr/lib64/pulseaudio/libpulsecommon*.so* /usr/lib64/pulseaudio/libpulsedsp.so* /usr/lib64/pulseaudio/libpulse-simple*.so* /usr/lib64/pulseaudio/libpulse.so* \
-        /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsedsp.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulse-simple*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulse.so* \
+        /usr/lib64/pulseaudio/libpulsecommon*.so* /usr/lib64/pulseaudio/libpulsedsp.so* \
+        /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsedsp.so* \
         /usr/lib/x86_64-linux-gnu/libpulse-simple.so* /usr/lib/x86_64-linux-gnu/libpulse.so* ; do \
         cp -nL "$lib" /output/usr/lib/pulseaudio/ 2>/dev/null || true; \
     done
@@ -161,7 +164,7 @@ log_info "Copie des dépendances Python..."
 mkdir -p Visualisateur.AppDir/usr/lib/python3.11
 cp -rL output/usr/lib/python3.11/site-packages Visualisateur.AppDir/usr/lib/python3.11/
 
-# Créer les symlinks manquants pour pygame.libs afin d'éviter les dépendances PulseAudio erronées
+# Créer les symlinks manquants pour pygame.libs
 if [ -d Visualisateur.AppDir/usr/lib/python3.11/site-packages/pygame.libs ]; then
     pushd Visualisateur.AppDir/usr/lib/python3.11/site-packages/pygame.libs > /dev/null
     for source in libpulse-simple*.so*; do
@@ -247,49 +250,116 @@ fi
 APPDIR_SIZE=$(du -sh Visualisateur.AppDir/usr/lib/python3.11 2>/dev/null | cut -f1 || echo "?")
 log_info "Taille des libs Python: $APPDIR_SIZE"
 
-# AppRun - script de lancement (version Python système)
+# AppRun - script de lancement (compatible Python 3.11+)
 cat > Visualisateur.AppDir/AppRun << 'APPRUN_EOF'
 #!/bin/bash
 SELF_DIR=$(dirname "$(readlink -f "$0")")
 
-# Utiliser Python 3.11 du système hôte (nécessite Python 3.11 avec tkinter)
-PYTHON="python3.11"
-if command -v python3.11 &> /dev/null; then
-    PYTHON="python3.11"
-elif command -v python3 &> /dev/null && python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 11) else 1)' &> /dev/null; then
-    PYTHON="python3"
-else
-    echo "Python 3.11 requis introuvable. Installez python3.11 et relancez l'AppImage." >&2
+# Python 3.11 OBLIGATOIRE : les packages embarqués (.so) sont compilés pour Python 3.11
+# Tester d'abord python3.11, puis fallback vers d'autres si vraiment absent
+PYTHON=""
+for candidate in python3.11 python3.12 python3.10; do
+    if command -v "$candidate" &> /dev/null; then
+        # Vérifier que tkinter ET numpy fonctionnent (test les packages embarqués)
+        if "$candidate" -c "
+import sys
+sys.path.insert(0, '$SELF_DIR/usr/lib/python3.11/site-packages')
+import tkinter
+import numpy
+import PIL
+" 2>/dev/null; then
+            PYTHON="$candidate"
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON" ]; then
+    echo "Python 3.10+ requis introuvable. Installez python3 et relancez l'AppImage." >&2
     exit 1
 fi
-export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs:$SELF_DIR/usr/lib/pulseaudio:$SELF_DIR/usr/lib:$LD_LIBRARY_PATH"
+
+# Vérifier que tkinter est disponible
+if ! "$PYTHON" -c "import tkinter" 2>/dev/null; then
+    echo "tkinter n'est pas disponible pour $PYTHON. Installez python3-tkinter." >&2
+    exit 1
+fi
+
+# Export PYTHONPATH (sans LD_LIBRARY_PATH problématique pour la compatibilité PipeWire)
 export PYTHONPATH="$SELF_DIR/usr/lib/python3.11/site-packages:$SELF_DIR/usr/app:$PYTHONPATH"
-export PATH="$SELF_DIR/usr/bin:$PATH"
 
-# Prefer embedded ffmpeg tools for pydub
-export FFMPEG_PATH="$SELF_DIR/usr/bin/ffmpeg"
-export FFPROBE_PATH="$SELF_DIR/usr/bin/ffprobe"
+# Prefer system ffmpeg/ffprobe if available to avoid dynamic linker/library conflicts
+if command -v ffmpeg &> /dev/null; then
+    export FFMPEG_PATH=$(command -v ffmpeg)
+else
+    export FFMPEG_PATH="$SELF_DIR/usr/bin/ffmpeg"
+fi
 
-# Buffer audio réduit
+if command -v ffprobe &> /dev/null; then
+    export FFPROBE_PATH=$(command -v ffprobe)
+else
+    export FFPROBE_PATH="$SELF_DIR/usr/bin/ffprobe"
+fi
+
+# Buffer audio réduit pour pygame
 export SDL_AUDIO_BUFFER_SIZE=1024
 
-# Vérifier la disponibilité de libpulsecommon
-if [ -f "$SELF_DIR/usr/lib/pulseaudio/libpulsecommon-17.0.so" ]; then
-    export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/pulseaudio:$LD_LIBRARY_PATH"
+# Détection améliorée du système audio pour Fedora 44/PipeWire
+# Priorité : ffplay > sounddevice > pw-play > autres (ffplay est le plus fiable sur PipeWire)
+HAS_PIPEWIRE=false
+HAS_PULSEAUDIO=false
+
+# Détecter PipeWire (Fedora 44 et autres distributions modernes)
+if command -v pw-meta &> /dev/null 2>&1 || command -v pw-play &> /dev/null 2>&1; then
+    HAS_PIPEWIRE=true
 fi
 
-# Détection automatique du système audio
-# Préférer PulseAudio/PipeWire lorsque disponibles, sinon ALSA
-if [ -d "/run/user/$(id -u 2>/dev/null || echo 1000)/pulse" ] 2>/dev/null; then
-    export SDL_AUDIODRIVER=pulseaudio
-elif pgrep -x "pipewire" > /dev/null 2>&1 || pgrep -x "wireplumber" > /dev/null 2>&1; then
-    export SDL_AUDIODRIVER=pulseaudio
-elif [ -e "/dev/snd" ]; then
-    export SDL_AUDIODRIVER=alsa
-else
-    export SDL_AUDIODRIVER=dummy
-    export NO_SOUND=1
+# Détecter PulseAudio natif
+if command -v paplay &> /dev/null 2>&1; then
+    HAS_PULSEAUDIO=true
 fi
+
+# Configuration audio adaptée au système
+# Priorité : pw-play (natif PipeWire) > aplay (ALSA compat) > sounddevice > autres
+if [ "$HAS_PIPEWIRE" = true ]; then
+    echo "Audio: PipeWire détecté - utilisation pw-play comme backend principal"
+    # Ne PAS ajouter les libs PulseAudio embarquées (incompatibles avec PipeWire)
+    # Utiliser uniquement les libs SDL embarquées pour pygame
+    export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs"
+    # Priorité 1: pw-play (natif PipeWire, le plus fiable sur Fedora 44)
+    # Priorité 2: aplay (compat ALSA de PipeWire)
+    if command -v pw-play &> /dev/null 2>&1; then
+        export PREFERRED_AUDIO_BACKEND=pw-play
+        echo "Audio: pw-play prioritaire (natif PipeWire)"
+    elif command -v aplay &> /dev/null 2>&1; then
+        export PREFERRED_AUDIO_BACKEND=aplay
+        echo "Audio: aplay prioritaire (ALSA compat PipeWire)"
+    else
+        export PREFERRED_AUDIO_BACKEND=sounddevice
+        echo "Audio: sounddevice prioritaire (pw-play et aplay absents)"
+    fi
+    # Exporter PULSE_SERVER pour forcer la connexion au serveur Pulse native
+    export PULSE_SERVER=
+elif [ "$HAS_PULSEAUDIO" = true ]; then
+    echo "Audio: PulseAudio détecté"
+    export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs:$SELF_DIR/usr/lib/pulseaudio:$SELF_DIR/usr/lib:$LD_LIBRARY_PATH"
+    export SDL_AUDIODRIVER=pulseaudio
+    export PREFERRED_AUDIO_BACKEND=sounddevice
+else
+    # Pas de serveur audio détecté, utiliser les libs embarquées
+    export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs:$SELF_DIR/usr/lib/pulseaudio:$SELF_DIR/usr/lib:$LD_LIBRARY_PATH"
+    if [ -e "/dev/snd" ]; then
+        export SDL_AUDIODRIVER=alsa
+        export PREFERRED_AUDIO_BACKEND=sounddevice
+    else
+        export SDL_AUDIODRIVER=dummy
+        export NO_SOUND=1
+    fi
+fi
+
+# Forcer sounddevice à utiliser les backends natifs
+export SD_ENABLE_ALSA=1
+export SD_ENABLE_PULSEAUDIO=1
 
 cd "$SELF_DIR/usr/app"
 exec "$PYTHON" main.py "$@"

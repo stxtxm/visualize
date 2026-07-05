@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils pipewire-bin alsa-utils \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     libx11-6 libxcb-glx0 \
+    libportaudio2 libportaudiocpp0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,9 +17,7 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r requirements.txt
 
 # Vérifier l'installation
-RUN python3 -c "import numpy, pygame, cv2, pydub, PIL; print('Tous les imports OK')"
-
-COPY . /app
+RUN python3 -c "import numpy, pygame, cv2, pydub, PIL, sounddevice; print('Tous les imports OK')"
 
 # Créer la structure de sortie
 RUN mkdir -p /output/usr/lib/python3.11
@@ -26,18 +25,15 @@ RUN mkdir -p /output/usr/lib/python3.11
 # Copier les dépendances Python (site-packages)
 RUN cp -r /usr/local/lib/python3.11/site-packages /output/usr/lib/python3.11/
 
-# Copier l'application
-RUN mkdir -p /output/usr/app && cp -r /app/* /output/usr/app/
-
-# Copier FFmpeg et ses utilitaires
+# Copier les exécutables utiles (ffmpeg/ffprobe/ffplay)
 RUN mkdir -p /output/usr/bin && \
-    for bin in ffmpeg ffprobe paplay pw-play aplay which; do \
+    for bin in ffmpeg ffprobe ffplay paplay pw-play aplay which; do \
         if [ -x "/usr/bin/$bin" ]; then \
             cp -nL "/usr/bin/$bin" "/output/usr/bin/$bin"; \
         fi; \
     done
 
-# Copier les bibliothèques système SDL2 et audio
+# Copier les bibliothèques système SDL2, audio et PortAudio
 RUN mkdir -p /output/usr/lib && \
     for lib in \
         /usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.* \
@@ -56,6 +52,8 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libglib-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libgio-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.* \
+        /usr/lib/x86_64-linux-gnu/libjack.so.* \
+        /usr/lib/x86_64-linux-gnu/libdbus-1.so.* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
@@ -78,11 +76,11 @@ RUN mkdir -p /output/usr/lib && \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
 
-# Ajouter aussi les bibliothèques PulseAudio depuis /usr/lib64/pulseaudio ou /usr/lib/x86_64-linux-gnu/pulseaudio
+# Ajouter aussi les bibliothèques PulseAudio
 RUN mkdir -p /output/usr/lib/pulseaudio && \
     for lib in \
-        /usr/lib64/pulseaudio/libpulsecommon*.so* /usr/lib64/pulseaudio/libpulsedsp.so* /usr/lib64/pulseaudio/libpulse-simple*.so* /usr/lib64/pulseaudio/libpulse.so* \
-        /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsedsp.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulse-simple*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulse.so* \
+        /usr/lib64/pulseaudio/libpulsecommon*.so* /usr/lib64/pulseaudio/libpulsedsp.so* \
+        /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon*.so* /usr/lib/x86_64-linux-gnu/pulseaudio/libpulsedsp.so* \
         /usr/lib/x86_64-linux-gnu/libpulse-simple.so* /usr/lib/x86_64-linux-gnu/libpulse.so* ; do \
         cp -nL "$lib" /output/usr/lib/pulseaudio/ 2>/dev/null || true; \
     done

@@ -154,154 +154,144 @@ class PlasmaEffect(BaseEffect):
             self.target_pulse * self.smoothing * 2
         )
     
-    def _plasma_value(self, x, y):
-        """Calcule la valeur du plasma à une position donnée."""
-        total = 0.0
+    def _generate_plasma_frame(self, target_w, target_h):
+        """Calcule le frame de plasma sous forme de tableau NumPy RGB (H, W, 3)."""
+        # Résolution de calcul interne pour la rapidité
+        calc_w = 200
+        calc_h = int(calc_w * target_h / target_w)
+        
+        # Grid de coordonnées
+        x = np.linspace(0, target_w, calc_w)
+        y = np.linspace(0, target_h, calc_h)
+        X, Y = np.meshgrid(x, y)
+        
+        total = np.zeros_like(X)
         
         # Combiner plusieurs ondes sinusoïdales
         for i in range(self.num_waves):
             dx, dy = self.wave_directions[i]
             freq = self.wave_frequencies[i]
-            amp = self.wave_amplitudes[i] * (1 + self.volume_factor * 0.5)
+            amp = self.wave_amplitudes[i] * (1.0 + self.volume_factor * 0.5)
             phase = self.wave_phases[i]
             
-            # Ajouter des variations basées sur la position
-            dist_from_center = math.sqrt((x - self.center_x) ** 2 + (y - self.center_y) ** 2)
-            dist_factor = dist_from_center / (self.width // 2)
+            dist_from_center = np.sqrt((X - self.center_x) ** 2 + (Y - self.center_y) ** 2)
+            dist_factor = dist_from_center / (target_w / 2.0)
             
             # Moduler la fréquence et l'amplitude en fonction de la distance
             mod_freq = freq * (0.5 + dist_factor * 0.5)
             mod_amp = amp * (0.8 + dist_factor * 0.2)
             
             # Calculer la valeur de l'onde
-            value = math.sin(
-                x * dx * mod_freq * 2 * math.pi + 
-                y * dy * mod_freq * 2 * math.pi + 
-                phase * math.pi + 
-                self.time * self.time_scale * 10
+            val = np.sin(
+                X * dx * mod_freq * 2.0 * np.pi + 
+                Y * dy * mod_freq * 2.0 * np.pi + 
+                phase * np.pi + 
+                self.time * self.time_scale * 10.0
             ) * mod_amp
             
-            total += value
-        
+            total += val
+            
         # Ajouter une distorsion radiale basée sur les basses
-        dist_from_center = math.sqrt((x - self.center_x) ** 2 + (y - self.center_y) ** 2)
-        radial_distortion = math.sin(dist_from_center * 0.01 + self.time * 2) * self.bass_factor * 100
+        dist_from_center = np.sqrt((X - self.center_x) ** 2 + (Y - self.center_y) ** 2)
+        radial_distortion = np.sin(dist_from_center * 0.01 + self.time * 2.0) * self.bass_factor * 100.0
         total += radial_distortion
         
         # Ajouter une distorsion spiralée basée sur le treble
-        angle = math.atan2(y - self.center_y, x - self.center_x)
-        spiral_distortion = math.sin(angle * 8 + self.time * 3 + self.treble_factor * math.pi) * self.treble_factor * 50
+        angle = np.arctan2(Y - self.center_y, X - self.center_x)
+        spiral_distortion = np.sin(angle * 8.0 + self.time * 3.0 + self.treble_factor * np.pi) * self.treble_factor * 50.0
         total += spiral_distortion
         
         # Ajouter un effet de beat
         if self.beat_factor > 0:
-            total += math.sin(self.time * 10 + self.beat_factor * 5) * self.beat_factor * 200
-        
-        return total
-    
-    def _get_color_from_value(self, value):
-        """Convertit une valeur de plasma en couleur."""
+            total += np.sin(self.time * 10.0 + self.beat_factor * 5.0) * self.beat_factor * 200.0
+            
         # Normaliser la valeur
-        value = (value % 360) / 360.0
+        val_norm = (total % 360) / 360.0
         
         # Utiliser la phase des couleurs pour animer
-        hue_shift = self.color_phase + value * 0.5
-        hue_shift = hue_shift % 1.0
+        hue_shift = (self.color_phase + val_norm * 0.5) % 1.0
         
-        # Convertir HSV en RGB (approximation rapide)
-        # H: 0-1, S: 1, V: 1
-        h = hue_shift * 6
-        i = int(h)
+        # Convertir HSV en RGB (vectorisé)
+        h = hue_shift * 6.0
+        i = h.astype(np.int32)
         f = h - i
         
-        if i == 0:
-            r, g, b = 1, f, 0
-        elif i == 1:
-            r, g, b = 1 - f, 1, 0
-        elif i == 2:
-            r, g, b = 0, 1, f
-        elif i == 3:
-            r, g, b = 0, 1 - f, 1
-        elif i == 4:
-            r, g, b = f, 0, 1
-        else:  # i == 5
-            r, g, b = 1, 0, 1 - f
+        r = np.zeros_like(h)
+        g = np.zeros_like(h)
+        b = np.zeros_like(h)
         
-        # Convertir en RGB 0-255
-        r = min(255, int(r * 255))
-        g = min(255, int(g * 255))
-        b = min(255, int(b * 255))
+        r[i == 0] = 1.0; g[i == 0] = f[i == 0]
+        r[i == 1] = 1.0 - f[i == 1]; g[i == 1] = 1.0
+        g[i == 2] = 1.0; b[i == 2] = f[i == 2]
+        g[i == 3] = 1.0 - f[i == 3]; b[i == 3] = 1.0
+        r[i == 4] = f[i == 4]; b[i == 4] = 1.0
+        r[i == 5] = 1.0; b[i == 5] = 1.0 - f[i == 5]
         
-        # Appliquer la palette si spécifiée (mélanger avec les couleurs de la palette)
+        R = (r * 255.0).astype(np.uint8)
+        G = (g * 255.0).astype(np.uint8)
+        B = (b * 255.0).astype(np.uint8)
+        
+        # Appliquer la palette de couleurs
         if self.color_palette != 'rainbow':
-            palette_color = self.colors[int(value * len(self.colors)) % len(self.colors)]
-            # Mélanger avec la couleur HSV
+            num_colors = len(self.colors)
+            color_indices = (val_norm * num_colors).astype(np.int32) % num_colors
+            
+            palette_colors = np.array(self.colors, dtype=np.uint8)
+            pixel_colors = palette_colors[color_indices]
+            
             mix_factor = 0.5
-            r = int(r * mix_factor + palette_color[0] * (1 - mix_factor))
-            g = int(g * mix_factor + palette_color[1] * (1 - mix_factor))
-            b = int(b * mix_factor + palette_color[2] * (1 - mix_factor))
-        
-        return (r, g, b)
+            R = (R * mix_factor + pixel_colors[:, :, 0] * (1.0 - mix_factor)).astype(np.uint8)
+            G = (G * mix_factor + pixel_colors[:, :, 1] * (1.0 - mix_factor)).astype(np.uint8)
+            B = (B * mix_factor + pixel_colors[:, :, 2] * (1.0 - mix_factor)).astype(np.uint8)
+            
+        return np.stack((R, G, B), axis=-1)
     
     def render(self, surface):
         """Rendu avec Pygame."""
         import pygame
         
-        # Créer un tableau numpy pour calculer le plasma
-        # Pour éviter de tout recalculer pixel par pixel
         width, height = self.width, self.height
+        rgb_array = self._generate_plasma_frame(width, height)
         
-        # Pour des performances raisonnables, on sample avec un pas
-        sample_step = max(1, width // 200)
+        # Transposer pour le format attendu par pygame.surfarray (W, H, 3)
+        rgb_transposed = rgb_array.transpose(1, 0, 2)
+        temp_surface = pygame.surfarray.make_surface(rgb_transposed)
         
-        # Créer une surface temporaire
-        temp_surface = pygame.Surface((width, height))
+        # Upscaler de façon lisse
+        upscaled = pygame.transform.smoothscale(temp_surface, (width, height))
+        surface.blit(upscaled, (0, 0))
         
-        # Dessiner le plasma
-        for x in range(0, width, sample_step):
-            for y in range(0, height, sample_step):
-                value = self._plasma_value(x, y)
-                color = self._get_color_from_value(value)
+        # Vignette optimisée sans double boucle
+        if not hasattr(self, '_vignette') or self._vignette.get_size() != (width, height):
+            self._vignette = pygame.Surface((width, height), pygame.SRCALPHA)
+            cx, cy = width // 2, height // 2
+            max_dist = math.sqrt(cx**2 + cy**2)
+            for r_step in range(20, 0, -1):
+                radius = int(max_dist * (r_step / 20.0))
+                alpha = int(120 * (1.0 - (r_step / 20.0)))
+                pygame.draw.circle(self._vignette, (0, 0, 0, alpha), (cx, cy), radius)
                 
-                # Dessiner un rectangle de la taille du sample
-                rect = pygame.Rect(x, y, sample_step, sample_step)
-                pygame.draw.rect(temp_surface, color, rect)
+        surface.blit(self._vignette, (0, 0))
         
-        # Copier sur la surface de sortie
-        surface.blit(temp_surface, (0, 0))
-        
-        # Ajouter un effet de vignette (bords sombres)
-        vignette = pygame.Surface((width, height), pygame.SRCALPHA)
-        for x in range(0, width, max(1, width // 50)):
-            for y in range(0, height, max(1, height // 50)):
-                dist = math.sqrt((x - self.center_x) ** 2 + (y - self.center_y) ** 2)
-                max_dist = math.sqrt(self.center_x ** 2 + self.center_y ** 2)
-                alpha = int(100 * (1 - dist / max_dist))
-                if alpha > 0:
-                    pygame.draw.circle(vignette, (0, 0, 0, alpha), (x, y), max(1, width // 100))
-        
-        surface.blit(vignette, (0, 0))
-        
-        # Ajouter des motifs supplémentaires
+        # Dessiner les patterns
         self._draw_additional_patterns(surface)
     
     def _draw_additional_patterns(self, surface):
         """Ajouter des motifs supplémentaires pour enrichir le plasma."""
         import pygame
         
-        # Dessiner des cercles qui pulsent
         center_x, center_y = self.width // 2, self.height // 2
         for i in range(3):
             radius = int(50 + i * 80 + self.pulse * 50)
             alpha = 100 * (1 - i / 3)
             color = self.colors[int(self.time * 2 + i) % len(self.colors)]
             
-            # Créer une surface temporaire pour la transparence
+            # Dessiner directement avec un petit décalage pour la fluidité
             s = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
             pygame.draw.circle(s, (*color, alpha), (center_x, center_y), radius, 2)
             surface.blit(s, (0, 0))
         
-        # Dessiner des lignes radiales
+        # Lignes radiales
         num_lines = 16
         for i in range(num_lines):
             angle = i * (2 * math.pi / num_lines) + self.time * 0.5
@@ -320,34 +310,23 @@ class PlasmaEffect(BaseEffect):
     def render_to_array(self):
         """Rendu vers un tableau numpy pour l'export vidéo."""
         import cv2
-        
         width, height = self.width, self.height
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        rgb_array = self._generate_plasma_frame(width, height)
         
-        # Pour l'export vidéo, on utilise un pas plus petit
-        sample_step = max(1, width // 200)
+        # Interpolation bilinéaire rapide OpenCV
+        frame = cv2.resize(rgb_array, (width, height), interpolation=cv2.INTER_LINEAR)
         
-        for x in range(0, width, sample_step):
-            for y in range(0, height, sample_step):
-                value = self._plasma_value(x, y)
-                color = self._get_color_from_value(value)
-                
-                # Remplir le bloc
-                frame[y:y+sample_step, x:x+sample_step] = list(color)
+        # Vignette vectorisée NumPy
+        cx, cy = width // 2, height // 2
+        Y_indices, X_indices = np.indices((height, width))
+        dists = np.sqrt((X_indices - cx)**2 + (Y_indices - cy)**2)
+        max_dist = math.sqrt(cx**2 + cy**2)
+        vignette_factors = 1.0 - (dists / max_dist) * 0.4
+        vignette_factors = np.clip(vignette_factors, 0.0, 1.0)[:, :, np.newaxis]
         
-        # Ajouter un effet de vignette
-        for x in range(width):
-            for y in range(height):
-                dist = math.sqrt((x - self.center_x) ** 2 + (y - self.center_y) ** 2)
-                max_dist = math.sqrt(self.center_x ** 2 + self.center_y ** 2)
-                vignette_factor = 1.0 - dist / max_dist
-                if vignette_factor < 0.3:
-                    # Assombrir les bords
-                    frame[y, x] = [int(c * vignette_factor * 3) for c in frame[y, x]]
+        frame = (frame * vignette_factors).astype(np.uint8)
         
-        # Ajouter des motifs supplémentaires
         self._draw_additional_patterns_cv2(frame)
-        
         return frame
     
     def _draw_additional_patterns_cv2(self, frame):

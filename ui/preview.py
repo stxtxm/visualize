@@ -35,15 +35,18 @@ class PreviewFrame(tk.Canvas):
         Args:
             image: PIL ImageTk.PhotoImage to display
         """
-        if self.current_image:
-            self.delete(self.current_image)
+        # Garder une référence pour éviter que le garbage collector ne supprime l'image
+        self._image_ref = image
         
-        self.current_image = self.create_image(
-            self.width // 2,
-            self.height // 2,
-            anchor=tk.CENTER,
-            image=image
-        )
+        if self.current_image is None:
+            self.current_image = self.create_image(
+                self.width // 2,
+                self.height // 2,
+                anchor=tk.CENTER,
+                image=image
+            )
+        else:
+            self.itemconfig(self.current_image, image=image)
 
     def clear(self):
         """Clear the preview."""

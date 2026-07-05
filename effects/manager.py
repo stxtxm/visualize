@@ -9,14 +9,17 @@ import importlib
 
 # Map effect type names to module names
 EFFECT_MAP = {
-    'bars': 'BarEffect',
-    'circles': 'CircleEffect',
-    'particles': 'ParticleEffect',
-    'tunnel': 'TunnelEffect',
-    'wave': 'WaveEffect',
-    'spectrum': 'SpectrumEffect',
-    'plasma': 'PlasmaEffect',
-    'classic': 'ClassicEffect',
+    'neon_equalizer': ('classic', 'ClassicEffect'),
+    'psychedelic_plasma': ('plasma', 'PlasmaEffect'),
+    '3d_cyber_tunnel': ('tunnel', 'TunnelEffect'),
+    'bars': ('bars', 'BarEffect'),
+    'circles': ('circles', 'CircleEffect'),
+    'particles': ('particles', 'ParticleEffect'),
+    'tunnel': ('tunnel', 'TunnelEffect'),
+    'wave': ('wave', 'WaveEffect'),
+    'spectrum': ('spectrum', 'SpectrumEffect'),
+    'plasma': ('plasma', 'PlasmaEffect'),
+    'classic': ('classic', 'ClassicEffect'),
 }
 
 
@@ -57,21 +60,20 @@ class EffectManager:
         """Create the effect instance based on current settings."""
         # Determine which effect to use
         if self.effect_type == 'random':
-            effect_name = random.choice(list(EFFECT_MAP.keys()))
+            effect_name = random.choice(['neon_equalizer', 'psychedelic_plasma', '3d_cyber_tunnel'])
         else:
             effect_name = self.effect_type
         
-        # Get the effect class
-        class_name = EFFECT_MAP.get(effect_name, 'BarEffect')
+        # Get module file and class name
+        module_file, class_name = EFFECT_MAP.get(effect_name, ('classic', 'ClassicEffect'))
         
         # Import the module dynamically
         try:
-            module = importlib.import_module(f'effects.{effect_name.lower()}')
+            module = importlib.import_module(f'effects.{module_file}')
             effect_class = getattr(module, class_name)
         except (ImportError, AttributeError):
-            # Fallback to bars effect
-            from effects.bars import BarEffect
-            effect_class = BarEffect
+            from effects.classic import ClassicEffect
+            effect_class = ClassicEffect
         
         # Create the effect instance
         self.current_effect = effect_class(
@@ -80,7 +82,6 @@ class EffectManager:
             color_palette=self.color_palette
         )
         
-        # Store the actual effect name used
         self._current_effect_name = effect_name
 
     def change_effect(self, effect_type):
