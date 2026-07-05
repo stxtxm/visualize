@@ -203,22 +203,25 @@ class TunnelEffect(BaseEffect):
             
             # Dessiner le polygone avec transparence
             if len(points) > 2:
-                # Créer une surface temporaire avec alpha
-                s = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+                # Réutiliser la surface temporaire pour éviter les allocations
+                if not hasattr(self, '_temp_surface') or self._temp_surface.get_size() != (self.width, self.height):
+                    self._temp_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+                
+                self._temp_surface.fill((0, 0, 0, 0))
                 alpha = int(200 * (1 - i / self.num_rings))
-                pygame.draw.polygon(s, (*color, alpha), points)
-                surface.blit(s, (0, 0))
+                pygame.draw.polygon(self._temp_surface, (*color, alpha), points)
+                surface.blit(self._temp_surface, (0, 0))
         
-        # Dessiner les particules
-        for p in self.particles:
-            # Calculer l'alpha en fonction de la vie
-            alpha = int(255 * p['life'])
-            color_with_alpha = (*p['color'], alpha)
-            
-            # Créer une surface temporaire pour la particule
-            s = pygame.Surface((int(p['size']) * 2, int(p['size']) * 2), pygame.SRCALPHA)
-            pygame.draw.circle(s, color_with_alpha, (int(p['size']), int(p['size'])), int(p['size']))
-            surface.blit(s, (int(p['x'] - p['size']), int(p['y'] - p['size'])))
+        # Dessiner les particules (réutiliser une seule surface)
+        if self.particles:
+            if not hasattr(self, '_particles_surface') or self._particles_surface.get_size() != (self.width, self.height):
+                self._particles_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+                
+            self._particles_surface.fill((0, 0, 0, 0))
+            for p in self.particles:
+                alpha = int(255 * p['life'])
+                pygame.draw.circle(self._particles_surface, (*p['color'], alpha), (int(p['x']), int(p['y'])), int(p['size']))
+            surface.blit(self._particles_surface, (0, 0))
         
         # Ajouter un effet de centre qui pulse au rythme des basses
         center_size = int(10 + self.pulse * 30)

@@ -68,7 +68,106 @@ class AudioAnalyzer:
     - treble: Niveau des aigus [0, 1]
     """
     
-    def __init__(self, audio_file, chunk_size=1024, sample_rate=44100, loop=True):
+class AudioStreamReader:
+    """Streams mono/stereo audio chunks from any file using ffmpeg."""
+    def __init__(self, filename, sample_rate=44100, chunk_size=1024, channels=1):
+        self.filename = filename
+        self.sample_rate = sample_rate
+        self.chunk_size = chunk_size
+        self.channels = channels
+        self.process = None
+        self._open_stream()
+        
+    def _open_stream(self):
+        from shutil import which
+        ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
+        if not ffmpeg_path:
+            raise FileNotFoundError("ffmpeg non trouvé")
+            
+        cmd = [
+            ffmpeg_path,
+            '-v', 'error',
+            '-i', self.filename,
+            '-f', 's16le',
+            '-acodec', 'pcm_s16le',
+            '-ac', str(self.channels),
+            '-ar', str(self.sample_rate),
+            '-'
+        ]
+        
+        # Run ffmpeg with clean environment (temporarily clean LD_LIBRARY_PATH if needed)
+        env = os.environ.copy()
+        _saved_ldpath = env.pop('LD_LIBRARY_PATH', None)
+        
+        self.process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=env
+        )
+        
+    def read_chunk(self):
+        if not self.process:
+            return None
+        # 16-bit samples = 2 bytes per sample
+        bytes_to_read = self.chunk_size * self.channels * 2
+        try:
+            data = self.process.stdout.read(bytes_to_read)
+        except Exception:
+            return None
+        if not data or len(data) < bytes_to_read:
+            return None
+            
+        # Unpack bytes to numpy array
+        if HAS_NUMPY:
+            if self.channels == 1:
+                samples = np.frombuffer(data, dtype=np.int16)
+            else:
+                samples = np.frombuffer(data, dtype=np.int16).reshape(-1, self.channels)
+            return samples
+        else:
+            # Fallback structure unpacking without numpy
+            import struct
+            count = len(data) // 2
+            samples = list(struct.unpack(f"<{count}h", data))
+            if self.channels > 1:
+                # Reshape to list of lists
+                samples = [samples[i:i+self.channels] for i in range(0, len(samples), self.channels)]
+            return samples
+        
+    def close(self):
+        if self.process:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=1)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+            self.process = None
+
+
+class AudioAnalyzer:
+    """
+    Analyse les données audio en temps réel pour en extraire des caractéristiques.
+    """
+    freq_bands = [
+        (20, 250),
+        (250, 500),
+        (500, 2000),
+        (2000, 4000),
+        (4000, 20000)
+    ]
+    analysis_bands = [
+        (20, 150),     # Sub-bass
+        (150, 500),    # Bass/Low-mids
+        (500, 2000),   # Mids
+        (2000, 8000),  # High-mids
+        (8000, 20000)  # Highs
+    ]
+
+    def __init__(self, audio_file, chunk_size=1024, sample_rate=44100, loop=False, load_file=True):
         self.audio_file = audio_file
         self.chunk_size = chunk_size
         self.sample_rate = sample_rate
@@ -97,6 +196,10 @@ class AudioAnalyzer:
             import warnings
             warnings.warn("NO_SOUND activé ou numpy non disponible. Utilisation de données audio simulées.")
             self._init_simulated_data(sample_rate, chunk_size)
+        elif not load_file:
+            # Mode streaming offline ou en temps réel (pas de chargement initial du fichier)
+            self.audio_data = None
+            self.total_chunks = 0
         else:
             try:
                 from pydub import AudioSegment
@@ -104,12 +207,23 @@ class AudioAnalyzer:
 
                 ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
                 ffprobe_path = os.environ.get('FFPROBE_PATH') or which('ffprobe')
+
                 if ffmpeg_path:
                     AudioSegment.converter = ffmpeg_path
                 if ffprobe_path:
                     AudioSegment.ffprobe = ffprobe_path
 
-                self.audio = AudioSegment.from_file(audio_file)
+                # Vider temporairement LD_LIBRARY_PATH pour que les binaires système
+                # (ffprobe, ffmpeg) puissent charger leurs libs système correctement.
+                # L'AppImage injecte des libs embarquées (ex: libdb-5.3.so absent)
+                # qui causent un crash exit=127 de ffprobe/ffmpeg système.
+                _saved_ldpath = os.environ.pop('LD_LIBRARY_PATH', None)
+                try:
+                    self.audio = AudioSegment.from_file(audio_file)
+                finally:
+                    if _saved_ldpath is not None:
+                        os.environ['LD_LIBRARY_PATH'] = _saved_ldpath
+
                 self.audio = self.audio.set_frame_rate(sample_rate)
                 self.audio = self.audio.set_channels(1)  # Mono pour simplification
                 self.audio_data = np.array(self.audio.get_array_of_samples())
@@ -121,7 +235,8 @@ class AudioAnalyzer:
                 from shutil import which
                 ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
 
-                # Fallback using ffmpeg conversion to WAV when pydub cannot parse
+                # Fallback: conversion directe ffmpeg → WAV (sans pydub)
+                # On vide aussi LD_LIBRARY_PATH pour ffmpeg système
                 if ffmpeg_path:
                     try:
                         import wave
@@ -137,7 +252,12 @@ class AudioAnalyzer:
                             '-f', 'wav',
                             tmp_file.name,
                         ]
-                        proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
+                        _saved_ldpath2 = os.environ.pop('LD_LIBRARY_PATH', None)
+                        try:
+                            proc = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
+                        finally:
+                            if _saved_ldpath2 is not None:
+                                os.environ['LD_LIBRARY_PATH'] = _saved_ldpath2
                         if proc.returncode == 0 and os.path.exists(tmp_file.name):
                             with wave.open(tmp_file.name, 'rb') as wav_file:
                                 frames = wav_file.readframes(wav_file.getnframes())
@@ -146,7 +266,8 @@ class AudioAnalyzer:
                                     for i in range(0, len(frames) - (len(frames) % 2), 2)
                                 ], dtype=np.int16)
                                 self.total_chunks = len(self.audio_data) // chunk_size
-                        os.unlink(tmp_file.name)
+                        if os.path.exists(tmp_file.name):
+                            os.unlink(tmp_file.name)
                     except Exception:
                         self.audio_data = None
 
@@ -244,6 +365,11 @@ class AudioAnalyzer:
         except:
             pass
     
+    def set_current_stream_chunk(self, chunk):
+        """Met à jour le chunk de flux courant (appelé par le thread de lecture)."""
+        self._current_stream_chunk = chunk
+        self.current_chunk += 1
+
     def get_next_chunk(self):
         """Récupère le prochain chunk audio."""
         if not self.is_playing:
@@ -253,6 +379,16 @@ class AudioAnalyzer:
             except:
                 pass
             return None
+        
+        # Mode streaming direct sans fichier chargé en RAM
+        if self.audio_data is None:
+            chunk = getattr(self, '_current_stream_chunk', None)
+            if chunk is None:
+                if HAS_NUMPY:
+                    return np.zeros(self.chunk_size, dtype=np.int16)
+                else:
+                    return [0] * self.chunk_size
+            return chunk
         
         start = self.current_chunk * self.chunk_size
         end = start + self.chunk_size

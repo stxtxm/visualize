@@ -76,19 +76,26 @@ class VideoRecorder:
         try:
             # Use ffprobe to get duration
             import subprocess
+            ffprobe_path = os.environ.get('FFPROBE_PATH') or 'ffprobe'
             cmd = [
-                'ffprobe',
+                ffprobe_path,
                 '-v', 'error',
                 '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1',
                 audio_file
             ]
+            
+            # Temporarily clean LD_LIBRARY_PATH for system ffprobe
+            env = os.environ.copy()
+            _saved_ldpath = env.pop('LD_LIBRARY_PATH', None)
+            
             result = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=10
+                timeout=10,
+                env=env
             )
             if result.returncode == 0:
                 duration = float(result.stdout.strip())
@@ -103,14 +110,50 @@ class VideoRecorder:
         duration = (file_size * 8) / bitrate
         return duration
 
-    def record(self, effect_generator):
+    def _default_effect_generator(self):
+        """Generates visualizer frames sequentially from the audio file with 0 RAM overhead."""
+        from audio.analyzer import AudioAnalyzer, AudioStreamReader
+        from effects.classic import ClassicEffect
+        
+        # Initialize analyzer in streaming mode (no full file loaded in memory)
+        analyzer = AudioAnalyzer(self.audio_file, sample_rate=44100, chunk_size=1024, load_file=False)
+        analyzer.start_stream()
+        
+        # Open audio stream reader for the visual analysis (1 channel = mono)
+        reader = AudioStreamReader(self.audio_file, sample_rate=44100, chunk_size=1024, channels=1)
+        
+        # Create effect instance
+        effect = ClassicEffect(self.width, self.height, color_palette='winamp_classic')
+        
+        delta_time = 1.0 / self.fps
+        
+        try:
+            while True:
+                chunk = reader.read_chunk()
+                if chunk is None:
+                    break
+                
+                audio_data = analyzer.analyze_chunk(chunk)
+                effect.update(audio_data, delta_time)
+                
+                frame = effect.render_to_array()
+                yield frame
+        finally:
+            reader.close()
+
+    def record(self, effect_generator=None):
         """
         Record the visualization to a video file.
         
         Args:
             effect_generator: A callable or iterator that yields frames
-                           as numpy arrays (height, width, 3) in BGR format
+                           as numpy arrays (height, width, 3) in BGR format.
+                           If None, an internal generator is automatically created
+                           to stream and render the visual effect.
         """
+        if effect_generator is None:
+            effect_generator = self._default_effect_generator()
+
         # Validate audio file
         if not os.path.exists(self.audio_file):
             raise FileNotFoundError(f"Audio file not found: {self.audio_file}")
