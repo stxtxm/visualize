@@ -43,6 +43,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install squashfs-tools
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
         run: sudo apt-get install -y squashfs-tools
 
       - name: Build AppImage
@@ -59,6 +60,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
