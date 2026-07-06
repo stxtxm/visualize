@@ -1,0 +1,88 @@
+name: Build & Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0 \
+            libsdl2-ttf-2.0-0 portaudio19-dev ffmpeg \
+            libgl1 libglib2.0-0 libx11-6 libxext6 libxrender1 \
+            libsm6
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Generate test audio
+        run: python3 scripts/gen_test_audio.py
+
+      - name: Run unit tests
+        run: python3 -m pytest tests/ -v --timeout=60
+
+      - name: Run export test
+        run: python3 tests/test_export.py
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install squashfs-tools
+        run: sudo apt-get install -y squashfs-tools
+
+      - name: Build Docker image
+        run: docker build -t psychedelic-appimage -f Dockerfile.appimage .
+
+      - name: Extract built files
+        run: |
+          mkdir -p output
+          docker run --rm -v $PWD/output:/out:Z psychedelic-appimage \
+            sh -c "cp -rL /output/* /out/"
+
+      - name: Build AppImage
+        run: bash build_standalone.sh
+        env:
+          CONTAINER_CMD: docker
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppImage
+          path: dist_standalone/Visualisateur_Psychedelic.AppImage
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AppImage
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Visualisateur_Psychedelic.AppImage
+          body: |
+            ## Prototype 0.0.1
+
+            Visualisateur Psychédélique autonome.
+
+            - Compatible Fedora 44+, Ubuntu 24.04+, Arch Linux
+            - Export MP4 (H.264 + AAC)
+            - Effets : Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel
+            - Audio : PipeWire, PulseAudio, ALSA

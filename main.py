@@ -278,8 +278,7 @@ def run_export(args):
         ffmpeg_cmd, 
         stdin=subprocess.PIPE, 
         stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE,
-        bufsize=0
+        stderr=subprocess.PIPE
     )
     
     frames_written = 0
@@ -302,7 +301,7 @@ def run_export(args):
             try:
                 process.stdin.write(frame.tobytes())
                 frames_written += 1
-            except (BrokenPipeError, ConnectionResetError, OSError):
+            except (BrokenPipeError, ConnectionResetError, ValueError, OSError):
                 break
             
             if frame_count % 100 == 0:

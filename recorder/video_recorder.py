@@ -39,33 +39,36 @@ class VideoRecorder:
 
     def _build_ffmpeg_command(self):
         """Build the FFmpeg command for encoding."""
+        ffmpeg_path = os.environ.get('FFMPEG_PATH') or 'ffmpeg'
         resolution = f"{self.width}x{self.height}"
         
-        # Video bitrate based on resolution
-        bitrate = "20M"  # 20 Mbps for 1080p
-        if self.width >= 2560:  # 1440p+
-            bitrate = "35M"
-        elif self.width >= 3840:  # 4K
+        bitrate = "20M"
+        if self.width >= 3840:
             bitrate = "50M"
+        elif self.width >= 2560:
+            bitrate = "35M"
         
-        # FFmpeg command
         cmd = [
-            'ffmpeg',
-            '-y',  # Overwrite without asking
+            ffmpeg_path,
+            '-y',
             '-f', 'rawvideo',
             '-vcodec', 'rawvideo',
             '-s', resolution,
             '-pix_fmt', 'bgr24',
             '-r', str(self.fps),
-            '-i', 'pipe:0',  # Video input from stdin
-            '-i', self.audio_file,  # Audio input
-            '-c:v', 'mpeg4',
-            '-qscale:v', '2',
+            '-i', 'pipe:0',
+            '-i', self.audio_file,
+            '-c:v', 'libopenh264',
+            '-coder', 'cavlc',
+            '-b:v', bitrate,
+            '-maxrate', bitrate,
+            '-bufsize', bitrate,
             '-pix_fmt', 'yuv420p',
             '-c:a', 'aac',
             '-b:a', '192k',
-            '-shortest',  # Stop when audio ends
-            '-threads', '0',  # Use all available threads
+            '-movflags', '+faststart',
+            '-shortest',
+            '-threads', '0',
             self.output_file
         ]
         
@@ -73,6 +76,7 @@ class VideoRecorder:
 
     def _get_audio_duration(self, audio_file):
         """Get duration of audio file in seconds."""
+        import os
         try:
             # Use ffprobe to get duration
             import subprocess
@@ -84,11 +88,22 @@ class VideoRecorder:
                 '-of', 'default=noprint_wrappers=1:nokey=1',
                 audio_file
             ]
-            
-            # Temporarily clean LD_LIBRARY_PATH for system ffprobe
+
+            # Prepare environment
             env = os.environ.copy()
-            _saved_ldpath = env.pop('LD_LIBRARY_PATH', None)
-            
+            self_dir = os.environ.get('SELF_DIR')
+            ffmpeg_path = os.environ.get('FFMPEG_PATH', 'ffmpeg')
+            if self_dir and ffmpeg_path.startswith(self_dir):
+                # If using bundled FFmpeg/ffprobe, add SELF_DIR/usr/lib to LD_LIBRARY_PATH
+                lib_path = os.path.join(self_dir, 'usr', 'lib')
+                if 'LD_LIBRARY_PATH' in env:
+                    env['LD_LIBRARY_PATH'] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+                else:
+                    env['LD_LIBRARY_PATH'] = lib_path
+            else:
+                # For system FFmpeg/ffprobe, remove LD_LIBRARY_PATH to avoid conflicts
+                env.pop('LD_LIBRARY_PATH', None)
+
             result = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -102,7 +117,7 @@ class VideoRecorder:
                 return duration
         except Exception:
             pass
-        
+
         # Fallback: estimate from file size
         # Assume MP3 at 128 kbps
         file_size = os.path.getsize(audio_file)
@@ -113,7 +128,8 @@ class VideoRecorder:
     def _default_effect_generator(self):
         """Generates visualizer frames sequentially from the audio file with 0 RAM overhead."""
         from audio.analyzer import AudioAnalyzer, AudioStreamReader
-        from effects.classic import ClassicEffect
+        from effects.manager import EFFECT_MAP
+        import importlib, random
         
         # Initialize analyzer in streaming mode (no full file loaded in memory)
         analyzer = AudioAnalyzer(self.audio_file, sample_rate=44100, chunk_size=1024, load_file=False)
@@ -122,8 +138,19 @@ class VideoRecorder:
         # Open audio stream reader for the visual analysis (1 channel = mono)
         reader = AudioStreamReader(self.audio_file, sample_rate=44100, chunk_size=1024, channels=1)
         
-        # Create effect instance
-        effect = ClassicEffect(self.width, self.height, color_palette='winamp_classic')
+        # Determine effect class from self.effect_type (mirrors EffectManager logic)
+        effect_name = self.effect_type
+        if effect_name == 'random':
+            effect_name = random.choice(['neon_equalizer', 'psychedelic_plasma', '3d_cyber_tunnel'])
+        module_file, class_name = EFFECT_MAP.get(effect_name, ('classic', 'ClassicEffect'))
+        try:
+            module = importlib.import_module(f'effects.{module_file}')
+            effect_class = getattr(module, class_name)
+        except (ImportError, AttributeError):
+            from effects.classic import ClassicEffect
+            effect_class = ClassicEffect
+        
+        effect = effect_class(self.width, self.height, color_palette=self.color_palette)
         
         delta_time = 1.0 / self.fps
         
@@ -151,6 +178,7 @@ class VideoRecorder:
                            If None, an internal generator is automatically created
                            to stream and render the visual effect.
         """
+        import os
         if effect_generator is None:
             effect_generator = self._default_effect_generator()
 
@@ -172,15 +200,31 @@ class VideoRecorder:
         print()
         
         # Start FFmpeg process
+        # Prepare environment correctly
+        env = os.environ.copy()
+        self_dir = os.environ.get('SELF_DIR')
+        ffmpeg_path = os.environ.get('FFMPEG_PATH', 'ffmpeg')
+        if self_dir and ffmpeg_path.startswith(self_dir):
+            # If using bundled FFmpeg, add SELF_DIR/usr/lib to LD_LIBRARY_PATH
+            lib_path = os.path.join(self_dir, 'usr', 'lib')
+            if 'LD_LIBRARY_PATH' in env:
+                env['LD_LIBRARY_PATH'] = f"{lib_path}:{env['LD_LIBRARY_PATH']}"
+            else:
+                env['LD_LIBRARY_PATH'] = lib_path
+        else:
+            # For system FFmpeg, remove LD_LIBRARY_PATH to avoid conflicts
+            env.pop('LD_LIBRARY_PATH', None)
+
         self._process = subprocess.Popen(
             self._ffmpeg_cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            env=env
         )
         
         try:
-            # Write frames to FFmpeg
+            # Write frames to FFmpeg (no per-frame flush — Python's BufferedWriter handles it)
             frame_count = 0
             
             for frame in effect_generator:
@@ -189,40 +233,40 @@ class VideoRecorder:
                     if frame.dtype != np.uint8:
                         frame = frame.astype(np.uint8)
                     
-                    # Ensure BGR format (OpenCV default)
-                    # If RGB, convert to BGR
+                    # Convert RGB to BGR (FFmpeg expects bgr24 pixel format)
                     if frame.shape[2] == 3:
-                        pass  # Already correct shape
+                        frame = frame[:, :, ::-1]
                 
-                # Write frame to FFmpeg
+                # Check FFmpeg health before writing
+                if self._process.poll() is not None:
+                    print(f"FFmpeg exited early at frame {frame_count}")
+                    break
+                
                 try:
                     self._process.stdin.write(frame.tobytes())
-                except (BrokenPipeError, ConnectionResetError, ValueError) as e:
-                    # Pipe fermé ou FFmpeg a crashé
+                except (BrokenPipeError, ConnectionResetError, ValueError, IOError, OSError) as e:
                     print(f"Warning: Pipe error at frame {frame_count}: {e}")
                     break
                 
                 frame_count += 1
                 
-                # Show progress
                 if frame_count % 100 == 0:
                     progress = (frame_count / total_frames) * 100
                     print(f"Export: {progress:.1f}% ({frame_count}/{total_frames} frames)")
                 
-                # Check if we've reached the end
                 if total_frames > 0 and frame_count >= total_frames:
                     break
                 
-                # Check if FFmpeg is still alive periodically
                 if frame_count % 200 == 0 and self._process.poll() is not None:
                     print(f"Warning: FFmpeg exited at frame {frame_count}")
                     break
             
             # Close stdin to signal FFmpeg that we're done
             try:
-                self._process.stdin.close()
-            except:
-                pass
+                if self._process.stdin and not self._process.stdin.closed:
+                    self._process.stdin.close()
+            except Exception as e:
+                print(f"Warning when closing stdin: {e}")
             
             # Wait for FFmpeg to finish
             try:
@@ -231,13 +275,30 @@ class VideoRecorder:
                 self._process.kill()
                 stdout, stderr = self._process.communicate()
                 raise RuntimeError("FFmpeg timeout - export took too long")
+            except (ValueError, OSError):
+                # stdin pipe already broken — FFmpeg already exited
+                if self._process.returncode is None:
+                    self._process.wait(timeout=5)
+                stdout, stderr = (b'', b'')
             
             if self._process.returncode != 0:
                 error_msg = stderr.decode('utf-8', errors='ignore') if stderr else 'Unknown error'
+                print(f"FFmpeg stderr output:\n{error_msg}")
                 raise RuntimeError(f"FFmpeg error (code {self._process.returncode}):\n{error_msg}")
             
             print(f"\nVideo exported successfully: {self.output_file}")
             
+        except Exception as e:
+            print(f"Export failed with error: {type(e).__name__}: {e}")
+            # Try to get FFmpeg's output in case of crash
+            if self._process:
+                try:
+                    stdout, stderr = self._process.communicate(timeout=5)
+                    if stderr:
+                        print(f"FFmpeg stderr:\n{stderr.decode('utf-8', errors='ignore')}")
+                except:
+                    pass
+            raise
         finally:
             if self._process and self._process.poll() is None:
                 self._process.terminate()

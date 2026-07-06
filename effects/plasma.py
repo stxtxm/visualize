@@ -6,6 +6,7 @@ Inspiré des visualisations plasma des années 90.
 
 import numpy as np
 import math
+import random
 from effects.base import BaseEffect
 
 

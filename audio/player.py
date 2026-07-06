@@ -292,7 +292,7 @@ class AudioPlayer:
                         # Bloque naturellement si le buffer du pipe est plein
                         self._subproc.stdin.write(data)
                         self._subproc.stdin.flush()
-                    except (BrokenPipeError, OSError):
+                    except (BrokenPipeError, ValueError, OSError):
                         self.is_playing = False
                         break
             else:
@@ -390,7 +390,7 @@ class AudioPlayer:
                         data = samples.tobytes()
                         self._subproc.stdin.write(data)
                         self._subproc.stdin.flush()
-                    except (BrokenPipeError, OSError):
+                    except (BrokenPipeError, ValueError, OSError):
                         self.is_playing = False
                         break
             else:

@@ -26,9 +26,15 @@ class TeeStream:
         return len(data)
     
     def flush(self):
-        self.stream1.flush()
+        try:
+            self.stream1.flush()
+        except (ValueError, OSError):
+            pass
         if hasattr(self.stream2, 'flush'):
-            self.stream2.flush()
+            try:
+                self.stream2.flush()
+            except (ValueError, OSError):
+                pass
     
     def __getattr__(self, attr):
         return getattr(self.stream1, attr)
