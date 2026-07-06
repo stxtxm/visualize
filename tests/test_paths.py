@@ -111,12 +111,13 @@ class TestPathManager:
     def test_is_in_container_on_host(self, project_root, monkeypatch):
         """Test is_in_container quand on est sur l'hôte."""
         # S'assurer que /app/main.py n'existe pas
+        original_exists = os.path.exists
         def mock_exists(path):
             if path == '/app/main.py':
                 return False
-            return os.path.exists(path)
+            return original_exists(path)
         
-        monkeypatch.setattr(os, 'exists', mock_exists)
+        monkeypatch.setattr(os.path, 'exists', mock_exists)
         
         pm = PathManager()
         # Sur l'hôte, in_container devrait être False
@@ -134,12 +135,13 @@ class TestPathManager:
     def test_convert_to_container_path_on_host(self, project_root, test_input_dir, monkeypatch):
         """Test convert_to_container_path depuis l'hôte."""
         # S'assurer qu'on n'est pas dans le conteneur
+        original_exists = os.path.exists
         def mock_exists(path):
             if path == '/app/main.py':
                 return False
-            return os.path.exists(path)
+            return original_exists(path)
         
-        monkeypatch.setattr(os, 'exists', mock_exists)
+        monkeypatch.setattr(os.path, 'exists', mock_exists)
         
         pm = PathManager()
         pm.input_dir = test_input_dir

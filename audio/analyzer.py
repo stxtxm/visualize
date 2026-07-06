@@ -26,48 +26,6 @@ else:
     HAS_NUMPY = False
 
 
-class AudioAnalyzer:
-    freq_bands = [
-        (20, 150),
-        (150, 500),
-        (500, 2000),
-        (2000, 5000),
-        (5000, 20000),
-    ]
-
-    analysis_bands = [
-        (20, 60),
-        (60, 120),
-        (120, 200),
-        (200, 350),
-        (350, 500),
-        (500, 1000),
-        (1000, 2000),
-        (2000, 3000),
-        (3000, 4000),
-        (4000, 5000),
-        (5000, 6000),
-        (6000, 7000),
-        (7000, 8000),
-        (8000, 10000),
-        (10000, 12000),
-        (12000, 20000),
-    ]
-    """
-    Analyse un flux audio et extrait les caractéristiques pour la visualisation.
-    
-    Retourne des données enrichies avec :
-    - volume: Niveau de volume [0, 1]
-    - frequency_bands: Niveaux par bande de fréquence [0, 1]
-    - spectrum: Spectre FFT complet
-    - beat: Détection de beat (bool)
-    - bpm: BPM actuel (float)
-    - beat_strength: Force du beat [0, 1]
-    - bass: Niveau des basses [0, 1]
-    - mids: Niveau des médiums [0, 1]
-    - treble: Niveau des aigus [0, 1]
-    """
-    
 class AudioStreamReader:
     """Streams mono/stereo audio chunks from any file using ffmpeg."""
     def __init__(self, filename, sample_rate=44100, chunk_size=1024, channels=1):
