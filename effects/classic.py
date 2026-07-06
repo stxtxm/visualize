@@ -129,6 +129,7 @@ class ClassicEffect(BaseEffect):
     def _render_pygame(self, surface):
         """Rendu haute performance via Pygame."""
         W, H = surface.get_size()
+        s = H / 450.0  # Facteur d'échelle (base = preview 450px)
         surface.fill((8, 6, 12))  # Fond sombre quasi-noir
 
         # Grille synthwave (lignes verticales + horizontales subtiles)
@@ -146,19 +147,19 @@ class ClassicEffect(BaseEffect):
         num_beams = 12
         for i in range(num_beams):
             angle = self.rotation + i * (2 * math.pi / num_beams)
-            base_len = 60 + self.pulse * 80
-            length = base_len + math.sin(self.sweep + i * 0.7) * 20
-            x1 = cx + math.cos(angle) * 25
-            y1 = cy + math.sin(angle) * 25
+            base_len = (60 + self.pulse * 80) * s
+            length = base_len + math.sin(self.sweep + i * 0.7) * 20 * s
+            x1 = cx + math.cos(angle) * 25 * s
+            y1 = cy + math.sin(angle) * 25 * s
             x2 = cx + math.cos(angle) * length
             y2 = cy + math.sin(angle) * length
             col = self.colors[(i + int(self.time * 2)) % len(self.colors)]
-            pygame.draw.line(surface, col, (int(x1), int(y1)), (int(x2), int(y2)), 2)
+            pygame.draw.line(surface, col, (int(x1), int(y1)), (int(x2), int(y2)), max(1, int(2 * s)))
 
         # Oscilloscope circulaire déformé par les fréquences
         if self.freq_bands and len(self.freq_bands) >= 4:
             for ring_idx in range(3):
-                base_r = 40 + ring_idx * 22 + self.pulse * 18
+                base_r = (40 + ring_idx * 22 + self.pulse * 18) * s
                 num_pts = 80
                 pts = []
                 for p in range(num_pts):
@@ -166,7 +167,7 @@ class ClassicEffect(BaseEffect):
                     band_i = int(p * len(self.freq_bands) / num_pts)
                     band_i = min(band_i, len(self.freq_bands) - 1)
                     val = float(self.freq_bands[band_i])
-                    r = base_r + val * 55
+                    r = base_r + val * 55 * s
                     px = cx + math.cos(angle) * r
                     py = cy + math.sin(angle) * r
                     pts.append((int(px), int(py)))
@@ -174,14 +175,14 @@ class ClassicEffect(BaseEffect):
                 if len(pts) >= 3:
                     col = self.colors[(ring_idx + int(self.time)) % len(self.colors)]
                     pygame.draw.polygon(surface, (*col, 30), pts)
-                    pygame.draw.polygon(surface, col, pts, 2)
+                    pygame.draw.polygon(surface, col, pts, max(1, int(2 * s)))
 
         # Flash de beat (halo lumineux centré)
         if self.flash > 0.1:
             flash_surf = pygame.Surface((W, H), pygame.SRCALPHA)
             col = self.colors[int(self.time * 3) % len(self.colors)]
             alpha = int(self.flash * 60)
-            r = int(80 + self.flash * 120)
+            r = int((80 + self.flash * 120) * s)
             pygame.draw.circle(flash_surf, (*col, alpha), (cx, cy), r)
             surface.blit(flash_surf, (0, 0))
 
@@ -232,19 +233,75 @@ class ClassicEffect(BaseEffect):
         pygame.draw.line(surface, base_col, (10, bar_baseline), (W - 10, bar_baseline), 1)
 
     def render_to_array(self):
-        """Rendu NumPy pur (sans Pygame) — utilisé si Pygame n'est pas dispo."""
-        W, H = self.width, self.height
+        """Rendu NumPy via OpenCV pour l'export vidéo."""
+        import cv2
 
-        # Réutiliser le buffer
+        W, H = self.width, self.height
+        s = H / 450.0  # Facteur d'échelle (base = preview 450px)
+
         if self._frame is None or self._frame.shape != (H, W, 3):
             self._frame = np.zeros((H, W, 3), dtype=np.uint8)
 
         frame = self._frame
-        frame[:] = [8, 6, 12]  # Fond
+        frame[:] = [8, 6, 12]  # Fond sombre
 
         cx, cy = W // 2, int(H * 0.40)
 
-        # Barres equalizer
+        # Grille synthwave
+        step_x = max(20, W // 40)
+        step_y = max(20, H // 22)
+        grid_col = (18, 15, 28)
+        for x in range(0, W, step_x):
+            cv2.line(frame, (x, 0), (x, H), grid_col, 1)
+        for y in range(0, H, step_y):
+            cv2.line(frame, (0, y), (W, y), grid_col, 1)
+
+        # Rayons étoilés pulsants
+        num_beams = 12
+        for i in range(num_beams):
+            angle = self.rotation + i * (2 * math.pi / num_beams)
+            base_len = (60 + self.pulse * 80) * s
+            length = base_len + math.sin(self.sweep + i * 0.7) * 20 * s
+            x1 = int(cx + math.cos(angle) * 25 * s)
+            y1 = int(cy + math.sin(angle) * 25 * s)
+            x2 = int(cx + math.cos(angle) * length)
+            y2 = int(cy + math.sin(angle) * length)
+            col = self.colors[(i + int(self.time * 2)) % len(self.colors)]
+            cv2.line(frame, (x1, y1), (x2, y2), col, max(1, int(2 * s)))
+
+        # Oscilloscope circulaire (3 anneaux réactifs aux fréquences)
+        if self.freq_bands and len(self.freq_bands) >= 4:
+            num_pts = 80
+            for ring_idx in range(3):
+                base_r = (40 + ring_idx * 22 + self.pulse * 18) * s
+                pts = []
+                for p in range(num_pts):
+                    angle = p * (2 * math.pi / num_pts) - self.rotation * (0.8 + ring_idx * 0.15)
+                    band_i = min(int(p * len(self.freq_bands) / num_pts), len(self.freq_bands) - 1)
+                    val = float(self.freq_bands[band_i])
+                    r = base_r + val * 55 * s
+                    px = int(cx + math.cos(angle) * r)
+                    py = int(cy + math.sin(angle) * r)
+                    pts.append([px, py])
+
+                if len(pts) >= 3:
+                    col = self.colors[(ring_idx + int(self.time)) % len(self.colors)]
+                    pts_arr = np.array(pts, dtype=np.int32)
+                    overlay = frame.copy()
+                    cv2.fillPoly(overlay, [pts_arr], col)
+                    frame[:] = cv2.addWeighted(overlay, 0.15, frame, 0.85, 0)
+                    cv2.polylines(frame, [pts_arr], True, col, max(1, int(2 * s)))
+
+        # Flash de beat (halo lumineux)
+        if self.flash > 0.1:
+            col = self.colors[int(self.time * 3) % len(self.colors)]
+            alpha = min(1.0, self.flash * 0.25)
+            r = int((80 + self.flash * 120) * s)
+            overlay = frame.copy()
+            cv2.circle(overlay, (cx, cy), r, col, -1)
+            frame[:] = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+
+        # Barres equalizer style Winamp
         bar_area_height = int(H * 0.22)
         bar_baseline = H - 4
         bar_w = max(2, (W - 20) // self.num_bars)
@@ -273,40 +330,15 @@ class ClassicEffect(BaseEffect):
             if x_end > x and y_top < H:
                 frame[y_top:bar_baseline, x:x_end] = [rc, gc, bc]
 
-            # Peak
+            # Peak flottant
             ph = int(self.peak_hold[i])
             ph = min(ph, bar_area_height)
             if ph > 4:
                 py = max(0, min(H - 2, bar_baseline - ph))
                 frame[py:py + 2, x:x_end] = [0, 240, 255]
 
-        # Oscilloscope circulaire (numpy vectorisé, 3 anneaux)
-        if self.freq_bands and len(self.freq_bands) >= 4:
-            num_pts = 80
-            angles = np.linspace(0, 2 * math.pi, num_pts, endpoint=False)
-            band_indices = np.clip(
-                (np.arange(num_pts) * len(self.freq_bands) / num_pts).astype(int),
-                0, len(self.freq_bands) - 1
-            )
-            vals = np.array([self.freq_bands[i] for i in band_indices], dtype=np.float64)
-
-            for ring_idx in range(3):
-                base_r = 40 + ring_idx * 22 + self.pulse * 18
-                radii = base_r + vals * 55
-
-                # Appliquer la rotation
-                rot_angles = angles - self.rotation * (0.8 + ring_idx * 0.15)
-                xs = (cx + np.cos(rot_angles) * radii).astype(int)
-                ys = (cy + np.sin(rot_angles) * radii).astype(int)
-
-                col = self.colors[(ring_idx + int(self.time)) % len(self.colors)]
-                for j in range(len(xs)):
-                    x0, y0 = xs[j], ys[j]
-                    x1, y1 = xs[(j + 1) % len(xs)], ys[(j + 1) % len(xs)]
-                    # Simple drawing with bounds checks
-                    if 0 <= x0 < W and 0 <= y0 < H:
-                        frame[y0, x0] = col
-                    if 0 <= x1 < W and 0 <= y1 < H:
-                        frame[y1, x1] = col
+        # Ligne de base néon
+        base_col = self.colors[int(self.time * 2) % len(self.colors)]
+        cv2.line(frame, (10, bar_baseline), (W - 10, bar_baseline), base_col, 1)
 
         return frame

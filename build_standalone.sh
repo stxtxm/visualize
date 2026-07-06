@@ -19,16 +19,8 @@ log_success() { echo -e "${GREEN}✓${NC} $1"; }
 
 # Nettoyage
 log_info "Nettoyage..."
-rm -rf Visualisateur.AppDir output/ appimagetool-x86_64.AppImage Dockerfile.appimage
+rm -rf Visualisateur.AppDir output/ Dockerfile.appimage
 mkdir -p "$DIST_DIR" output
-
-# Télécharger appimagetool
-if [ ! -f "appimagetool-x86_64.AppImage" ]; then
-    log_info "Téléchargement de appimagetool..."
-    wget -q -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
-        -O appimagetool-x86_64.AppImage || log_error "appimagetool téléchargement échoué"
-    chmod +x appimagetool-x86_64.AppImage
-fi
 
 # Créer le Dockerfile de build
 cat > Dockerfile.appimage << 'DOCKERFILE_EOF'
@@ -88,11 +80,13 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libjack.so.* \
         /usr/lib/x86_64-linux-gnu/libdbus-1.so.* \
+        /usr/lib/x86_64-linux-gnu/libdb-*.so* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
-
+    
 # Copier la bibliothèque FFmpeg runtime requise par ffmpeg/ffprobe
+# Inclut libx264 pour l'encodage H.264 (compatible Fedora, Windows, macOS)
 RUN mkdir -p /output/usr/lib && \
     for lib in \
         /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
@@ -106,6 +100,9 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libdc1394.so.* \
         /usr/lib/x86_64-linux-gnu/libraw1394.so.* \
         /usr/lib/x86_64-linux-gnu/libiec61883.so.* \
+        /usr/lib/x86_64-linux-gnu/libx264* \
+        /usr/lib/x86_64-linux-gnu/libx265* \
+        /usr/lib/x86_64-linux-gnu/libopenh264* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
@@ -120,10 +117,25 @@ RUN mkdir -p /output/usr/lib/pulseaudio && \
     done
 DOCKERFILE_EOF
 
+# Détecter le conteneur disponible (docker ou podman)
+CONTAINER_CMD="${CONTAINER_CMD:-}"
+if [ -z "$CONTAINER_CMD" ]; then
+    if command -v docker &>/dev/null; then
+        CONTAINER_CMD=docker
+    elif command -v podman &>/dev/null; then
+        CONTAINER_CMD=podman
+    else
+        log_error "Ni docker ni podman trouvé. Installez l'un des deux."
+    fi
+fi
+log_info "Utilisation de: $CONTAINER_CMD"
+
 # Build conteneur
 BUILD_LOG="/tmp/visualizer_build.log"
-log_info "Build du conteneur Podman..."
-if ! podman build -t psychedelic-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
+log_info "Build du conteneur $CONTAINER_CMD..."
+MOUNT_FLAG=""
+[ "$CONTAINER_CMD" = "podman" ] && MOUNT_FLAG=":Z"
+if ! $CONTAINER_CMD build -t psychedelic-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
     tail -10 "$BUILD_LOG"
     log_error "Build du conteneur échoué. Voir $BUILD_LOG"
 fi
@@ -132,7 +144,7 @@ fi
 log_info "Extraction des fichiers..."
 rm -rf output/
 mkdir -p output
-podman run --rm -v "$SCRIPT_DIR/output:/out:Z" psychedelic-appimage sh -c "cp -rL /output/* /out/"
+$CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/"
 
 # Copier le code source dans output/usr/app sans inclure les artefacts de build
 mkdir -p output/usr/app
@@ -254,6 +266,7 @@ log_info "Taille des libs Python: $APPDIR_SIZE"
 cat > Visualisateur.AppDir/AppRun << 'APPRUN_EOF'
 #!/bin/bash
 SELF_DIR=$(dirname "$(readlink -f "$0")")
+export SELF_DIR="$SELF_DIR"
 
 # Python 3.11 OBLIGATOIRE : les packages embarqués (.so) sont compilés pour Python 3.11
 # Tester d'abord python3.11, puis fallback vers d'autres si vraiment absent
@@ -293,6 +306,8 @@ if command -v ffmpeg &> /dev/null; then
     export FFMPEG_PATH=$(command -v ffmpeg)
 else
     export FFMPEG_PATH="$SELF_DIR/usr/bin/ffmpeg"
+    # When using bundled ffmpeg, add bundled libs (libopenh264, libx264, etc.)
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$SELF_DIR/usr/lib"
 fi
 
 if command -v ffprobe &> /dev/null; then
@@ -321,11 +336,11 @@ fi
 
 # Configuration audio adaptée au système
 # Priorité : pw-play (natif PipeWire) > aplay (ALSA compat) > sounddevice > autres
-if [ "$HAS_PIPEWIRE" = true ]; then
-    echo "Audio: PipeWire détecté - utilisation pw-play comme backend principal"
-    # Ne PAS ajouter les libs PulseAudio embarquées (incompatibles avec PipeWire)
-    # Utiliser uniquement les libs SDL embarquées pour pygame
-    export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs"
+    if [ "$HAS_PIPEWIRE" = true ]; then
+        echo "Audio: PipeWire détecté - utilisation pw-play comme backend principal"
+        # Ne PAS ajouter usr/lib pour éviter les conflits de libportaudio avec PipeWire
+        # (le système a ses propres libs audio compatibles)
+        export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs"
     # Priorité 1: pw-play (natif PipeWire, le plus fiable sur Fedora 44)
     # Priorité 2: aplay (compat ALSA de PipeWire)
     if command -v pw-play &> /dev/null 2>&1; then
@@ -378,9 +393,19 @@ Categories=AudioVideo;Player;Graphics;
 Terminal=false
 DESKTOP_EOF
 
+# Vérifier/télécharger le runtime AppImage
+RUNTIME="${RUNTIME_PATH:-/tmp/runtime-x86_64}"
+if [ ! -f "$RUNTIME" ]; then
+    log_info "Téléchargement du runtime AppImage..."
+    curl -L --max-time 60 -o "$RUNTIME" \
+        "https://github.com/AppImage/AppImageKit/releases/download/continuous/runtime-x86_64" || \
+        log_error "Échec du téléchargement du runtime"
+    chmod +x "$RUNTIME"
+fi
+
 # Builder l'AppImage
 log_info "Création de l'AppImage..."
-ARCH=x86_64 ./appimagetool-x86_64.AppImage Visualisateur.AppDir "$DIST_DIR/Visualisateur_Psychedelic.AppImage" 2>&1 | tail -10 || true
+python3 create_appimage.py "$RUNTIME" Visualisateur.AppDir "$DIST_DIR/Visualisateur_Psychedelic.AppImage"
 
 if [ -f "$DIST_DIR/Visualisateur_Psychedelic.AppImage" ]; then
     chmod +x "$DIST_DIR/Visualisateur_Psychedelic.AppImage"

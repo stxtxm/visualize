@@ -54,11 +54,13 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.* \
         /usr/lib/x86_64-linux-gnu/libjack.so.* \
         /usr/lib/x86_64-linux-gnu/libdbus-1.so.* \
+        /usr/lib/x86_64-linux-gnu/libdb-*.so* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
-
+    
 # Copier la bibliothèque FFmpeg runtime requise par ffmpeg/ffprobe
+# Inclut libx264 pour l'encodage H.264 (compatible Fedora, Windows, macOS)
 RUN mkdir -p /output/usr/lib && \
     for lib in \
         /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
@@ -72,6 +74,9 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libdc1394.so.* \
         /usr/lib/x86_64-linux-gnu/libraw1394.so.* \
         /usr/lib/x86_64-linux-gnu/libiec61883.so.* \
+        /usr/lib/x86_64-linux-gnu/libx264* \
+        /usr/lib/x86_64-linux-gnu/libx265* \
+        /usr/lib/x86_64-linux-gnu/libopenh264* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done

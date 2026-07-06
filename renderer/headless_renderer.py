@@ -65,12 +65,12 @@ class HeadlessRenderer:
         Initialize the renderer.
         
         Args:
-            width: Nominal width (for compatibility, internal render uses RENDER_WIDTH)
-            height: Nominal height (for compatibility, internal render uses RENDER_HEIGHT)
+            width: Width (résolution d'effet pour render_to_array)
+            height: Height (résolution d'effet pour render_to_array)
             fps: Target frames per second
         """
-        self.width = self.RENDER_WIDTH if width > self.RENDER_WIDTH else width
-        self.height = self.RENDER_HEIGHT if height > self.RENDER_HEIGHT else height
+        self.width = width
+        self.height = height
         self.fps = fps
         self._surface = None
         self._initialized = False

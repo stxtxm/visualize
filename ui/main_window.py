@@ -176,7 +176,7 @@ class MainWindow:
         preview_border = tk.Frame(right_panel, bg=self.NEON_CYAN, bd=1)
         preview_border.pack(fill=tk.BOTH, expand=True)
         
-        self.preview = PreviewFrame(preview_border, width=800, height=450, bd=0, highlightthickness=0)
+        self.preview = PreviewFrame(preview_border, bd=0, highlightthickness=0)
         self.preview.pack(fill=tk.BOTH, expand=True)
         
         # Status Bar
@@ -289,22 +289,25 @@ class MainWindow:
         except Exception:
             self._has_pygame = False
         
-        # Créer le renderer adapté
+        # Créer le renderer à la taille exacte du canvas preview (pas de resize)
         try:
+            pw = max(self.preview.winfo_width(), 200)
+            ph = max(self.preview.winfo_height(), 100)
+            self._preview_render_size = (pw, ph)
+
             if self._has_pygame:
                 from renderer.headless_renderer import HeadlessRenderer
                 self.preview_renderer = HeadlessRenderer(
-                    width=HeadlessRenderer.RENDER_WIDTH,
-                    height=HeadlessRenderer.RENDER_HEIGHT,
+                    width=pw,
+                    height=ph,
                     fps=self.fps.get()
                 )
-                # Init here (main thread) for pygame display init
                 self.preview_renderer.init()
             else:
                 from renderer.array_renderer import ArrayRenderer
                 self.preview_renderer = ArrayRenderer(
-                    width=800,
-                    height=450,
+                    width=pw,
+                    height=ph,
                     fps=self.fps.get()
                 )
         except Exception as e:
@@ -355,87 +358,85 @@ class MainWindow:
         try:
             self.analyzer.start_stream()
             self.preview_renderer.init()
-            
+
             iteration = 0
             try:
                 from ui.log_display import log_message
                 log_message("Playback: Boucle de lecture démarrée")
             except:
                 pass
-            
+
             while self._is_playing_event.is_set():
                 iteration += 1
-                
-                # Handle events
+
                 if not self.preview_renderer.handle_events():
                     self._is_playing_event.clear()
                     break
-                
-                # Get delta time (this also limits FPS via SimpleClock.tick)
+
                 delta_time = self.preview_renderer.clock.tick(self.fps.get()) / 1000.0
 
-                # Get audio data
+                # Vérifier si le canvas a changé de taille → recréer l'effet
+                pw = max(self.preview.winfo_width(), 200)
+                ph = max(self.preview.winfo_height(), 100)
+                if (pw, ph) != getattr(self, '_preview_render_size', (0, 0)):
+                    try:
+                        from effects.manager import EffectManager
+                        effect_name_map = {"Neon Equalizer": "neon_equalizer", "Psychedelic Plasma": "psychedelic_plasma", "3D Cyber Tunnel": "3d_cyber_tunnel"}
+                        effect_key = effect_name_map.get(self.selected_effect.get(), "neon_equalizer")
+                        self.preview_renderer.width = pw
+                        self.preview_renderer.height = ph
+                        self.effect_manager = EffectManager(
+                            analyzer=self.analyzer,
+                            renderer=self.preview_renderer,
+                            effect_type=effect_key,
+                            color_palette=self.selected_color.get()
+                        )
+                        self.effect_manager.init()
+                        self._preview_render_size = (pw, ph)
+                    except Exception:
+                        pass
+
                 if not hasattr(self, 'audio_player') or self.audio_player is None or not self.audio_player.is_playing:
                     break
 
                 chunk = self.analyzer.get_next_chunk()
                 if chunk is None:
                     break
-                    
+
                 audio_data = self.analyzer.analyze_chunk(chunk)
-                
-                # Adaptive frame skipping: if we're falling behind, skip some frames
+
+                # Saut de frame adaptatif si le rendu est trop lent
                 target_frame_time = 1.0 / max(self.fps.get(), 1)
                 if delta_time > target_frame_time * 1.5:
-                    # We're behind, increase skip threshold
                     self._frame_skip_threshold = min(3, self._frame_skip_threshold + 1)
                 elif delta_time < target_frame_time * 0.8:
-                    # We're ahead, decrease skip threshold
                     self._frame_skip_threshold = max(0, self._frame_skip_threshold - 1)
-                
-                self._frame_skip_counter += 1
 
+                self._frame_skip_counter += 1
                 if self._frame_skip_counter <= self._frame_skip_threshold:
-                    # Skip this frame (still update effect for audio sync)
                     self.effect_manager.current_effect.update(audio_data, delta_time)
                     continue
                 self._frame_skip_counter = 0
-                
-                # Update effect state
+
                 self.effect_manager.current_effect.update(audio_data, delta_time)
-                
-                # Rendu en résolution réduite (800x450)
-                if self._has_pygame:
-                    surface = self.preview_renderer.get_surface()
-                    self.effect_manager.current_effect.render(surface)
-                    frame = self._capture_frame(surface)
-                else:
-                    surface = self.preview_renderer.get_surface()
-                    arr = self.effect_manager.current_effect.render_to_array()
-                    if arr is not None:
-                        h, w = min(arr.shape[0], surface.shape[0]), min(arr.shape[1], surface.shape[1])
-                        surface[:h, :w] = arr[:h, :w]
-                    else:
-                        try:
-                            surface.fill(0)
-                        except Exception:
-                            surface[:] = 0
-                    frame = self._capture_frame(None)
-                
+
+                # Rendu via render_to_array() (identique à l'export)
+                arr = self.effect_manager.current_effect.render_to_array()
+                frame = self._capture_frame(arr)
+
                 if frame is not None:
-                    # Store frame and schedule update in main thread
                     with self._frame_lock:
                         self._pending_frame = frame
                     self.root.after(0, self._update_preview_from_pending)
-                
+
                 self.preview_renderer.present()
-            
+
             try:
                 from ui.log_display import log_message
                 log_message(f"Playback: Boucle terminée après {iteration} itérations")
             except:
                 pass
-            
+
         except Exception as e:
             error_msg = str(e)
             self.root.after(0, lambda em=error_msg: self.status_var.set(f"Erreur: {em}"))
@@ -454,62 +455,30 @@ class MainWindow:
             self.root.after(0, lambda: self.status_var.set("Lecture arrêtée"))
 
     def _update_preview_from_pending(self):
-        """Update preview with the latest pending frame (called in main thread)."""
-        with self._frame_lock:
-            if self._pending_frame is not None:
-                self.preview.update_image(self._pending_frame)
-                self._pending_frame = None
-
-    def _capture_frame(self, surface=None):
-        """
-        Capture le frame courant et le convertit en PhotoImage pour Tkinter.
-        Optimisé : utilise pygame.image.tostring() directement sans redimensionnement
-        car le rendu est déjà en 800x450.
-        """
+        """Affiche l'image dans le canvas (thread principal). Resize LANCZOS si besoin."""
         from PIL import Image, ImageTk
-        
-        # Méthode 1: Pygame surface (déjà en 800x450)
-        if self._has_pygame and surface is not None:
-            try:
-                import pygame
-                raw_bytes = pygame.image.tostring(surface, 'RGB')
-                w, h = surface.get_size()
-                img = Image.frombytes('RGB', (w, h), raw_bytes)
-                # Pas besoin de resize, le rendu est déjà à la bonne résolution
-                return ImageTk.PhotoImage(img)
-            except Exception as e:
-                try:
-                    from ui.log_display import log_message
-                    log_message(f"Capture Pygame: {e}")
-                except:
-                    pass
-        
-        # Méthode 2: Sans Pygame, render_to_array()
-        if not self._has_pygame:
-            try:
-                if self.effect_manager and self.effect_manager.current_effect:
-                    arr = self.effect_manager.current_effect.render_to_array()
-                    if arr is not None and hasattr(arr, 'shape') and len(arr.shape) == 3:
-                        if arr.shape[0] > 0 and arr.shape[1] > 0:
-                            img = Image.fromarray(arr)
-                            # Resize to preview size if needed
-                            if arr.shape[1] != self.preview.width or arr.shape[0] != self.preview.height:
-                                img = img.resize((self.preview.width, self.preview.height), Image.BILINEAR)
-                            return ImageTk.PhotoImage(img)
-            except Exception:
-                pass
-            
-            # Méthode 3: get_frame_as_bytes()
-            try:
-                if hasattr(self.preview_renderer, 'get_frame_as_bytes'):
-                    raw_bytes = self.preview_renderer.get_frame_as_bytes()
-                    if raw_bytes is not None:
-                        size = self.preview_renderer.get_frame_size()
-                        img = Image.frombytes('RGB', size, raw_bytes)
-                        return ImageTk.PhotoImage(img)
-            except Exception:
-                pass
-        
+
+        with self._frame_lock:
+            pil_img = self._pending_frame
+            self._pending_frame = None
+
+        if pil_img is None:
+            return
+
+        pw, ph = self.preview.winfo_width(), self.preview.winfo_height()
+        if pw > 10 and ph > 10 and (pw, ph) != pil_img.size:
+            pil_img = pil_img.resize((pw, ph), Image.LANCZOS)
+        self.preview.update_image(ImageTk.PhotoImage(pil_img))
+
+    def _capture_frame(self, arr):
+        """
+        Convertit un frame numpy en PIL Image (appelé depuis le thread de rendu).
+        Le redimensionnement est fait dans _update_preview_from_pending (thread principal).
+        """
+        from PIL import Image
+
+        if arr is not None and len(arr.shape) == 3 and arr.shape[0] > 0 and arr.shape[1] > 0:
+            return Image.fromarray(arr)
         return None
 
     def _stop_playback(self):
@@ -556,6 +525,7 @@ class MainWindow:
         filename = filedialog.asksaveasfilename(
             title="Enregistrer la vidéo",
             defaultextension=".mp4",
+            initialdir=os.path.expanduser("~"),
             filetypes=[('Fichiers MP4', '*.mp4'), ('Tous les fichiers', '*.*')]
         )
         

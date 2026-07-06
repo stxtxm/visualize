@@ -82,27 +82,24 @@ def get_preset_names():
 
 
 def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal'):
-    """Build FFmpeg command based on preset."""
+    """Build FFmpeg command based on preset. Uses libopenh264 (H.264) for universal compatibility."""
+    import os
+    ffmpeg_path = os.environ.get('FFMPEG_PATH') or 'ffmpeg'
     preset_config = get_preset(preset)
     resolution = f"{width}x{height}"
     
-    # Adjust bitrate based on resolution
     bitrate = preset_config['bitrate']
-    if width >= 3840:  # 4K
+    if width >= 3840:
         bitrate = "50M"
-    elif width >= 2560:  # 1440p
+    elif width >= 2560:
         bitrate = "35M"
-    elif width >= 1920:  # 1080p
+    elif width >= 1920:
         bitrate = "20M" if bitrate == "5M" else bitrate
-    elif width >= 1280:  # 720p
+    elif width >= 1280:
         bitrate = "10M" if bitrate == "5M" else bitrate
     
-    # Try to use 'copy' for audio first (fastest, preserves original quality)
-    # Fallback to libmp3lame if copy fails
-    audio_codec = 'copy'
-    
     cmd = [
-        'ffmpeg',
+        ffmpeg_path,
         '-y',
         '-f', 'rawvideo',
         '-vcodec', 'rawvideo',
@@ -111,13 +108,18 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         '-r', str(fps),
         '-i', 'pipe:0',
         '-i', audio_file,
-        '-c:v', 'mpeg4',
-        '-qscale:v', '2',
+        '-c:v', 'libopenh264',
+        '-coder', 'cavlc',
+        '-b:v', bitrate,
+        '-maxrate', bitrate,
+        '-bufsize', bitrate,
         '-pix_fmt', 'yuv420p',
-        '-c:a', audio_codec,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-movflags', '+faststart',
         '-shortest',
         '-threads', '0',
-        '-loglevel', 'error',  # Réduire les logs pour éviter le bruit
+        '-loglevel', 'error',
         output_file
     ]
     return cmd

@@ -219,3 +219,11 @@ build_venv/
 linuxdeploy*.AppImage
 *.AppImage
 
+# Build artifacts / temp scripts
+Dockerfile.appimage.bak
+build_standalone_fast.sh
+fix_image.sh
+fixed_build.sh
+test_ffmpeg.py
+*.bak
+
