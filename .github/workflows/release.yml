@@ -71,13 +71,13 @@ jobs:
         with:
           files: Visualisateur_Psychedelic.AppImage
           body: |
-            ## Release v0.0.3
+            ## Release v0.0.4
 
             Visualisateur Psychédélique autonome.
 
             Correctifs et améliorations :
-            - **Dialogue d'export corrigé** — La boîte de dialogue « Enregistrer la vidéo » s'ouvre désormais correctement (avec `parent` pour éviter qu'elle ne passe derrière la fenêtre) et démarre dans le dossier personnel de l'utilisateur, même au sein de l'AppImage sandboxée.
-            - **Dialogue d'ouverture audio** — Même robustesse pour la sélection du fichier audio (`parent` + dossier personnel fiable).
+            - **Dialogues de fichiers personnalisés** — Les boîtes de sélection audio et d'export vidéo sont remplacées par un dialogue maison au thème sombre/néon de l'application : texte lisible (police 11, contraste élevé), champ de saisie confortable, navigation dossiers (🏠 / ⬆), filtres par type, et double-clic. Corrige le texte illisible et la saisie difficile sur Fedora (Wayland/GNOME) et dans l'AppImage sandboxée.
+            - **Dialogue modal fiable** — `parent` + `grab_set()` garantissent que le dialogue apparaît au-dessus de la fenêtre principale.
             - **Rendu Classic unifié** — L'effet Neon Equalizer utilise un pipeline unique `render_to_array()` pour l'aperçu et l'export.
             - **Versionnage dynamique** — La version est calquée sur le tag Git et affichée dans la fenêtre.
             - **Build robuste** — Détection Podman/Docker, correction des permissions d'extraction sur CI.

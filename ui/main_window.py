@@ -3,7 +3,8 @@ Main window for the psychedelic visualizer GUI.
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, messagebox
+from ui.file_dialog import FileDialog
 import threading
 import os
 import sys
@@ -221,11 +222,12 @@ class MainWindow:
         if not os.path.isdir(initial_dir):
             initial_dir = self._user_home_dir()
 
-        filename = filedialog.askopenfilename(
+        filename = FileDialog.show(
+            self.root,
+            mode="open",
             title="Sélectionner un fichier audio",
-            initialdir=initial_dir,
-            filetypes=filetypes,
-            parent=self.root
+            initial_dir=initial_dir,
+            filetypes=filetypes
         )
         
         if filename:
@@ -530,12 +532,13 @@ class MainWindow:
         # Open the save dialog in the user's home folder (works in AppImage/sandbox)
         initial_dir = self._user_home_dir()
 
-        filename = filedialog.asksaveasfilename(
+        filename = FileDialog.show(
+            self.root,
+            mode="save",
             title="Enregistrer la vidéo",
+            initial_dir=initial_dir,
             defaultextension=".mp4",
-            initialdir=initial_dir,
-            filetypes=[('Fichiers MP4', '*.mp4'), ('Tous les fichiers', '*.*')],
-            parent=self.root
+            filetypes=[('Fichiers MP4', '*.mp4'), ('Tous les fichiers', '*.*')]
         )
         
         if not filename:
