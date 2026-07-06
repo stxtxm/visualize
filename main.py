@@ -324,6 +324,9 @@ def run_export(args):
         except (ValueError, OSError):
             stdout, stderr = b'', b''
         
+        if process.returncode is None:
+            process.wait()
+        
         if process.returncode != 0:
             error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ''
             if os.path.exists(args.export) and os.path.getsize(args.export) > 0:

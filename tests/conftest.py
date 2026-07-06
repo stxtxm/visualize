@@ -123,12 +123,13 @@ def test_output_dir(project_root):
 def mock_container_environment(monkeypatch):
     """Simule l'environnement conteneur pour les tests."""
     # Faire croire que /app/main.py existe
+    original_exists = os.path.exists
     def mock_exists(path):
         if path == '/app/main.py':
             return True
-        return os.path.exists(path)
+        return original_exists(path)
     
-    monkeypatch.setattr(os, 'exists', mock_exists)
+    monkeypatch.setattr(os.path, 'exists', mock_exists)
     
     # Sauvegarder l'original
     original_getcwd = os.getcwd
@@ -139,7 +140,7 @@ def mock_container_environment(monkeypatch):
     yield
     
     # Restorer
-    monkeypatch.setattr(os, 'exists', os.path.exists)
+    monkeypatch.setattr(os.path, 'exists', original_exists)
     monkeypatch.setattr(os, 'getcwd', original_getcwd)
 
 

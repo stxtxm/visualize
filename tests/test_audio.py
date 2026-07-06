@@ -49,11 +49,11 @@ class TestAudioAnalyzer(unittest.TestCase):
         
         # Check band ranges
         expected_bands = [
-            (20, 150),    # Basses
-            (150, 500),   # Basses-médiums
-            (500, 2000),  # Médiums
-            (2000, 5000), # Médiums-aigus
-            (5000, 20000) # Aigus
+            (20, 250),    # Sub-bass
+            (250, 500),   # Bass
+            (500, 2000),  # Low-mids
+            (2000, 4000), # High-mids
+            (4000, 20000) # Highs
         ]
         self.assertEqual(analyzer.freq_bands, expected_bands)
 

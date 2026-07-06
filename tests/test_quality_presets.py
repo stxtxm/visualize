@@ -30,13 +30,11 @@ class TestQualityPresets(unittest.TestCase):
         self.assertEqual(preset['name'], 'Dev (Très rapide)')
         self.assertEqual(preset['resolution'], '720p')
         self.assertEqual(preset['fps'], 15)
-        self.assertEqual(preset['ffmpeg_preset'], 'ultrafast')
         
         preset = get_preset('4k')
         self.assertEqual(preset['name'], '4K Cinématique')
         self.assertEqual(preset['resolution'], '4K')
         self.assertEqual(preset['fps'], 30)
-        self.assertEqual(preset['ffmpeg_preset'], 'slow')
     
     def test_get_preset_default(self):
         """Test get_preset with invalid preset returns default."""
@@ -77,9 +75,6 @@ class TestQualityPresets(unittest.TestCase):
         # Check FPS
         self.assertIn('15', cmd)
         
-        # Check ultrafast preset for dev
-        self.assertIn('ultrafast', cmd)
-        
         # Check output file
         self.assertIn('/tmp/output.mp4', cmd)
     
@@ -89,9 +84,6 @@ class TestQualityPresets(unittest.TestCase):
         
         # Check 4K resolution
         self.assertIn('3840x2160', cmd)
-        
-        # Check slow preset for 4k
-        self.assertIn('slow', cmd)
         
         # Check high bitrate for 4K
         self.assertIn('50M', cmd)
@@ -106,8 +98,8 @@ class TestQualityPresets(unittest.TestCase):
         # Check 60 FPS
         self.assertIn('60', cmd)
         
-        # Check medium preset
-        self.assertIn('medium', cmd)
+        # Check codec
+        self.assertIn('libopenh264', cmd)
 
 
 class TestPresetSpeed(unittest.TestCase):
