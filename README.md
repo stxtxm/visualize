@@ -104,6 +104,7 @@ visualize/
 ├── Dockerfile.appimage          # Build image for AppImage
 ├── create_appimage.py           # Type 2 AppImage assembler
 ├── AGENTS.md                    # Project context for AI agents
+├── version.py                   # Dynamic version manager
 ├── audio/
 │   ├── analyzer.py              # FFT analysis, volume, beats, BPM
 │   ├── player.py                # Real-time audio playback
@@ -132,6 +133,9 @@ visualize/
 │   └── log_display.py           # In-app log display
 ├── utils/
 │   └── paths.py                 # Path manager (host/container)
+├── scripts/
+│   ├── gen_test_audio.py        # Generate test wave file
+│   └── render_preview.py        # Generate rendering previews
 ├── tests/
 │   ├── test_audio.py            # Audio analysis tests
 │   ├── test_effects.py          # Visual effects tests
