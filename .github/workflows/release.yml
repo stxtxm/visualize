@@ -76,7 +76,7 @@ jobs:
             Visualisateur Psychédélique autonome.
 
             Correctifs et améliorations :
-            - **Dialogue de fichiers : correction du crash à la navigation (`AttributeError` listbox/`_path_var`) — réordonnancement de l'initialisation.**
+            - **Dialogue de fichiers : correction du crash (`AttributeError: 'FileDialog' object has no attribute 'listbox'`) — les tuples `padx`/`pady` à 2 éléments passés au constructeur du widget (`tk.Frame(..., pady=(4, 8))`) sont rejetés par cette version de Tk (``bad screen distance``) ; ils sont désormais appliqués via `.pack(pady=(4, 8))`, permettant à `_build_ui` de créer `self.listbox`.**
             - **Dialogue de fichiers : bordures et contrastes renforcés (lisibles sur fond sombre).**
             - **Ouverture par défaut dans le dossier utilisateur, y compris dans l'AppImage (détection `APPDIR`).**
             - Dialogues de fichiers personnalisés — Les boîtes de sélection audio et d'export vidéo sont remplacées par un dialogue maison au thème sombre/néon de l'application : texte lisible (police 11, contraste élevé), champ de saisie confortable, navigation dossiers (🏠 / ⬆), filtres par type, et double-clic. Corrige le texte illisible et la saisie difficile sur Fedora (Wayland/GNOME) et dans l'AppImage sandboxée.

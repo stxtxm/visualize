@@ -105,8 +105,8 @@ class FileDialog(tk.Toplevel):
         self.entry_path.bind("<Return>", lambda e: self._navigate_to(self.entry_path.get()))
 
         # File list
-        list_frame = tk.Frame(self, bg=self.BG_DARK, padx=10, pady=(4, 8))
-        list_frame.pack(fill=tk.BOTH, expand=True)
+        list_frame = tk.Frame(self, bg=self.BG_DARK, padx=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 8))
 
         list_inner = tk.Frame(list_frame, bg=self.BG_PANEL, relief="solid", bd=1)
         list_inner.pack(fill=tk.BOTH, expand=True)
@@ -159,8 +159,8 @@ class FileDialog(tk.Toplevel):
             self.entry_name.bind("<Return>", lambda e: self._on_confirm())
 
         # Buttons
-        btn_row = tk.Frame(self, bg=self.BG_DARK, padx=10, pady=(0, 10))
-        btn_row.pack(fill=tk.X)
+        btn_row = tk.Frame(self, bg=self.BG_DARK, padx=10)
+        btn_row.pack(fill=tk.X, pady=(0, 10))
 
         cancel_text = "Annuler"
         ok_text = "Ouvrir" if self.mode == "open" else "Enregistrer"
