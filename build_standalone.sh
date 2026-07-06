@@ -147,10 +147,13 @@ log_info "Extraction des fichiers..."
 rm -rf output/
 mkdir -p output
 $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/"
-# Les fichiers extraits appartiennent à root ; reprendre la propriété pour l'utilisateur courant via le conteneur en ciblant 0:0 (qui correspond au user host 1000 dans podman rootless)
-if [ "$(id -u)" != "0" ]; then
+# Les fichiers extraits par docker appartiennent à root ; reprendre la propriété pour l'utilisateur courant de l'hôte.
+if [ "$CONTAINER_CMD" = "docker" ]; then
+    $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "chown -R $(id -u):$(id -g) /out" 2>/dev/null || true
+elif [ "$(id -u)" != "0" ]; then
     $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "chown -R 0:0 /out" 2>/dev/null || true
 fi
+
 
 # Copier le code source dans output/usr/app sans inclure les artefacts de build
 mkdir -p output/usr/app
