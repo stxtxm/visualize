@@ -134,7 +134,9 @@ log_info "Utilisation de: $CONTAINER_CMD"
 BUILD_LOG="/tmp/visualizer_build.log"
 log_info "Build du conteneur $CONTAINER_CMD..."
 MOUNT_FLAG=""
-[ "$CONTAINER_CMD" = "podman" ] && MOUNT_FLAG=":Z"
+if [ "$CONTAINER_CMD" = "podman" ] || ($CONTAINER_CMD --version 2>/dev/null | grep -q -i "podman"); then
+    MOUNT_FLAG=":Z"
+fi
 if ! $CONTAINER_CMD build -t psychedelic-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
     tail -10 "$BUILD_LOG"
     log_error "Build du conteneur échoué. Voir $BUILD_LOG"
@@ -145,9 +147,9 @@ log_info "Extraction des fichiers..."
 rm -rf output/
 mkdir -p output
 $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/"
-# Les fichiers extraits appartiennent à root ; reprendre la propriété pour l'utilisateur courant
+# Les fichiers extraits appartiennent à root ; reprendre la propriété pour l'utilisateur courant via le conteneur en ciblant 0:0 (qui correspond au user host 1000 dans podman rootless)
 if [ "$(id -u)" != "0" ]; then
-    sudo chown -R "$(id -u):$(id -g)" output/ 2>/dev/null || true
+    $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "chown -R 0:0 /out" 2>/dev/null || true
 fi
 
 # Copier le code source dans output/usr/app sans inclure les artefacts de build
