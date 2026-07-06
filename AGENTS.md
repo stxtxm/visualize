@@ -117,7 +117,9 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtCol
 
 - Fenêtre Tkinter avec :
   - Sélection fichier audio (parcours ou glisser-déposer)
-  - Menu déroulant effet + palette + présélection
+  - Menu déroulant résolution + présélection qualité
+  - **Effet et palette ne sont PAS exposés dans la GUI** — valeur par défaut : `Neon Equalizer` + `winamp_classic`
+  - Effet et palette sont configurables UNIQUEMENT via CLI (`--effect`, `--color`)
   - Boutons Lecture, Stop, Exporter
   - Aperçu vidéo temps réel (Label Tkinter avec PhotoImage)
   - Logs en bas (redirige stderr via `LogDisplay`)

@@ -1,6 +1,6 @@
 # Psychedelic Visualizer 🎨🎵
 
-> Generate psychedelic animations synced to your music, inspired by Winamp and Windows Media Player.
+> Generate high-quality Winamp/Media Player-style visualizations synced to your music.
 
 ![CI](https://github.com/stxtxm/visualize/actions/workflows/release.yml/badge.svg)
 
@@ -8,12 +8,13 @@
 
 ## ✨ Features
 
-- **8 visual effects** : Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel, Bars, Circles, Particles, Wave, Spectrum
-- **5 color palettes** : Psychedelic, Retro, Winamp Classic, Dark, Rainbow
-- **Tkinter GUI** with real-time preview
+- **Winamp/Media Player-style visualizer** with circular oscilloscope, equalizer bars, star rays, and grid
+- **Additional effects** via CLI : Psychedelic Plasma, 3D Cyber Tunnel, Particles, Wave, Spectrum
+- **5 color palettes** via CLI : Psychedelic, Retro, Winamp Classic, Dark, Rainbow
+- **Tkinter GUI** with real-time preview (simplified controls : file + export quality only)
 - **MP4 video export** (H.264 + AAC) : 720p, 1080p, 1440p, 4K
 - **Standalone AppImage** : zero system dependencies, works on any Linux distro
-- **Pygame fullscreen mode** (fallback when tkinter is unavailable)
+- **Pygame fullscreen mode** with drag-and-drop (fallback when tkinter is unavailable)
 
 ---
 
@@ -23,26 +24,30 @@ Download the latest `Visualisateur_Psychedelic.AppImage` from the [Releases](htt
 
 ```bash
 chmod +x Visualisateur_Psychedelic.AppImage
-./Visualisateur_Psychedelic.AppImage          # GUI
-./Visualisateur_Psychedelic.AppImage audio.mp3 --export video.mp4  # CLI export
+./Visualisateur_Psychedelic.AppImage                  # GUI (default)
+./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4  # CLI export
 ```
 
-### CLI Options
+### GUI Mode (default)
+
+The GUI offers a streamlined interface :
+1. Select an audio file
+2. Choose export resolution (1080p, 1440p, 4K) and quality preset
+3. Press play to preview the visualizer in real-time
+4. Export to MP4
+
+> The visualizer defaults to the **Neon Equalizer** effect with the **Winamp Classic** color palette for an authentic retro feel. For advanced options (different effects, color palettes), use the CLI.
+
+### CLI Export
 
 ```bash
-./Visualisateur_Psychedelic.AppImage \
-    audio.mp3 \
-    --export video.mp4 \
-    --effect neon_equalizer \
-    --color psychedelic \
-    --preset normal \
-    --resolution 1080p \
-    --fps 30
+./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --preset normal
+./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect spectrum --color rainbow --preset 4k
 ```
 
 | Option | Values |
 |--------|--------|
-| `--effect` / `-e` | `neon_equalizer`, `psychedelic_plasma`, `3d_cyber_tunnel`, `bars`, `circles`, `particles`, `tunnel`, `wave`, `spectrum`, `plasma`, `classic`, `random` |
+| `--effect` / `-e` | `neon_equalizer`, `psychedelic_plasma`, `3d_cyber_tunnel`, `bars`, `circles`, `particles`, `wave`, `spectrum`, `random` |
 | `--color` / `-c` | `psychedelic`, `retro`, `winamp_classic`, `dark`, `rainbow` |
 | `--preset` / `-p` | `dev`, `fast`, `normal`, `high`, `4k` |
 | `--resolution` / `-r` | `720p`, `1080p`, `1440p`, `4K` |
@@ -68,7 +73,7 @@ chmod +x Visualisateur_Psychedelic.AppImage
 git clone https://github.com/stxtxm/visualize.git
 cd visualize
 pip install -r requirements.txt
-sudo apt install ffmpeg libsdl2-2.0-0  # Ubuntu/Debian or equivalent on your distro
+sudo apt install ffmpeg libsdl2-2.0-0  # Ubuntu/Debian or equivalent
 
 # GUI
 python3 main.py
@@ -99,8 +104,6 @@ visualize/
 ├── Dockerfile.appimage          # Build image for AppImage
 ├── create_appimage.py           # Type 2 AppImage assembler
 ├── AGENTS.md                    # Project context for AI agents
-├── scripts/
-│   └── gen_test_audio.py        # Generate test WAV for CI
 ├── audio/
 │   ├── analyzer.py              # FFT analysis, volume, beats, BPM
 │   ├── player.py                # Real-time audio playback
@@ -108,17 +111,17 @@ visualize/
 ├── effects/
 │   ├── base.py                  # Abstract base class + palettes
 │   ├── manager.py               # Effect selection/instantiation
+│   ├── classic.py               # Circular oscilloscope (Winamp-style)
+│   ├── plasma.py                # Algorithmic plasma
+│   ├── tunnel.py                # 3D cyber tunnel
 │   ├── bars.py                  # Equalizer bars
 │   ├── circles.py               # Concentric circles
-│   ├── classic.py               # Circular oscilloscope
 │   ├── particles.py             # Beat-reactive particles
-│   ├── plasma.py                # Algorithmic plasma
-│   ├── spectrum.py              # Frequency spectrum
-│   ├── tunnel.py                # 3D cyber tunnel
-│   └── wave.py                  # Sinusoidal waves
+│   ├── wave.py                  # Sinusoidal waves
+│   └── spectrum.py              # Frequency spectrum
 ├── renderer/
-│   ├── pygame_renderer.py       # Pygame rendering (GUI)
-│   ├── headless_renderer.py     # Headless rendering (export)
+│   ├── headless_renderer.py     # Headless rendering (export + preview)
+│   ├── pygame_renderer.py       # Pygame rendering (fullscreen)
 │   ├── array_renderer.py        # NumPy array conversion
 │   └── cv2_renderer.py          # OpenCV rendering
 ├── recorder/
@@ -148,22 +151,15 @@ python3 -m pytest tests/ -v
 python3 tests/test_export.py            # Full export test (generates video)
 ```
 
-### Adding an Effect
-
-1. Create `effects/my_effect.py` with a class inheriting from `BaseEffect`
-2. Implement `render(surface)` (pygame) and `render_to_array() -> np.ndarray`
-3. Register in `EFFECT_MAP` in `effects/manager.py`
-4. Add to `choices` in the argparse in `main.py`
-
 ---
 
 ## 🐛 Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| `libopenh264` not found | `sudo apt install ffmpeg` or the build falls back to `libx264` automatically |
+| `libopenh264` not found | Falls back to `libx264` automatically |
 | `tkinter` not found | `sudo apt install python3-tk` ; or use `--no-gui` |
-| AppImage won't run | `./Visualisateur_Psychedelic.AppImage --help` ; check `ldd` |
+| AppImage won't run | `./Visualisateur_Psychedelic.AppImage --help` |
 | Slow export | Use `--preset dev` for tests, `--preset fast` for quick production |
 
 ---
