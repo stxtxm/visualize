@@ -12,6 +12,10 @@ import time
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+try:
+    from version import __version__
+except ImportError:
+    __version__ = "0.0.0"
 
 class MainWindow:
     """
@@ -67,7 +71,7 @@ class MainWindow:
         self.NEON_GREEN = "#39ff14"  # Vert fluo
         self.NEON_AMBER = "#ffaa00"  # Orange fluo
         
-        self.root.title("Visualisateur Psychédélique 0.0.2")
+        self.root.title(f"Visualisateur Psychédélique {__version__}")
         self.root.geometry("1150x680")
         self.root.minsize(950, 600)
         self.root.configure(bg=self.BG_DARK)
@@ -99,7 +103,7 @@ class MainWindow:
         # Branding
         title_label = tk.Label(left_panel, text="PSYCHEDELIC", font=('Helvetica', 16, 'bold'), fg=self.NEON_CYAN, bg=self.BG_PANEL)
         title_label.pack(anchor=tk.W, pady=(0, 2))
-        sub_label = tk.Label(left_panel, text="VISUALIZER v0.0.2", font=('Helvetica', 9, 'bold'), fg=self.NEON_PINK, bg=self.BG_PANEL)
+        sub_label = tk.Label(left_panel, text=f"VISUALIZER v{__version__}", font=('Helvetica', 9, 'bold'), fg=self.NEON_PINK, bg=self.BG_PANEL)
         sub_label.pack(anchor=tk.W, pady=(0, 20))
         
         # --- SECTION FILE ---
