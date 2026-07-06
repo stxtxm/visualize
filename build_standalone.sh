@@ -156,6 +156,11 @@ fi
 mkdir -p output/usr/app
 tar --exclude='./output' --exclude='./dist_standalone' --exclude='./Visualisateur.AppDir' --exclude='./appimagetool-x86_64.AppImage' --exclude='./Dockerfile.appimage' --exclude='./.git' -cf - . | tar -C output/usr/app -xpf -
 
+# Injecter la version actuelle de git dans version.py pour l'AppImage
+GIT_VERSION=$(git describe --tags --always 2>/dev/null || echo "0.0.2")
+echo "__version__ = \"$GIT_VERSION\"" > output/usr/app/version.py
+
+
 # Vérifier que l'extraction a bien fonctionné
 if [ ! -d "output/usr/lib/python3.11/site-packages" ]; then
     log_error "site-packages non trouvé dans output/usr/lib/python3.11/ ! Extraction échouée."
