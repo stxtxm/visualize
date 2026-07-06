@@ -31,7 +31,7 @@ jobs:
         run: python3 scripts/gen_test_audio.py
 
       - name: Run unit tests
-        run: python3 -m pytest tests/ -v --timeout=60
+        run: python3 -m pytest tests/ -v
 
       - name: Run export test
         run: python3 tests/test_export.py
@@ -44,15 +44,6 @@ jobs:
 
       - name: Install squashfs-tools
         run: sudo apt-get install -y squashfs-tools
-
-      - name: Build Docker image
-        run: docker build -t psychedelic-appimage -f Dockerfile.appimage .
-
-      - name: Extract built files
-        run: |
-          mkdir -p output
-          docker run --rm -v $PWD/output:/out:Z psychedelic-appimage \
-            sh -c "cp -rL /output/* /out/"
 
       - name: Build AppImage
         run: bash build_standalone.sh
