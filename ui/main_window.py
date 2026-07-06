@@ -218,10 +218,8 @@ class MainWindow:
             ('Tous les fichiers', '*.*')
         ]
         
-        initial_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'input')
-        if not os.path.isdir(initial_dir):
-            initial_dir = self._user_home_dir()
-
+        initial_dir = self._default_browse_dir()
+        
         filename = FileDialog.show(
             self.root,
             mode="open",
@@ -529,8 +527,7 @@ class MainWindow:
             messagebox.showerror("Erreur", "Veuillez sélectionner un fichier audio d'abord.")
             return
         
-        # Open the save dialog in the user's home folder (works in AppImage/sandbox)
-        initial_dir = self._user_home_dir()
+        initial_dir = self._default_browse_dir()
 
         filename = FileDialog.show(
             self.root,
@@ -597,6 +594,18 @@ class MainWindow:
             if candidate and os.path.isdir(candidate):
                 return candidate
         return os.path.dirname(os.path.abspath(__file__))
+
+    def _default_browse_dir(self):
+        """Return the default directory for file dialogs.
+
+        When running inside an AppImage (APPDIR set), force user home.
+        Otherwise, prefer the project ``input`` folder when it exists,
+        falling back to user home.
+        """
+        if os.environ.get("APPDIR"):
+            return self._user_home_dir()
+        candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'input')
+        return candidate if os.path.isdir(candidate) else self._user_home_dir()
 
     def _get_resolution(self):
         """Get selected resolution."""

@@ -96,3 +96,26 @@ def test_cancel_returns_empty():
     dlg._on_cancel()
     assert dlg._result == ""
     root.destroy()
+
+
+def test_show_falls_back_to_home_on_invalid_dir():
+    root = _make_root()
+    fake_dir = "/this_path_should_not_exist_12345"
+    fd = __import__("ui.file_dialog", fromlist=["FileDialog"])
+    captured = {}
+
+    def inspect_and_close():
+        for w in root.winfo_children():
+            if isinstance(w, fd.FileDialog):
+                captured['dir'] = w._current_dir
+                w.destroy()
+                break
+
+    root.after(50, inspect_and_close)
+    result = fd.FileDialog.show(
+        root, mode="open", title="t", initial_dir=fake_dir,
+        filetypes=[("Tous les fichiers", "*.*")]
+    )
+    assert captured.get('dir') == os.path.expanduser("~")
+    assert result == ""
+    root.destroy()

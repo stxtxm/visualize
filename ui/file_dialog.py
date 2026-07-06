@@ -26,7 +26,7 @@ class FileDialog(tk.Toplevel):
     FG_LIGHT = "#e2e2ee"
     FG_MUTED = "#85859e"
     NEON_CYAN = "#00e5ff"
-    BORDER = "#2a2a3e"
+    BORDER = "#3a3a55"
 
     @classmethod
     def show(cls, parent, mode="open", title="Sélectionner un fichier",
@@ -108,11 +108,13 @@ class FileDialog(tk.Toplevel):
         list_frame = tk.Frame(self, bg=self.BG_DARK, padx=10, pady=(4, 8))
         list_frame.pack(fill=tk.BOTH, expand=True)
 
+        list_inner = tk.Frame(list_frame, bg=self.BG_PANEL, relief="solid", bd=1)
+        list_inner.pack(fill=tk.BOTH, expand=True)
+
         self.listbox = tk.Listbox(
-            list_frame, bg=self.BG_CARD, fg=self.FG_LIGHT,
+            list_inner, bg=self.BG_CARD, fg=self.FG_LIGHT,
             selectbackground=self.NEON_CYAN, selectforeground="#000000",
-            font=('Helvetica', 11), bd=0, highlightthickness=1,
-            highlightbackground=self.BORDER, highlightcolor=self.NEON_CYAN,
+            font=('Helvetica', 11), bd=0, highlightthickness=0,
             activestyle="none"
         )
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -164,7 +166,7 @@ class FileDialog(tk.Toplevel):
         ok_text = "Ouvrir" if self.mode == "open" else "Enregistrer"
 
         btn_cancel = tk.Button(btn_row, text=cancel_text, command=self._on_cancel,
-                               bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55",
+                               bg="#33334d", fg=self.FG_LIGHT, activebackground="#3a3a55",
                                activeforeground=self.FG_LIGHT, bd=0, padx=16, pady=6,
                                font=('Helvetica', 10, 'bold'), cursor="hand2")
         btn_cancel.pack(side=tk.RIGHT)
