@@ -145,6 +145,10 @@ log_info "Extraction des fichiers..."
 rm -rf output/
 mkdir -p output
 $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/"
+# Les fichiers extraits appartiennent à root ; reprendre la propriété pour l'utilisateur courant
+if [ "$(id -u)" != "0" ]; then
+    sudo chown -R "$(id -u):$(id -g)" output/ 2>/dev/null || true
+fi
 
 # Copier le code source dans output/usr/app sans inclure les artefacts de build
 mkdir -p output/usr/app
