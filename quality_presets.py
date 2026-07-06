@@ -81,9 +81,22 @@ def get_preset_names():
     return [p['name'] for p in QUALITY_PRESETS.values()]
 
 
+_HAS_OPENH264 = None
+
+def _check_openh264(ffmpeg_path):
+    """Check if libopenh264 is available in ffmpeg."""
+    import subprocess
+    try:
+        result = subprocess.run([ffmpeg_path, '-encoders'], capture_output=True, text=True, timeout=10)
+        return 'libopenh264' in result.stdout
+    except Exception:
+        return False
+
+
 def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal'):
-    """Build FFmpeg command based on preset. Uses libopenh264 (H.264) for universal compatibility."""
+    """Build FFmpeg command based on preset. Probes for libopenh264; falls back to libx264."""
     import os
+    global _HAS_OPENH264
     ffmpeg_path = os.environ.get('FFMPEG_PATH') or 'ffmpeg'
     preset_config = get_preset(preset)
     resolution = f"{width}x{height}"
@@ -98,6 +111,9 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     elif width >= 1280:
         bitrate = "10M" if bitrate == "5M" else bitrate
     
+    if _HAS_OPENH264 is None:
+        _HAS_OPENH264 = _check_openh264(ffmpeg_path)
+    
     cmd = [
         ffmpeg_path,
         '-y',
@@ -108,8 +124,14 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         '-r', str(fps),
         '-i', 'pipe:0',
         '-i', audio_file,
-        '-c:v', 'libopenh264',
-        '-coder', 'cavlc',
+    ]
+    
+    if _HAS_OPENH264:
+        cmd += ['-c:v', 'libopenh264', '-coder', 'cavlc']
+    else:
+        cmd += ['-c:v', 'libx264', '-preset', preset_config['ffmpeg_preset']]
+    
+    cmd += [
         '-b:v', bitrate,
         '-maxrate', bitrate,
         '-bufsize', bitrate,

@@ -98,8 +98,9 @@ class TestQualityPresets(unittest.TestCase):
         # Check 60 FPS
         self.assertIn('60', cmd)
         
-        # Check codec
-        self.assertIn('libopenh264', cmd)
+        # Check that a video codec is specified
+        has_codec = any(c in cmd for c in ('libopenh264', 'libx264'))
+        self.assertTrue(has_codec, f"Expected libopenh264 or libx264 in cmd, got: {cmd}")
 
 
 class TestPresetSpeed(unittest.TestCase):
