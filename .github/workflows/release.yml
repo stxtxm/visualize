@@ -71,11 +71,14 @@ jobs:
         with:
           files: Visualisateur_Psychedelic.AppImage
           body: |
-            ## Prototype 0.0.1
+            ## Release v0.0.2
 
             Visualisateur Psychédélique autonome.
 
-            - Compatible Fedora 44+, Ubuntu 24.04+, Arch Linux
-            - Export MP4 (H.264 + AAC)
-            - Effets : Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel
-            - Audio : PipeWire, PulseAudio, ALSA
+            Nouveautés dans cette version :
+            - **Versionnage dynamique** : La version affichée dans la GUI et l'AppImage est désormais automatiquement calquée sur le tag Git (`version.py`) grâce à une injection à la compilation.
+            - **Rendu visuel Classic harmonisé** : Uniformisation du rendu temps réel (`render()`) et de l'export (`render_to_array()`).
+            - **Script de prévisualisation** : Ajout de `scripts/render_preview.py` pour tester le rendu vidéo localement.
+            - **Robustesse du build CI** : Correction des permissions lors de la phase d'extraction Docker sur la CI.
+            - **Amélioration de l'export** : Meilleur fallback des codecs et presets vidéo.
+
