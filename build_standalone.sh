@@ -142,16 +142,33 @@ if ! $CONTAINER_CMD build -t psychedelic-appimage -f Dockerfile.appimage . > "$B
     log_error "Build du conteneur échoué. Voir $BUILD_LOG"
 fi
 
+# Détecter si le moteur est réellement podman (même via l'alias docker)
+IS_PODMAN=false
+if [ "$CONTAINER_CMD" = "podman" ] || ($CONTAINER_CMD --version 2>/dev/null | grep -q -i "podman"); then
+    IS_PODMAN=true
+fi
+
 # Extraction
 log_info "Extraction des fichiers..."
 rm -rf output/
 mkdir -p output
-$CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/"
-# Les fichiers extraits par docker appartiennent à root ; reprendre la propriété pour l'utilisateur courant de l'hôte.
-if [ "$CONTAINER_CMD" = "docker" ]; then
-    $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "chown -R $(id -u):$(id -g) /out" 2>/dev/null || true
-elif [ "$(id -u)" != "0" ]; then
-    $CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "chown -R 0:0 /out" 2>/dev/null || true
+# En rootless podman, l'uid 0 du conteneur est mappé sur l'utilisateur hôte :
+# il faut donc chown en 0:0 dans le conteneur pour récupérer les droits sur l'hôte.
+# Avec docker (daemon rootful), on chown directement vers l'uid/gid hôte.
+if [ "$IS_PODMAN" = true ]; then
+    CHOWN_TARGET="0:0"
+else
+    CHOWN_TARGET="$(id -u):$(id -g)"
+fi
+$CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/ && chown -R $CHOWN_TARGET /out"
+# Reprendre la propriété côté hôte au cas où les fichiers appartiendraient à root
+# (docker rootful ou droits non propagés). sudo si nécessaire.
+if [ ! -O "$SCRIPT_DIR/output" ]; then
+    if command -v sudo &>/dev/null; then
+        sudo chown -R "$(id -u):$(id -g)" "$SCRIPT_DIR/output" || true
+    else
+        chown -R "$(id -u):$(id -g)" "$SCRIPT_DIR/output" 2>/dev/null || true
+    fi
 fi
 
 

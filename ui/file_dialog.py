@@ -73,10 +73,10 @@ class FileDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
         self._build_ui()
-        self._populate()
-        self._center(parent)
         self._path_var = tk.StringVar(value=self._current_dir)
         self.entry_path.configure(textvariable=self._path_var)
+        self._populate()
+        self._center(parent)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
