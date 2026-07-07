@@ -10,6 +10,7 @@ import os
 import sys
 import time
 import webbrowser
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -238,21 +239,34 @@ class MainWindow:
         footer.pack_propagate(False)
 
         self._footer_copyright = tk.Label(footer, text="© 2026 Timothée Grollier",
-                 font=('Helvetica', 7), fg="#4a4a5e", bg="#0a0a12",
+                 font=('Helvetica', 7), fg="#8a8aaa", bg="#0a0a12",
                  anchor=tk.W)
         self._footer_copyright.pack(side=tk.LEFT, padx=10)
 
-        social = tk.Frame(footer, bg="#0a0a12")
-        social.pack(side=tk.RIGHT, padx=10)
+        def _make_icon(letter, bg_color, w=16, h=16):
+            img = Image.new("RGBA", (w, h), bg_color)
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("DejaVuSans-Bold", 9)
+            except (OSError, IOError):
+                font = ImageFont.load_default()
+            _, _, tw, th = draw.textbbox((0, 0), letter, font=font)
+            draw.text(((w - tw) / 2, (h - th) / 2 - 1), letter, fill="white", font=font)
+            return ImageTk.PhotoImage(img)
 
-        self._footer_linkedin = tk.Label(social, text="in", font=('Helvetica', 7, 'bold'),
-                      fg="#ffffff", bg="#0a66c2", padx=4, pady=1, cursor="hand2")
-        self._footer_linkedin.pack(side=tk.LEFT, padx=(0, 5))
+        social = tk.Frame(footer, bg="#0a0a12")
+        social.pack(side=tk.RIGHT, padx=(10, 15))
+
+        self._icon_linkedin = _make_icon("in", "#0a66c2")
+        self._footer_linkedin = tk.Label(social, image=self._icon_linkedin,
+                        bg="#0a0a12", cursor="hand2")
+        self._footer_linkedin.pack(side=tk.LEFT, padx=(0, 8))
         self._footer_linkedin.bind("<Button-1>", lambda e: webbrowser.open(
             "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev"))
 
-        self._footer_website = tk.Label(social, text="www", font=('Helvetica', 7, 'bold'),
-                        fg=self.FG_LIGHT, bg="#2a2a3e", padx=4, pady=1, cursor="hand2")
+        self._icon_website = _make_icon("www", "#2a2a3e")
+        self._footer_website = tk.Label(social, image=self._icon_website,
+                        bg="#0a0a12", cursor="hand2")
         self._footer_website.pack(side=tk.LEFT)
         self._footer_website.bind("<Button-1>", lambda e: webbrowser.open(
             "https://timotheegrollier.github.io/"))

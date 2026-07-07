@@ -37,22 +37,24 @@ class TestFooterLabels(unittest.TestCase):
         self.assertIsNotNone(label)
         self.assertIn("Timothée Grollier", label.cget("text"))
         self.assertIn("2026", label.cget("text"))
+        # Should be lighter than old #4a4a5e
+        self.assertEqual(label.cget("fg").lower(), "#8a8aaa")
 
     def test_linkedin_label_exists(self):
         app = self._create_app()
         label = app._footer_linkedin
         self.assertIsNotNone(label)
-        self.assertEqual(label.cget("text"), "in")
-        self.assertEqual(label.cget("bg").lower(), "#0a66c2")
+        self.assertIsNotNone(label.cget("image"), "LinkedIn should have an image")
+        self.assertEqual(label.cget("bg").lower(), "#0a0a12")
+        self.assertEqual(label.cget("cursor"), "hand2")
 
     def test_website_label_exists(self):
         app = self._create_app()
         label = app._footer_website
         self.assertIsNotNone(label)
-        self.assertEqual(label.cget("text"), "www")
-        # Verify it uses the FG_LIGHT color
-        expected_fg = app.FG_LIGHT
-        self.assertEqual(label.cget("fg").lower(), expected_fg.lower())
+        self.assertIsNotNone(label.cget("image"), "Website should have an image")
+        self.assertEqual(label.cget("bg").lower(), "#0a0a12")
+        self.assertEqual(label.cget("cursor"), "hand2")
 
 
 if __name__ == '__main__':
