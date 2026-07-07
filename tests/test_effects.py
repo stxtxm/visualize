@@ -93,6 +93,50 @@ class TestClassicEffect(unittest.TestCase):
         self.assertTrue(callable(ClassicEffect))
 
 
+class TestTranceScopeEffect(unittest.TestCase):
+    """Test professional trance effect."""
+
+    def test_import(self):
+        from effects.trance_scope import TranceScopeEffect
+        self.assertTrue(callable(TranceScopeEffect))
+
+    def test_render_to_array(self):
+        from effects.trance_scope import TranceScopeEffect
+        import numpy as np
+
+        effect = TranceScopeEffect(width=120, height=80)
+        effect.update({
+            'volume': 0.5,
+            'energy': 0.5,
+            'frequency_bands': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'visual_bands': [0.2] * 32,
+            'spectrum': [0.1] * 512,
+            'beat': True,
+            'beat_strength': 0.8,
+            'beat_phase': 0.15,
+            'bpm': 128.0,
+            'bass': 0.6,
+            'mids': 0.4,
+            'treble': 0.3,
+            'onset_strength': 0.7,
+        }, 0.033)
+        frame = effect.render_to_array()
+
+        self.assertIsInstance(frame, np.ndarray)
+        self.assertEqual(frame.shape, (80, 120, 3))
+        self.assertEqual(frame.dtype, np.uint8)
+
+    def test_trance_scope_has_no_bar_equalizer_surface(self):
+        from effects.trance_scope import TranceScopeEffect
+
+        effect = TranceScopeEffect(width=120, height=80)
+
+        self.assertFalse(hasattr(effect, 'bar_heights'))
+        self.assertFalse(hasattr(effect, 'num_bars'))
+        self.assertFalse(hasattr(effect, '_draw_equalizer'))
+        self.assertTrue(hasattr(effect, 'orbit_values'))
+
+
 class TestBarEffect(unittest.TestCase):
     """Test bar effect."""
     

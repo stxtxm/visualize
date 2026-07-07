@@ -34,8 +34,9 @@ class MainWindow:
         self.is_playing = tk.BooleanVar(value=False)
         self._is_playing_event = threading.Event()
         self.audio_file = tk.StringVar(value="")
-        self.selected_effect = tk.StringVar(value="Neon Equalizer")
-        self.selected_color = tk.StringVar(value="winamp_classic")
+        self.selected_effect = tk.StringVar(value="Trance Scope")
+        self.selected_color = tk.StringVar(value="psychedelic")
+        self.background_image = tk.StringVar(value="")
         self.resolution = tk.StringVar(value="1080p")
         self.fps = tk.IntVar(value=60)
         self.selected_preset = tk.StringVar(value="normal")
@@ -73,8 +74,8 @@ class MainWindow:
         self.NEON_AMBER = "#ffaa00"  # Orange fluo
         
         self.root.title(f"Visualisateur Psychédélique {__version__}")
-        self.root.geometry("1150x680")
-        self.root.minsize(950, 600)
+        self.root.geometry("1180x720")
+        self.root.minsize(980, 640)
         self.root.configure(bg=self.BG_DARK)
         
         # Appliquer le style global TTK
@@ -137,8 +138,29 @@ class MainWindow:
                 combo.bind('<<ComboboxSelected>>', cmd)
             return combo
             
+        create_dropdown(left_panel, "EFFET", self.selected_effect,
+                        ['Trance Scope', 'Neon Equalizer', 'Psychedelic Plasma', '3D Cyber Tunnel'],
+                        self._effect_changed)
+        create_dropdown(left_panel, "PALETTE", self.selected_color,
+                        ['psychedelic', 'winamp_classic', 'retro', 'dark', 'rainbow'],
+                        self._palette_changed)
         create_dropdown(left_panel, "RÉSOLUTION EXPORT", self.resolution, ['1080p', '1440p', '4K'])
         create_dropdown(left_panel, "PRESET DE QUALITÉ", self.selected_preset, ['dev', 'fast', 'normal', 'high', '4k'], self._preset_changed)
+
+        lbl_bg = tk.Label(left_panel, text="IMAGE DE FOND", font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
+        lbl_bg.pack(anchor=tk.W, pady=(8, 4))
+        bg_container = tk.Frame(left_panel, bg=self.BG_PANEL)
+        bg_container.pack(fill=tk.X, pady=(0, 10))
+        self.entry_background = tk.Entry(bg_container, textvariable=self.background_image, bg=self.BG_CARD,
+                                         fg=self.FG_LIGHT, insertbackground=self.FG_LIGHT, bd=0,
+                                         font=('Helvetica', 9), highlightthickness=1,
+                                         highlightbackground="#2a2a3e", highlightcolor=self.NEON_CYAN)
+        self.entry_background.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
+        btn_bg = tk.Button(bg_container, text="+", command=self._open_background_file, bg="#252538",
+                           fg=self.FG_LIGHT, activebackground="#35354e", activeforeground=self.FG_LIGHT,
+                           bd=0, padx=9, font=('Helvetica', 10, 'bold'), cursor="hand2")
+        btn_bg.pack(side=tk.RIGHT, fill=tk.Y)
+        add_hover(btn_bg, "#35354e", "#252538")
         
         # Spacer
         left_panel.grid_rowconfigure(9, weight=1)
@@ -210,6 +232,19 @@ class MainWindow:
         self.resolution.set(preset['resolution'])
         self.fps.set(preset['fps'])
         self.status_var.set(f"Préglage: {preset['name']}")
+
+    def _palette_changed(self, event=None):
+        """Apply palette changes to the live effect when playback is running."""
+        if self.effect_manager:
+            self.effect_manager.change_palette(self.selected_color.get())
+            self.status_var.set(f"Palette: {self.selected_color.get()}")
+
+    def _effect_changed(self, event=None):
+        """Apply effect changes to the live preview."""
+        if self.effect_manager:
+            self.effect_manager.change_effect(self._get_effect_key())
+            self.effect_manager.set_background_image(self.background_image.get() or None)
+            self.status_var.set(f"Effet: {self.selected_effect.get()}")
     
     def _open_file(self):
         """Open file dialog to select audio file from input directory."""
@@ -231,6 +266,35 @@ class MainWindow:
         if filename:
             self.audio_file.set(filename)
             self.status_var.set(f"Fichier chargé: {os.path.basename(filename)}")
+
+    def _open_background_file(self):
+        """Open file dialog to select an image background for preview and export."""
+        filetypes = [
+            ('Images', '*.png *.jpg *.jpeg *.webp *.bmp'),
+            ('Tous les fichiers', '*.*')
+        ]
+        filename = FileDialog.show(
+            self.root,
+            mode="open",
+            title="Sélectionner une image de fond",
+            initial_dir=self._user_home_dir(),
+            filetypes=filetypes
+        )
+        if filename:
+            self.background_image.set(filename)
+            if self.effect_manager:
+                self.effect_manager.set_background_image(filename)
+            self.status_var.set(f"Fond: {os.path.basename(filename)}")
+
+    def _get_effect_key(self):
+        """Map GUI labels to internal effect identifiers."""
+        effect_name_map = {
+            "Trance Scope": "trance_scope",
+            "Neon Equalizer": "neon_equalizer",
+            "Psychedelic Plasma": "psychedelic_plasma",
+            "3D Cyber Tunnel": "3d_cyber_tunnel"
+        }
+        return effect_name_map.get(self.selected_effect.get(), "trance_scope")
 
     def _toggle_playback(self):
         """Toggle playback."""
@@ -324,18 +388,14 @@ class MainWindow:
         # Create effect manager with reduced resolution
         try:
             from effects.manager import EffectManager
-            effect_name_map = {
-                "Neon Equalizer": "neon_equalizer",
-                "Psychedelic Plasma": "psychedelic_plasma",
-                "3D Cyber Tunnel": "3d_cyber_tunnel"
-            }
-            effect_key = effect_name_map.get(self.selected_effect.get(), "neon_equalizer")
+            effect_key = self._get_effect_key()
             
             self.effect_manager = EffectManager(
                 analyzer=self.analyzer,
                 renderer=self.preview_renderer,
                 effect_type=effect_key,
-                color_palette=self.selected_color.get()
+                color_palette=self.selected_color.get(),
+                background_image=self.background_image.get() or None
             )
             self.effect_manager.init()
         except Exception as e:
@@ -386,15 +446,15 @@ class MainWindow:
                 if (pw, ph) != getattr(self, '_preview_render_size', (0, 0)):
                     try:
                         from effects.manager import EffectManager
-                        effect_name_map = {"Neon Equalizer": "neon_equalizer", "Psychedelic Plasma": "psychedelic_plasma", "3D Cyber Tunnel": "3d_cyber_tunnel"}
-                        effect_key = effect_name_map.get(self.selected_effect.get(), "neon_equalizer")
+                        effect_key = self._get_effect_key()
                         self.preview_renderer.width = pw
                         self.preview_renderer.height = ph
                         self.effect_manager = EffectManager(
                             analyzer=self.analyzer,
                             renderer=self.preview_renderer,
                             effect_type=effect_key,
-                            color_palette=self.selected_color.get()
+                            color_palette=self.selected_color.get(),
+                            background_image=self.background_image.get() or None
                         )
                         self.effect_manager.init()
                         self._preview_render_size = (pw, ph)
@@ -555,8 +615,9 @@ class MainWindow:
                 width=width,
                 height=height,
                 fps=self.fps.get(),
-                effect_type=self.selected_effect.get(),
-                color_palette=self.selected_color.get()
+                effect_type=self._get_effect_key(),
+                color_palette=self.selected_color.get(),
+                background_image=self.background_image.get() or None
             )
             self.recorder._ffmpeg_cmd = build_ffmpeg_cmd(
                 width, height, self.fps.get(), 

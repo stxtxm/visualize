@@ -32,6 +32,14 @@ class TestCLIArgumentParsing(unittest.TestCase):
         proc = self._run_main(['nonexistent.wav', '--color', 'bogus'])
         self.assertNotEqual(proc.returncode, 0)
 
+    def test_new_effect_and_background_are_accepted_by_argparse(self):
+        # /tmp/bg.png does not exist → argparse accepts the value, then main.py
+        # errors on "file not found" rather than "invalid choice". This confirms
+        # the argparse choices are valid.
+        proc = self._run_main(['nonexistent.wav', '--effect', 'trance_scope', '--background', '/tmp/bg.png'])
+        output = (proc.stdout + proc.stderr).lower()
+        self.assertNotIn('invalid choice', output)
+
     def test_invalid_preset_rejected(self):
         proc = self._run_main(['nonexistent.wav', '--preset', 'bogus'])
         self.assertNotEqual(proc.returncode, 0)
@@ -54,6 +62,8 @@ class TestCLIArgumentParsing(unittest.TestCase):
         proc = self._run_main(['--help'])
         self.assertEqual(proc.returncode, 0)
         self.assertIn('Psychedelic', proc.stdout)
+        self.assertIn('trance_scope', proc.stdout)
+        self.assertIn('--background', proc.stdout)
 
 
 class TestCLIExportInvocation(unittest.TestCase):

@@ -102,6 +102,21 @@ class TestQualityPresets(unittest.TestCase):
         has_codec = any(c in cmd for c in ('libopenh264', 'libx264'))
         self.assertTrue(has_codec, f"Expected libopenh264 or libx264 in cmd, got: {cmd}")
 
+    def test_libx264_uses_crf_animation_tuning(self):
+        """libx264 exports should use quality-oriented animation settings."""
+        import quality_presets
+        original = quality_presets._HAS_OPENH264
+        try:
+            quality_presets._HAS_OPENH264 = False
+            cmd = build_ffmpeg_cmd(1280, 720, 30, '/tmp/audio.mp3', '/tmp/output.mp4', 'normal')
+            self.assertIn('-crf', cmd)
+            self.assertIn('18', cmd)
+            self.assertIn('-tune', cmd)
+            self.assertIn('animation', cmd)
+            self.assertIn('-g', cmd)
+        finally:
+            quality_presets._HAS_OPENH264 = original
+
 
 class TestPresetSpeed(unittest.TestCase):
     """Test preset speed factors."""

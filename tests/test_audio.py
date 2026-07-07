@@ -33,6 +33,7 @@ class TestAudioAnalyzer(unittest.TestCase):
         
         self.assertIn('volume', result)
         self.assertIn('frequency_bands', result)
+        self.assertIn('visual_bands', result)
         self.assertIn('spectrum', result)
         self.assertIn('beat', result)
         
@@ -103,10 +104,16 @@ class TestAudioAnalysis(unittest.TestCase):
         result = analyzer.analyze_chunk(chunk)
 
         self.assertIn('energy', result)
+        self.assertIn('visual_bands', result)
+        self.assertIn('spectral_flux', result)
+        self.assertIn('onset_strength', result)
         self.assertIn('spectral_centroid', result)
         self.assertIn('beat_phase', result)
+        self.assertEqual(len(result['visual_bands']), 32)
         self.assertGreaterEqual(result['energy'], 0.0)
         self.assertLessEqual(result['energy'], 1.0)
+        self.assertGreaterEqual(result['onset_strength'], 0.0)
+        self.assertLessEqual(result['onset_strength'], 1.0)
         self.assertGreaterEqual(result['spectral_centroid'], 0.0)
         self.assertLessEqual(result['spectral_centroid'], 1.0)
 

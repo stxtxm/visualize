@@ -30,7 +30,7 @@ def run_gui():
         try:
             import pygame
             pygame.display.init()
-            pygame.time.init()
+            pygame.font.init()
         except ImportError:
             pass
         except Exception:
@@ -71,7 +71,7 @@ def _run_pygame_fallback():
     from quality_presets import get_preset, RESOLUTIONS
     
     pygame.display.init()
-    pygame.time.init()
+    pygame.font.init()
     
     # Plein écran
     info = pygame.display.Info()
@@ -195,10 +195,15 @@ def run_cli():
     )
     parser.add_argument('audio_file', nargs='?', default=None)
     parser.add_argument('--export', '-o', type=str, default=None)
-    parser.add_argument('--effect', '-e', default='random',
-                        choices=['bars', 'circles', 'particles', 'tunnel', 'wave', 'spectrum', 'plasma', 'random'])
+    parser.add_argument('--effect', '-e', default='trance_scope',
+                        choices=['trance_scope', 'pro_trance', 'neon_equalizer', 'classic',
+                                 'bars', 'circles', 'particles', 'tunnel', 'wave',
+                                 'spectrum', 'plasma', 'psychedelic_plasma',
+                                 '3d_cyber_tunnel', 'random'])
     parser.add_argument('--color', '-c', default='psychedelic',
-                        choices=['psychedelic', 'retro', 'dark', 'rainbow'])
+                        choices=['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow'])
+    parser.add_argument('--background', '-b', default=None,
+                        help='Optional image file used as the visualizer background')
     parser.add_argument('--resolution', '-r', default=None,
                         choices=['720p', '1080p', '1440p', '4K'])
     parser.add_argument('--fps', type=int, default=None)
@@ -229,6 +234,10 @@ def run_cli():
     if not os.path.exists(args.audio_file):
         print(f"Error: {args.audio_file} not found")
         sys.exit(1)
+
+    if args.background and not os.path.exists(args.background):
+        print(f"Error: {args.background} not found")
+        sys.exit(1)
     
     if args.export:
         run_export(args)
@@ -253,9 +262,17 @@ def run_export(args):
     analyzer = AudioAnalyzer(args.audio_file, loop=False)
     analyzer.start_stream()
     
+    class ExportRenderer:
+        def __init__(self, w, h):
+            self.width = w
+            self.height = h
+
     effect_manager = EffectManager(
         analyzer=analyzer,
-        effect_type=args.effect, color_palette=args.color
+        renderer=ExportRenderer(width, height),
+        effect_type=args.effect,
+        color_palette=args.color,
+        background_image=args.background
     )
     effect_manager.init()
     
@@ -389,7 +406,7 @@ def run_playback(args):
         renderer = ArrayRenderer(width, height, fps)
     
     renderer.init()
-    effect_manager = EffectManager(analyzer, renderer, args.effect, args.color)
+    effect_manager = EffectManager(analyzer, renderer, args.effect, args.color, background_image=args.background)
     effect_manager.init()
     
     try:

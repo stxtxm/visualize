@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 
 EFFECT_MODULES = {
+    'trance_scope': 'TranceScopeEffect',
+    'pro_trance': 'TranceScopeEffect',
     'bars': 'BarEffect',
     'circles': 'CircleEffect',
     'particles': 'ParticleEffect',
@@ -36,11 +38,14 @@ def make_audio_data():
         'volume': 0.5,
         'volume_smooth': 0.5,
         'frequency_bands': [0.1, 0.2, 0.3, 0.4, 0.5],
+        'visual_bands': [0.2 + (i % 5) * 0.08 for i in range(32)],
         'spectrum': [0.1] * 512,
         'beat': True,
         'beat_strength': 0.8,
         'beat_phase': 0.1,
         'energy': 0.5,
+        'spectral_flux': 0.3,
+        'onset_strength': 0.4,
         'spectral_centroid': 0.4,
         'bpm': 120.0,
         'bpm_confidence': 0.9,
@@ -112,13 +117,32 @@ class TestAllEffects(unittest.TestCase):
 
     def test_scaling_factor(self):
         """Effects should scale drawing by s = height / 450.0."""
-        for effect_type in ('bars', 'circles', 'classic', 'spectrum'):
+        for effect_type in ('bars', 'circles', 'classic', 'spectrum', 'trance_scope'):
             cls = self._get_effect_class(effect_type)
             with self.subTest(effect=effect_type):
                 eff_small = cls(width=100, height=100, color_palette='psychedelic')
                 eff_big = cls(width=1920, height=1080, color_palette='psychedelic')
                 # scaling factor should differ
                 self.assertNotEqual(eff_small.height / 450.0, eff_big.height / 450.0)
+
+    def test_trance_scope_accepts_background_image(self):
+        from effects.trance_scope import TranceScopeEffect
+        from PIL import Image
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            path = tmp.name
+        try:
+            Image.new('RGB', (32, 20), (180, 40, 220)).save(path)
+            eff = TranceScopeEffect(width=160, height=90, color_palette='psychedelic',
+                                    background_image=path)
+            eff.update(make_audio_data(), 0.033)
+            frame = eff.render_to_array()
+            self.assertEqual(frame.shape, (90, 160, 3))
+            self.assertIsNotNone(eff.background_image)
+            self.assertGreater(int(frame.mean()), 0)
+        finally:
+            os.remove(path)
 
     def test_classic_render_to_array_default_palette(self):
         from effects.classic import ClassicEffect

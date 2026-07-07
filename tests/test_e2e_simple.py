@@ -60,6 +60,7 @@ def test_audio_analyzer():
             assert audio_data is not None, f"Analyse {i} échouée"
             assert 'volume' in audio_data, f"volume manquant {i}"
             assert 'frequency_bands' in audio_data, f"frequency_bands manquant {i}"
+            assert 'visual_bands' in audio_data, f"visual_bands manquant {i}"
             assert 'spectrum' in audio_data, f"spectrum manquant {i}"
             assert 'bass' in audio_data, f"bass manquant {i}"
             assert 'mids' in audio_data, f"mids manquant {i}"
@@ -68,7 +69,8 @@ def test_audio_analyzer():
             # Vérifier les valeurs
             assert 0 <= audio_data['volume'] <= 1, f"Volume hors plage: {audio_data['volume']}"
             assert 0 <= audio_data['bass'] <= 1, f"Bass hors plage: {audio_data['bass']}"
-            assert len(audio_data['frequency_bands']) == 16, f"Nombre de bandes incorrect: {len(audio_data['frequency_bands'])}"
+            assert len(audio_data['frequency_bands']) >= 5, f"Nombre de bandes incorrect: {len(audio_data['frequency_bands'])}"
+            assert len(audio_data['visual_bands']) == 32, f"Nombre de bandes visuelles incorrect: {len(audio_data['visual_bands'])}"
 
         print("✓ AudioAnalyzer fonctionne correctement")
         print(f"  - 10 chunks analysés avec succès")

@@ -265,9 +265,11 @@ class AudioAnalyzer:
         # Historique pour le lissage
         self.volume_history = deque(maxlen=10)
         self.freq_history = deque(maxlen=10)
+        self.visual_band_history = deque(maxlen=5)
         self.bass_history = deque(maxlen=10)
         self.mid_history = deque(maxlen=10)
         self.treble_history = deque(maxlen=10)
+        self._previous_fft_magnitude = None
         
         # Détecteur de BPM
         from audio.bpm_detector import BPMDetector
@@ -442,6 +444,18 @@ class AudioAnalyzer:
             
             band_magnitude = np.mean(fft_magnitude[low_idx:high_idx])
             frequency_bands.append(min(band_magnitude * 8.0 + spectral_energy * 0.3, 1.0))
+
+        # Bandes visuelles logarithmiques plus fines pour les nouveaux rendus.
+        visual_bands = self._calculate_visual_bands(fft_magnitude, freqs, band_count=32)
+
+        # Flux spectral / onset: énergie positive gagnée depuis la frame précédente.
+        if self._previous_fft_magnitude is None or len(self._previous_fft_magnitude) != len(fft_magnitude):
+            spectral_flux = 0.0
+        else:
+            diff = fft_magnitude - self._previous_fft_magnitude
+            spectral_flux = float(np.sqrt(np.mean(np.maximum(diff, 0.0) ** 2)) * 8.0)
+            spectral_flux = min(max(spectral_flux, 0.0), 1.0)
+        self._previous_fft_magnitude = fft_magnitude.copy()
         
         # Calculer les niveaux bass, mids, treble
         bass_level = np.mean([frequency_bands[i] for i in self.bass_band_indices]) if self.bass_band_indices else 0.0
@@ -475,16 +489,21 @@ class AudioAnalyzer:
         # Stocker l'historique des fréquences pour le lissage
         self.freq_history.append(frequency_bands)
         smoothed_bands = np.mean(self.freq_history, axis=0) if self.freq_history else frequency_bands
+        self.visual_band_history.append(visual_bands)
+        smoothed_visual_bands = np.mean(self.visual_band_history, axis=0) if self.visual_band_history else visual_bands
         
         return {
             'volume': float(volume),
             'volume_smooth': float(smoothed_volume),
             'frequency_bands': [float(x) for x in smoothed_bands],
+            'visual_bands': [float(x) for x in smoothed_visual_bands],
             'spectrum': [float(x) for x in fft_magnitude],
             'beat': bpm_result['is_beat'],
             'beat_strength': bpm_result['beat_strength'],
             'beat_phase': float(self.beat_phase),
             'energy': float(energy),
+            'spectral_flux': float(spectral_flux),
+            'onset_strength': float(max(spectral_flux, bpm_result['beat_strength'] * 0.65 if bpm_result['is_beat'] else spectral_flux * 0.5)),
             'spectral_centroid': float(spectral_centroid),
             'bpm': bpm_result['bpm'],
             'bpm_confidence': bpm_result['bpm_confidence'],
@@ -492,6 +511,25 @@ class AudioAnalyzer:
             'mids': float(smoothed_mid),
             'treble': float(smoothed_treble)
         }
+
+    def _calculate_visual_bands(self, fft_magnitude, freqs, band_count=32):
+        """Return log-spaced normalized bands for visualizers."""
+        if not HAS_NUMPY or len(fft_magnitude) == 0:
+            return [0.0] * band_count
+
+        low_hz = 30.0
+        high_hz = min(18000.0, self.sample_rate / 2.0)
+        edges = np.geomspace(low_hz, high_hz, band_count + 1)
+        bands = []
+        for low, high in zip(edges[:-1], edges[1:]):
+            mask = (freqs >= low) & (freqs < high)
+            if not np.any(mask):
+                bands.append(0.0)
+                continue
+            magnitude = np.mean(fft_magnitude[mask])
+            weight = 1.0 + (1.0 - len(bands) / max(band_count - 1, 1)) * 0.45
+            bands.append(float(min(1.0, magnitude * 9.5 * weight)))
+        return bands
     
     def _analyze_chunk_simulated(self, chunk):
         """Analyse simulée sans numpy."""
@@ -524,6 +562,11 @@ class AudioAnalyzer:
             variation = 0.35 + 0.4 * math.sin(iteration * 0.12 + i * 0.45)
             variation += 0.2 * math.sin(iteration * 0.04 + i * 0.18)
             frequency_bands.append(min(max(variation, 0.0), 1.0))
+        visual_bands = []
+        for i in range(32):
+            variation = 0.30 + 0.34 * math.sin(iteration * 0.10 + i * 0.31)
+            variation += 0.22 * math.sin(iteration * 0.035 + i * 0.11)
+            visual_bands.append(min(max(variation, 0.0), 1.0))
         
         # Calculer les niveaux bass, mids, treble
         bass_level = sum(frequency_bands[i] for i in self.bass_band_indices) / len(self.bass_band_indices) if self.bass_band_indices else 0.0
@@ -576,11 +619,14 @@ class AudioAnalyzer:
             'volume': float(volume),
             'volume_smooth': float(smoothed_volume),
             'frequency_bands': [float(x) for x in smoothed_bands],
+            'visual_bands': [float(x) for x in visual_bands],
             'spectrum': spectrum,
             'beat': bpm_result['is_beat'],
             'beat_strength': bpm_result['beat_strength'],
             'beat_phase': float(self.beat_phase),
             'energy': float(volume),
+            'spectral_flux': float(abs(math.sin(iteration * 0.18)) * 0.55),
+            'onset_strength': float(bpm_result['beat_strength'] if bpm_result['is_beat'] else abs(math.sin(iteration * 0.18)) * 0.25),
             'spectral_centroid': float(0.45 + 0.1 * math.sin(self.current_chunk * 0.25)),
             'bpm': bpm_result['bpm'],
             'bpm_confidence': bpm_result['bpm_confidence'],
@@ -595,11 +641,14 @@ class AudioAnalyzer:
             'volume': 0.0,
             'volume_smooth': 0.0,
             'frequency_bands': [0.0] * len(self.freq_bands),
+            'visual_bands': [0.0] * 32,
             'spectrum': [],
             'beat': False,
             'beat_strength': 0.0,
             'beat_phase': 0.0,
             'energy': 0.0,
+            'spectral_flux': 0.0,
+            'onset_strength': 0.0,
             'spectral_centroid': 0.0,
             'bpm': 120.0,
             'bpm_confidence': 0.0,

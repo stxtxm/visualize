@@ -17,12 +17,16 @@ class BaseEffect:
     Classe abstraite pour les effets visuels.
     """
     
-    def __init__(self, width, height, color_palette='psychedelic'):
+    def __init__(self, width, height, color_palette='psychedelic', background_image=None):
         self.width = width
         self.height = height
         self.color_palette = color_palette
         self.colors = self._get_color_palette()
         self.time = 0
+        self.background_image = None
+        self._background_path = None
+        if background_image:
+            self.set_background_image(background_image)
     
     def _get_color_palette(self):
         """Retourne une palette de couleurs selon le mode sélectionné."""
@@ -77,6 +81,50 @@ class BaseEffect:
         if index is None:
             index = int(self.time * 2) % len(self.colors)
         return self.colors[index % len(self.colors)]
+
+    def set_background_image(self, image_path):
+        """Load an optional RGB background image resized to the effect size."""
+        self._background_path = image_path or None
+        self.background_image = None
+        if not image_path or not HAS_NUMPY:
+            return
+
+        try:
+            from PIL import Image
+            resampling = getattr(Image, "Resampling", Image).LANCZOS
+            with Image.open(image_path) as img:
+                img = img.convert("RGB")
+                img_ratio = img.width / max(img.height, 1)
+                frame_ratio = self.width / max(self.height, 1)
+                if img_ratio > frame_ratio:
+                    new_h = self.height
+                    new_w = int(new_h * img_ratio)
+                else:
+                    new_w = self.width
+                    new_h = int(new_w / max(img_ratio, 1e-6))
+                img = img.resize((new_w, new_h), resampling)
+                left = max(0, (new_w - self.width) // 2)
+                top = max(0, (new_h - self.height) // 2)
+                img = img.crop((left, top, left + self.width, top + self.height))
+                self.background_image = np.asarray(img, dtype=np.uint8).copy()
+        except Exception:
+            self.background_image = None
+
+    def _background_frame(self, base_color=(4, 3, 8), opacity=0.72):
+        """Return a reusable-looking RGB frame with the optional image blended in."""
+        if not HAS_NUMPY:
+            return None
+        frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        frame[:] = base_color
+        if self.background_image is not None:
+            bg = self.background_image
+            if bg.shape[:2] == (self.height, self.width):
+                blended = (
+                    bg.astype(np.float32) * opacity
+                    + frame.astype(np.float32) * (1.0 - opacity)
+                )
+                frame[:] = np.clip(blended, 0, 255).astype(np.uint8)
+        return frame
     
     def render_to_array(self):
         """

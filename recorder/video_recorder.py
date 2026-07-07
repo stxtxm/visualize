@@ -14,7 +14,8 @@ class VideoRecorder:
     """
 
     def __init__(self, audio_file, output_file, width=1920, height=1080,
-                 fps=60, effect_type='random', color_palette='psychedelic'):
+                 fps=60, effect_type='random', color_palette='psychedelic',
+                 background_image=None):
         """
         Initialize the video recorder.
         
@@ -34,45 +35,21 @@ class VideoRecorder:
         self.fps = fps
         self.effect_type = effect_type
         self.color_palette = color_palette
+        self.background_image = background_image
         self._ffmpeg_cmd = self._build_ffmpeg_command()
         self._process = None
 
     def _build_ffmpeg_command(self):
         """Build the FFmpeg command for encoding."""
-        ffmpeg_path = os.environ.get('FFMPEG_PATH') or 'ffmpeg'
-        resolution = f"{self.width}x{self.height}"
-        
-        bitrate = "20M"
-        if self.width >= 3840:
-            bitrate = "50M"
-        elif self.width >= 2560:
-            bitrate = "35M"
-        
-        cmd = [
-            ffmpeg_path,
-            '-y',
-            '-f', 'rawvideo',
-            '-vcodec', 'rawvideo',
-            '-s', resolution,
-            '-pix_fmt', 'bgr24',
-            '-r', str(self.fps),
-            '-i', 'pipe:0',
-            '-i', self.audio_file,
-            '-c:v', 'libopenh264',
-            '-coder', 'cavlc',
-            '-b:v', bitrate,
-            '-maxrate', bitrate,
-            '-bufsize', bitrate,
-            '-pix_fmt', 'yuv420p',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-movflags', '+faststart',
-            '-shortest',
-            '-threads', '0',
-            self.output_file
-        ]
-        
-        return cmd
+        from quality_presets import build_ffmpeg_cmd
+        return build_ffmpeg_cmd(
+            self.width,
+            self.height,
+            self.fps,
+            self.audio_file,
+            self.output_file,
+            'normal'
+        )
 
     def _get_audio_duration(self, audio_file):
         """Get duration of audio file in seconds."""
@@ -128,42 +105,36 @@ class VideoRecorder:
     def _default_effect_generator(self):
         """Generates visualizer frames sequentially from the audio file with 0 RAM overhead."""
         from audio.analyzer import AudioAnalyzer, AudioStreamReader
-        from effects.manager import EFFECT_MAP
-        import importlib, random
-        
-        # Initialize analyzer in streaming mode (no full file loaded in memory)
+        from effects.manager import EffectManager
+
         analyzer = AudioAnalyzer(self.audio_file, sample_rate=44100, chunk_size=1024, load_file=False)
         analyzer.start_stream()
-        
-        # Open audio stream reader for the visual analysis (1 channel = mono)
         reader = AudioStreamReader(self.audio_file, sample_rate=44100, chunk_size=1024, channels=1)
-        
-        # Determine effect class from self.effect_type (mirrors EffectManager logic)
-        effect_name = self.effect_type
-        if effect_name == 'random':
-            effect_name = random.choice(['neon_equalizer', 'psychedelic_plasma', '3d_cyber_tunnel'])
-        module_file, class_name = EFFECT_MAP.get(effect_name, ('classic', 'ClassicEffect'))
-        try:
-            module = importlib.import_module(f'effects.{module_file}')
-            effect_class = getattr(module, class_name)
-        except (ImportError, AttributeError):
-            from effects.classic import ClassicEffect
-            effect_class = ClassicEffect
-        
-        effect = effect_class(self.width, self.height, color_palette=self.color_palette)
-        
+
+        class _Renderer:
+            def __init__(self, w, h):
+                self.width = w
+                self.height = h
+
+        manager = EffectManager(
+            analyzer=analyzer,
+            renderer=_Renderer(self.width, self.height),
+            effect_type=self.effect_type,
+            color_palette=self.color_palette,
+            background_image=self.background_image
+        )
+        manager.init()
+
         delta_time = 1.0 / self.fps
-        
+
         try:
             while True:
                 chunk = reader.read_chunk()
                 if chunk is None:
                     break
-                
                 audio_data = analyzer.analyze_chunk(chunk)
-                effect.update(audio_data, delta_time)
-                
-                frame = effect.render_to_array()
+                manager.update(audio_data, delta_time)
+                frame = manager.render_to_array()
                 yield frame
         finally:
             reader.close()
@@ -197,6 +168,8 @@ class VideoRecorder:
         print(f"  Total frames: {total_frames}")
         print(f"  Effect: {self.effect_type}")
         print(f"  Colors: {self.color_palette}")
+        if self.background_image:
+            print(f"  Background: {self.background_image}")
         print()
         
         # Start FFmpeg process

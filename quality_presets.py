@@ -129,7 +129,15 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     if _HAS_OPENH264:
         cmd += ['-c:v', 'libopenh264', '-coder', 'cavlc']
     else:
-        cmd += ['-c:v', 'libx264', '-preset', preset_config['ffmpeg_preset']]
+        cmd += [
+            '-c:v', 'libx264',
+            '-preset', preset_config['ffmpeg_preset'],
+            '-crf', preset_config['crf'],
+            '-tune', 'animation',
+            '-profile:v', 'high',
+            '-g', str(max(1, int(fps * 2))),
+            '-bf', '2',
+        ]
     
     cmd += [
         '-b:v', bitrate,

@@ -48,6 +48,7 @@ Tous les effets héritent de `BaseEffect` (`effects/base.py`) et doivent implém
 
 | ID | Classe | Description |
 |----|--------|-------------|
+| `trance_scope` / `pro_trance` | `TranceScopeEffect` | Visualizer premium : fond image optionnel, bloom spectral, interférences, glyphes orbitaux et strobe BPM |
 | `neon_equalizer` / `classic` | `ClassicEffect` | Oscilloscope circulaire + barres + rayons + grille |
 | `psychedelic_plasma` / `plasma` | `PlasmaEffect` | Plasma algorithmique avec couleurs dynamiques |
 | `3d_cyber_tunnel` / `tunnel` | `TunnelEffect` | Effet de tunnel 3D style cyberpunk |
@@ -73,6 +74,12 @@ Définies dans `BaseEffect._get_color_palette()` :
 - **`dark`** — Gris foncé, Bleu, Rouge, Vert, Jaune
 - **`rainbow`** — Rouge → Orange → Jaune → Vert → Bleu → Indigo → Violet
 
+### Image de fond
+
+- `BaseEffect` fournit `set_background_image()` et `_background_frame()` pour charger une image via Pillow, la recadrer à la résolution active et la rendre disponible en RGB numpy.
+- Le chemin `background_image` est propagé par `EffectManager`, le CLI (`--background`) et `VideoRecorder`.
+- `TranceScopeEffect` utilise l'image comme matière graphique beat-synced (gradation, dérive chromatique, glow) et elle est donc visible dans la preview comme dans l'export MP4.
+
 ---
 
 ## Analyse audio
@@ -82,6 +89,7 @@ Définies dans `BaseEffect._get_color_palette()` :
 - Utilise **numpy** pour la FFT (via `scipy.fft` ou `numpy.fft`)
 - Bandes de fréquences : Sub-bass (20-250Hz), Bass (250-500Hz), Low-mids (500-2000Hz), High-mids (2000-4000Hz), Highs (4000-20000Hz)
 - Détection de beat, calcul BPM, spectre complet
+- Bandes visuelles logarithmiques `visual_bands` (32 bandes), `spectral_flux` et `onset_strength` pour les rendus modernes synchronisés aux transitoires
 - Mode `NO_SOUND=1` pour tests sans audio réelle
 - Utilise `AudioStreamReader` pour décoder l'audio via ffmpeg
 
@@ -118,8 +126,8 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtCol
 - Fenêtre Tkinter avec :
   - Sélection fichier audio (parcours ou glisser-déposer)
   - Menu déroulant résolution + présélection qualité
-  - **Effet et palette ne sont PAS exposés dans la GUI** — valeur par défaut : `Neon Equalizer` + `winamp_classic`
-  - Effet et palette sont configurables UNIQUEMENT via CLI (`--effect`, `--color`)
+  - Effet et palette exposés dans la GUI — valeur par défaut : `Trance Scope` + `psychedelic`
+  - Bouton image de fond : l'image est appliquée immédiatement à la preview et exportée dans le MP4
   - Boutons Lecture, Stop, Exporter
   - Aperçu vidéo temps réel (Label Tkinter avec PhotoImage)
   - Logs en bas (redirige stderr via `LogDisplay`)
@@ -220,26 +228,27 @@ Déclenché sur push de tag `v*`.
 4. **`pygame.time.init()` n'existe plus dans pygame 2.x**. Utiliser `pygame.display.init()` + `pygame.font.init()` pour l'initialisation partielle, ou `pygame.init()` pour l'initialisation complète.
 5. **`LD_LIBRARY_PATH` est nettoyé** avant de lancer ffmpeg dans `AudioStreamReader` pour éviter les conflits avec les libs de l'AppImage.
 6. **Gestion de la version (`version.py`)** : La version de l'application est centralisée dans `version.py`. En dev, elle est lue dynamiquement via `git describe --tags --always`. Au build de l'AppImage (`build_standalone.sh`), le script écrit la version Git statique dans `output/usr/app/version.py` pour éviter d'avoir à modifier manuellement les fichiers.
+7. **Images de fond** : toujours passer par `EffectManager.set_background_image()` ou le paramètre `background_image`; ne pas charger l'image directement dans la GUI ou l'export.
 
 ### 🟡 Importantes
 
-7. **Le scaling** utilise `s = height / 450.0`. Tous les dessins doivent être multipliés par `s`. La hauteur de référence 450px vient de la résolution historique 800×450.
-8. **`HeadlessRenderer` n'a plus de cap** de résolution. L'effet est créé à la taille exacte de la fenêtre ou de l'export.
-9. **L'aperçu GUI utilise `render_to_array()`** (comme l'export), pas `render()`. Changé pour garantir la correspondance visuelle.
-10. **Les tags GitHub déclenchent la CI** via `on: push: tags: ['v*']`. Re-tagger avec `git tag -d vX.Y.Z && git push --delete origin vX.Y.Z && git tag vX.Y.Z && git push origin vX.Y.Z`.
-11. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
+8. **Le scaling** utilise `s = height / 450.0`. Tous les dessins doivent être multipliés par `s`. La hauteur de référence 450px vient de la résolution historique 800×450.
+9. **`HeadlessRenderer` n'a plus de cap** de résolution. L'effet est créé à la taille exacte de la fenêtre ou de l'export.
+10. **L'aperçu GUI utilise `render_to_array()`** (comme l'export), pas `render()`. Changé pour garantir la correspondance visuelle.
+11. **Les tags GitHub déclenchent la CI** via `on: push: tags: ['v*']`. Re-tagger avec `git tag -d vX.Y.Z && git push --delete origin vX.Y.Z && git tag vX.Y.Z && git push origin vX.Y.Z`.
+12. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
 
 ### 🔴 Langue — English only
 
-12. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
-13. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
-14. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
+13. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
+14. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
+15. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
 
 ### 🟢 Recommandations
 
-15. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
-16. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
-17. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
+16. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
+17. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
+18. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
 
 ---
 
@@ -276,6 +285,7 @@ Déclenché sur push de tag `v*`.
 # Lancer
 python3 main.py                          # GUI
 python3 main.py audio.mp3 -o video.mp4   # Export
+python3 main.py audio.mp3 -o video.mp4 --background cover.png --effect trance_scope
 
 # Tests
 python3 -m pytest tests/ -v

@@ -36,6 +36,33 @@ class TestEffectManagerFull(unittest.TestCase):
                 self.assertIsNotNone(mgr.current_effect)
                 mgr.cleanup()
 
+    def test_background_image_delegates_to_effect(self):
+        from effects.manager import EffectManager
+        from PIL import Image
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            path = tmp.name
+        try:
+            Image.new('RGB', (24, 24), (20, 180, 220)).save(path)
+            mgr = EffectManager(
+                analyzer=None,
+                renderer=MockRenderer(),
+                effect_type='trance_scope',
+                color_palette='psychedelic',
+                background_image=path
+            )
+            mgr.init()
+            self.assertEqual(mgr.background_image, path)
+            self.assertIsNotNone(mgr.current_effect.background_image)
+
+            mgr.set_background_image(None)
+            self.assertIsNone(mgr.background_image)
+            self.assertIsNone(mgr.current_effect.background_image)
+            mgr.cleanup()
+        finally:
+            os.remove(path)
+
     def test_change_effect(self):
         mgr = self._make_manager(effect_type='bars')
         mgr.change_effect('plasma')

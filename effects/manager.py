@@ -9,6 +9,8 @@ import importlib
 
 # Map effect type names to module names
 EFFECT_MAP = {
+    'trance_scope': ('trance_scope', 'TranceScopeEffect'),
+    'pro_trance': ('trance_scope', 'TranceScopeEffect'),
     'neon_equalizer': ('classic', 'ClassicEffect'),
     'psychedelic_plasma': ('plasma', 'PlasmaEffect'),
     '3d_cyber_tunnel': ('tunnel', 'TunnelEffect'),
@@ -30,7 +32,7 @@ class EffectManager:
     """
 
     def __init__(self, analyzer=None, renderer=None, effect_type='random',
-                 color_palette='psychedelic'):
+                 color_palette='psychedelic', background_image=None):
         """
         Initialize the effect manager.
         
@@ -44,6 +46,7 @@ class EffectManager:
         self.renderer = renderer
         self.effect_type = effect_type
         self.color_palette = color_palette
+        self.background_image = background_image
         self.current_effect = None
         self._initialized = False
         
@@ -60,7 +63,7 @@ class EffectManager:
         """Create the effect instance based on current settings."""
         # Determine which effect to use
         if self.effect_type == 'random':
-            effect_name = random.choice(['neon_equalizer', 'psychedelic_plasma', '3d_cyber_tunnel'])
+            effect_name = random.choice(['trance_scope', 'neon_equalizer', 'psychedelic_plasma', '3d_cyber_tunnel'])
         else:
             effect_name = self.effect_type
         
@@ -76,11 +79,21 @@ class EffectManager:
             effect_class = ClassicEffect
         
         # Create the effect instance
-        self.current_effect = effect_class(
-            width=self.width,
-            height=self.height,
-            color_palette=self.color_palette
-        )
+        try:
+            self.current_effect = effect_class(
+                width=self.width,
+                height=self.height,
+                color_palette=self.color_palette,
+                background_image=self.background_image
+            )
+        except TypeError:
+            self.current_effect = effect_class(
+                width=self.width,
+                height=self.height,
+                color_palette=self.color_palette
+            )
+            if self.background_image and hasattr(self.current_effect, 'set_background_image'):
+                self.current_effect.set_background_image(self.background_image)
         
         self._current_effect_name = effect_name
 
@@ -95,6 +108,12 @@ class EffectManager:
         if self.current_effect:
             self.current_effect.color_palette = color_palette
             self.current_effect.colors = self.current_effect._get_color_palette()
+
+    def set_background_image(self, image_path):
+        """Apply a background image to the active effect and future recreations."""
+        self.background_image = image_path or None
+        if self.current_effect and hasattr(self.current_effect, 'set_background_image'):
+            self.current_effect.set_background_image(self.background_image)
 
     def update(self, audio_data, delta_time):
         """
