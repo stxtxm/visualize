@@ -9,6 +9,7 @@ import threading
 import os
 import sys
 import time
+import webbrowser
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -183,9 +184,9 @@ class MainWindow:
         secondary_btn_frame = tk.Frame(btn_container, bg=self.BG_PANEL)
         secondary_btn_frame.pack(fill=tk.X)
         
-        btn_export = tk.Button(secondary_btn_frame, text="🎥 EXPORTER", command=self._export_video, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
-        btn_export.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        add_hover(btn_export, "#3a3a55", "#2a2a3e")
+        self.btn_export = tk.Button(secondary_btn_frame, text="🎥 EXPORTER", command=self._export_video, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
+        self.btn_export.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        add_hover(self.btn_export, "#3a3a55", "#2a2a3e")
         
         btn_logs = tk.Button(secondary_btn_frame, text="📝 LOGS", command=self._show_logs, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
         btn_logs.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
@@ -211,19 +212,50 @@ class MainWindow:
         status_frame = tk.Frame(right_panel, bg="#111116", height=24, bd=0)
         status_frame.pack(fill=tk.X, pady=(10, 0))
         
-        led_status = tk.Label(status_frame, text="●", font=('Helvetica', 10), fg=self.NEON_CYAN, bg="#111116", padx=5)
-        led_status.pack(side=tk.LEFT)
+        self._led_status = tk.Label(status_frame, text="●", font=('Helvetica', 10), fg=self.NEON_CYAN, bg="#111116", padx=5)
+        self._led_status.pack(side=tk.LEFT)
         
         # Update led status dynamically when playback state changes
         def update_led(*args):
             if self.is_playing.get():
-                led_status.configure(fg=self.NEON_GREEN)
+                self._led_status.configure(fg=self.NEON_GREEN)
             else:
-                led_status.configure(fg=self.NEON_CYAN)
+                self._led_status.configure(fg=self.NEON_CYAN)
         self.is_playing.trace_add("write", update_led)
         
         status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # Thin export progress bar (2px, inside status bar, invisible by default)
+        self._status_bar_inner = status_frame
+        self._export_progress_bar = tk.Frame(
+            status_frame, bg=self.NEON_CYAN, height=2, bd=0
+        )
+
+        # ── Footer: copyright + social links ──
+        footer = tk.Frame(self.root, bg="#0a0a12", height=20)
+        footer.pack(side=tk.BOTTOM, fill=tk.X)
+        footer.pack_propagate(False)
+
+        self._footer_copyright = tk.Label(footer, text="© 2026 Timothée Grollier",
+                 font=('Helvetica', 7), fg="#4a4a5e", bg="#0a0a12",
+                 anchor=tk.W)
+        self._footer_copyright.pack(side=tk.LEFT, padx=10)
+
+        social = tk.Frame(footer, bg="#0a0a12")
+        social.pack(side=tk.RIGHT, padx=10)
+
+        self._footer_linkedin = tk.Label(social, text="in", font=('Helvetica', 7, 'bold'),
+                      fg="#ffffff", bg="#0a66c2", padx=4, pady=1, cursor="hand2")
+        self._footer_linkedin.pack(side=tk.LEFT, padx=(0, 5))
+        self._footer_linkedin.bind("<Button-1>", lambda e: webbrowser.open(
+            "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev"))
+
+        self._footer_website = tk.Label(social, text="www", font=('Helvetica', 7, 'bold'),
+                        fg=self.FG_LIGHT, bg="#2a2a3e", padx=4, pady=1, cursor="hand2")
+        self._footer_website.pack(side=tk.LEFT)
+        self._footer_website.bind("<Button-1>", lambda e: webbrowser.open(
+            "https://timotheegrollier.github.io/"))
 
     def _preset_changed(self, event=None):
         """Update resolution and FPS when preset changes."""
@@ -627,25 +659,53 @@ class MainWindow:
             messagebox.showerror("Erreur", f"Échec de la création du recorder: {str(e)}")
             return
         
+        self.btn_export.config(state=tk.DISABLED, text="⏳ EXPORT...")
+        self.status_var.set(f"Export: {os.path.basename(filename)}")
+        self._led_status.configure(fg="#ffaa00")
+        self._export_progress_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
         export_thread = threading.Thread(
             target=self._export_loop,
             args=(filename,),
             daemon=True
         )
         export_thread.start()
-        
-        self.status_var.set(f"Export en cours vers {os.path.basename(filename)}...")
+
+    def _show_export_progress(self, current, total):
+        pct = (current / total) * 100 if total > 0 else 0
+        self.status_var.set(f"EXPORT {current}/{total} ({pct:.0f}%)")
+        w = self._status_bar_inner.winfo_width()
+        self._export_progress_bar.place(x=0, y=0, width=max(1, int(w * pct / 100)), height=2)
+
+    def _export_finished(self, basename=None, error=None):
+        self.btn_export.config(state=tk.NORMAL, text="🎥 EXPORTER")
+        if error:
+            self._led_status.configure(fg="#ff3b3b")
+            self.status_var.set(f"ÉCHEC: {error[:60]}")
+            self.root.after(3000, lambda: self._export_progress_bar.place_forget() or self._led_status.configure(fg=self.NEON_CYAN))
+        else:
+            self._led_status.configure(fg=self.NEON_GREEN)
+            self.status_var.set(f"✓ EXPORT TERMINÉ: {basename}")
+            w = self._status_bar_inner.winfo_width()
+            self._export_progress_bar.place(x=0, y=0, width=w, height=2)
+            self.root.after(2500, lambda: (
+                self._export_progress_bar.place_forget(),
+                self._led_status.configure(fg=self.NEON_CYAN),
+                self.status_var.set("PRÊT")
+            ))
 
     def _export_loop(self, filename):
         """Export loop."""
         try:
-            self.recorder.record()
+            self.recorder.record(
+                progress_callback=lambda c, t: self.root.after(0, lambda: self._show_export_progress(c, t))
+            )
             basename = os.path.basename(filename)
-            self.root.after(0, lambda bn=basename: self.status_var.set(f"Export terminé: {bn}"))
+            self.root.after(0, lambda bn=basename: self._export_finished(bn))
             self.root.after(0, lambda f=filename: messagebox.showinfo("Succès", f"Vidéo exportée vers\n{f}"))
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda em=error_msg: self.status_var.set(f"Erreur d'export: {em}"))
+            self.root.after(0, lambda em=error_msg: self._export_finished(error=em))
             self.root.after(0, lambda em=error_msg: messagebox.showerror("Erreur", f"Échec de l'export:\n{em}"))
 
     @staticmethod

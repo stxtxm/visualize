@@ -321,11 +321,11 @@ def run_export(args):
             except (BrokenPipeError, ConnectionResetError, ValueError, OSError):
                 break
             
-            if frame_count % 100 == 0:
+            if frame_count % 10 == 0:
                 if process.poll() is not None:
                     break
-                progress = (frame_count / total_frames) * 100
-                print(f"  Progress: {progress:.0f}%")
+                pct = (frame_count / total_frames) * 100 if total_frames > 0 else 0
+                print(f"\r  Export: {frame_count}/{total_frames} ({pct:.0f}%)", end="", flush=True)
         
         try:
             process.stdin.close()
@@ -344,6 +344,7 @@ def run_export(args):
         if process.returncode is None:
             process.wait()
         
+        print()
         if process.returncode != 0:
             error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ''
             if os.path.exists(args.export) and os.path.getsize(args.export) > 0:

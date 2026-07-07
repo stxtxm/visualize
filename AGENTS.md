@@ -117,6 +117,12 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtCol
   → process.stdin.write() → ffmpeg (rawvideo pipe) → output.mp4
 ```
 
+### Progress de l'export
+
+- **GUI** : barre 2px `#00f0ff` (`NEON_CYAN`) dans `status_frame` (`self._export_progress_bar`), visible via `_show_export_progress()` / cachée via `_export_finished()`.
+- **CLI** : `print(f"\r  Export: {frame_count}/{total_frames} ({pct:.0f}%)", end="", flush=True)` dans `main.py:328` (tous les 10 frames).
+- **Programmatique** : `VideoRecorder.record(progress_callback=callable(frame_count, total_frames))` — appelé à chaque frame.
+
 ---
 
 ## Interface graphique
@@ -131,6 +137,8 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtCol
   - Boutons Lecture, Stop, Exporter
   - Aperçu vidéo temps réel (Label Tkinter avec PhotoImage)
   - Logs en bas (redirige stderr via `LogDisplay`)
+  - Barre de progression export (2px, `NEON_CYAN`, dans `status_frame` via `_show_export_progress()` / `_export_finished()`)
+  - Footer : `self._footer_copyright` ("© 2026 Timothée Grollier"), `self._footer_linkedin` ("in", LinkedIn), `self._footer_website` ("www", site perso) — tous dans un `footer` Frame collé en bas
 - La boucle de lecture utilise `render_to_array()` via `HeadlessRenderer`
 - L'aperçu est redimensionné avec `LANCZOS` quand la fenêtre change de taille
 - Effet recréé dynamiquement si la taille de fenêtre change
@@ -196,16 +204,17 @@ Déclenché sur push de tag `v*`.
  | `test_bpm_detector.py` | BPM detection, beat on periodic signal, history |
  | `test_manager_full.py` | EffectManager instantiation, delegation, change |
  | `test_renderers.py` | ArrayRenderer, HeadlessRenderer, PygameRenderer |
- | `test_cli.py` | Argparse validation, CLI export invocation |
+ | `test_cli.py` | Argparse validation, CLI export invocation, progress output |
  | `test_error_handling.py` | NO_SOUND mode, corrupt audio, ffmpeg fallback |
  | `test_paths.py` | PathManager : conteneur/hôte, chemins, fichiers |
  | `test_quality_presets.py` | Présélections, build_ffmpeg_cmd, résolutions |
+ | `test_ui.py` | Footer labels existence, copyright text, social link badges |
  
  ### Tests intégration
  
  | Fichier | Description |
  |---------|-------------|
- | `test_export.py` | Lance `main.py --export`, vérifie la vidéo avec ffprobe |
+ | `test_export.py` | Lance `main.py --export`, vérifie la vidéo avec ffprobe, progress output, progress_callback |
  | `test_e2e_simple.py` | Test bout-en-bout sans GUI (6 scénarios) |
  | `test_e2e_gui.py` | Tests d'intégration GUI (pygame renderer) |
  | `test_e2e_short_mp3_play_simple.py` | Tests simplifiés playback MP3 |
@@ -235,8 +244,12 @@ Déclenché sur push de tag `v*`.
 8. **Le scaling** utilise `s = height / 450.0`. Tous les dessins doivent être multipliés par `s`. La hauteur de référence 450px vient de la résolution historique 800×450.
 9. **`HeadlessRenderer` n'a plus de cap** de résolution. L'effet est créé à la taille exacte de la fenêtre ou de l'export.
 10. **L'aperçu GUI utilise `render_to_array()`** (comme l'export), pas `render()`. Changé pour garantir la correspondance visuelle.
+
+### 🟡 Importantes
+
 11. **Les tags GitHub déclenchent la CI** via `on: push: tags: ['v*']`. Re-tagger avec `git tag -d vX.Y.Z && git push --delete origin vX.Y.Z && git tag vX.Y.Z && git push origin vX.Y.Z`.
 12. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
+13. **Références GUI stockées en instance** — Tout widget Tkinter qui doit être testé ou modifié depuis l'extérieur doit être stocké comme `self._nom_du_widget`. Actuellement : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`, `self._export_progress_bar`, `self._status_bar_inner`.
 
 ### 🔴 CI — Ne JAMAIS hardcoder le body de release
 

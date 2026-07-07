@@ -85,6 +85,11 @@ class TestCLIExportInvocation(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(os.path.exists(out))
         self.assertGreater(os.path.getsize(out), 1000)
+        # Verify progress output appears in stdout
+        self.assertIn('Export:', proc.stdout,
+                      "CLI export should print 'Export:' progress markers")
+        self.assertIn('complete', proc.stdout.lower(),
+                      "CLI export should print completion message")
         os.remove(out)
 
 

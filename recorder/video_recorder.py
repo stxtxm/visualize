@@ -139,7 +139,7 @@ class VideoRecorder:
         finally:
             reader.close()
 
-    def record(self, effect_generator=None):
+    def record(self, effect_generator=None, progress_callback=None):
         """
         Record the visualization to a video file.
         
@@ -148,6 +148,8 @@ class VideoRecorder:
                            as numpy arrays (height, width, 3) in BGR format.
                            If None, an internal generator is automatically created
                            to stream and render the visual effect.
+            progress_callback: Optional callable(frame_count, total_frames)
+                           called periodically during export for UI progress updates.
         """
         import os
         if effect_generator is None:
@@ -223,7 +225,9 @@ class VideoRecorder:
                 
                 frame_count += 1
                 
-                if frame_count % 100 == 0:
+                if progress_callback:
+                    progress_callback(frame_count, total_frames)
+                elif frame_count % 100 == 0:
                     progress = (frame_count / total_frames) * 100
                     print(f"Export: {progress:.1f}% ({frame_count}/{total_frames} frames)")
                 
