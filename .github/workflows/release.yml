@@ -15,6 +15,10 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Fix broken Microsoft repo lists
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list 2>/dev/null || true
+
       - name: Install system deps
         run: |
           sudo apt-get update
@@ -41,6 +45,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Fix broken Microsoft repo lists
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list 2>/dev/null || true
 
       - name: Install squashfs-tools
         run: sudo apt-get update && sudo apt-get install -y squashfs-tools
