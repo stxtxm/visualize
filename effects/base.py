@@ -17,7 +17,7 @@ class BaseEffect:
     Classe abstraite pour les effets visuels.
     """
     
-    def __init__(self, width, height, color_palette='psychedelic', background_image=None):
+    def __init__(self, width, height, color_palette='psychedelic', background_image=None, background_opacity=0.72):
         self.width = width
         self.height = height
         self.color_palette = color_palette
@@ -25,6 +25,7 @@ class BaseEffect:
         self.time = 0
         self.background_image = None
         self._background_path = None
+        self.background_opacity = max(0.0, min(1.0, background_opacity))
         if background_image:
             self.set_background_image(background_image)
     
@@ -110,8 +111,14 @@ class BaseEffect:
         except Exception:
             self.background_image = None
 
-    def _background_frame(self, base_color=(4, 3, 8), opacity=0.72):
+    def set_background_opacity(self, opacity):
+        """Set the background image blend opacity (0.0 = invisible, 1.0 = fully opaque)."""
+        self.background_opacity = max(0.0, min(1.0, opacity))
+
+    def _background_frame(self, base_color=(4, 3, 8), opacity=None):
         """Return a reusable-looking RGB frame with the optional image blended in."""
+        if opacity is None:
+            opacity = self.background_opacity
         if not HAS_NUMPY:
             return None
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)

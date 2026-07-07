@@ -163,7 +163,35 @@ class MainWindow:
                            bd=0, padx=9, font=('Helvetica', 10, 'bold'), cursor="hand2")
         btn_bg.pack(side=tk.RIGHT, fill=tk.Y)
         add_hover(btn_bg, "#35354e", "#252538")
-        
+
+        # ── Opacity slider for background ──
+        self.opacity_var = tk.DoubleVar(value=72)
+        opacity_frame = tk.Frame(left_panel, bg=self.BG_PANEL)
+        opacity_frame.pack(fill=tk.X, pady=(0, 4))
+        lbl_opacity = tk.Label(opacity_frame, text="OPACITÉ FOND", font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
+        lbl_opacity.pack(anchor=tk.W)
+        slider_row = tk.Frame(opacity_frame, bg=self.BG_PANEL)
+        slider_row.pack(fill=tk.X, pady=(4, 0))
+        self.opacity_slider = tk.Scale(slider_row, from_=0, to=100, orient=tk.HORIZONTAL,
+                                       variable=self.opacity_var, command=self._on_opacity_change,
+                                       showvalue=False, bg=self.BG_PANEL, fg=self.FG_LIGHT,
+                                       highlightthickness=0, bd=0, troughcolor="#1a1a2e",
+                                       activebackground=self.NEON_CYAN, sliderlength=16, length=180)
+        self.opacity_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._opacity_label = tk.Label(slider_row, text="72%", font=('Courier', 9, 'bold'),
+                                       fg=self.NEON_CYAN, bg=self.BG_PANEL, width=4, anchor=tk.E)
+        self._opacity_label.pack(side=tk.RIGHT, padx=(8, 0))
+
+        # ── Remove background button ──
+        self.btn_remove_bg = tk.Button(left_panel, text="✕ RETIRER LE FOND",
+                                       command=self._remove_background,
+                                       bg="#1a1a2e", fg="#ff3b3b",
+                                       activebackground="#2a0a0a", activeforeground="#ff5b5b",
+                                       bd=0, padx=6, pady=3, font=('Helvetica', 8, 'bold'),
+                                       cursor="hand2")
+        self.btn_remove_bg.pack(fill=tk.X, pady=(0, 10))
+        add_hover(self.btn_remove_bg, "#2a0a0a", "#1a1a2e")
+
         # Spacer
         left_panel.grid_rowconfigure(9, weight=1)
         
@@ -227,10 +255,13 @@ class MainWindow:
         status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # Thin export progress bar (2px, inside status bar, invisible by default)
+        # Export progress bar: track (teal dark) + fill (neon cyan), 5px
         self._status_bar_inner = status_frame
-        self._export_progress_bar = tk.Frame(
-            status_frame, bg=self.NEON_CYAN, height=2, bd=0
+        self._export_progress_track = tk.Frame(
+            status_frame, bg="#0a2a33", height=5, bd=0
+        )
+        self._export_progress_fill = tk.Frame(
+            self._export_progress_track, bg=self.NEON_CYAN, height=5, bd=0
         )
 
         # ── Footer: copyright + social links ──
@@ -331,6 +362,20 @@ class MainWindow:
             if self.effect_manager:
                 self.effect_manager.set_background_image(filename)
             self.status_var.set(f"Fond: {os.path.basename(filename)}")
+
+    def _on_opacity_change(self, val):
+        """Update background opacity in real-time from slider."""
+        opacity = float(val) / 100.0
+        self._opacity_label.configure(text=f"{int(float(val)):.0f}%")
+        if self.effect_manager:
+            self.effect_manager.set_background_opacity(opacity)
+
+    def _remove_background(self):
+        """Clear the background image from preview and export."""
+        self.background_image.set("")
+        if self.effect_manager:
+            self.effect_manager.set_background_image(None)
+        self.status_var.set("Fond retiré")
 
     def _get_effect_key(self):
         """Map GUI labels to internal effect identifiers."""
@@ -500,8 +545,9 @@ class MainWindow:
                             renderer=self.preview_renderer,
                             effect_type=effect_key,
                             color_palette=self.selected_color.get(),
-                            background_image=self.background_image.get() or None
-                        )
+                background_image=self.background_image.get() or None,
+                background_opacity=self.opacity_var.get() / 100.0
+            )
                         self.effect_manager.init()
                         self._preview_render_size = (pw, ph)
                     except Exception:
@@ -676,7 +722,7 @@ class MainWindow:
         self.btn_export.config(state=tk.DISABLED, text="⏳ EXPORT...")
         self.status_var.set(f"Export: {os.path.basename(filename)}")
         self._led_status.configure(fg="#ffaa00")
-        self._export_progress_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._export_progress_track.pack(side=tk.BOTTOM, fill=tk.X, pady=(2, 0))
 
         export_thread = threading.Thread(
             target=self._export_loop,
@@ -688,22 +734,22 @@ class MainWindow:
     def _show_export_progress(self, current, total):
         pct = (current / total) * 100 if total > 0 else 0
         self.status_var.set(f"EXPORT {current}/{total} ({pct:.0f}%)")
-        w = self._status_bar_inner.winfo_width()
-        self._export_progress_bar.place(x=0, y=0, width=max(1, int(w * pct / 100)), height=2)
+        w = self._export_progress_track.winfo_width()
+        self._export_progress_fill.place(x=0, y=0, width=max(1, int(w * pct / 100)), relheight=1.0)
 
     def _export_finished(self, basename=None, error=None):
         self.btn_export.config(state=tk.NORMAL, text="🎥 EXPORTER")
         if error:
             self._led_status.configure(fg="#ff3b3b")
             self.status_var.set(f"ÉCHEC: {error[:60]}")
-            self.root.after(3000, lambda: self._export_progress_bar.place_forget() or self._led_status.configure(fg=self.NEON_CYAN))
+            self.root.after(3000, lambda: self._export_progress_track.pack_forget() or self._led_status.configure(fg=self.NEON_CYAN))
         else:
             self._led_status.configure(fg=self.NEON_GREEN)
             self.status_var.set(f"✓ EXPORT TERMINÉ: {basename}")
-            w = self._status_bar_inner.winfo_width()
-            self._export_progress_bar.place(x=0, y=0, width=w, height=2)
+            w = self._export_progress_track.winfo_width()
+            self._export_progress_fill.place(x=0, y=0, width=w, relheight=1.0)
             self.root.after(2500, lambda: (
-                self._export_progress_bar.place_forget(),
+                self._export_progress_track.pack_forget(),
                 self._led_status.configure(fg=self.NEON_CYAN),
                 self.status_var.set("PRÊT")
             ))

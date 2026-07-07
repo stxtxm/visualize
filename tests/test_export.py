@@ -137,5 +137,45 @@ def test_export_with_background():
     print("Export with background PASSED")
 
 
+def test_export_with_background_opacity():
+    """Export with --background-opacity flag."""
+    from PIL import Image
+    import tempfile
+
+    bg_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            bg_path = tmp.name
+        Image.new('RGB', (64, 64), (40, 80, 180)).save(bg_path)
+
+        audio = 'input/test.wav'
+        if not os.path.exists(audio):
+            subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
+
+        output = '/tmp/test_ci_export_opacity.mp4'
+        result = subprocess.run([
+            sys.executable, 'main.py', audio,
+            '--effect', 'trance_scope',
+            '--color', 'psychedelic',
+            '--background', bg_path,
+            '--background-opacity', '0.5',
+            '--export', output,
+            '--preset', 'dev'
+        ], capture_output=True, text=True, timeout=120)
+
+        assert result.returncode == 0, f"Export with opacity failed:\n{result.stderr}"
+        assert os.path.getsize(output) > 100000, f"Export too small: {os.path.getsize(output)}"
+
+        result = subprocess.run(['ffprobe', output], capture_output=True, text=True)
+        stderr = result.stderr + result.stdout
+        assert 'Video:' in stderr, f"No video stream:\n{stderr}"
+
+        os.unlink(output)
+    finally:
+        if bg_path and os.path.exists(bg_path):
+            os.unlink(bg_path)
+    print("Export with background opacity PASSED")
+
+
 if __name__ == '__main__':
     test_export()

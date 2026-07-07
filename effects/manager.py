@@ -32,7 +32,8 @@ class EffectManager:
     """
 
     def __init__(self, analyzer=None, renderer=None, effect_type='random',
-                 color_palette='psychedelic', background_image=None):
+                 color_palette='psychedelic', background_image=None,
+                 background_opacity=0.72):
         """
         Initialize the effect manager.
         
@@ -41,12 +42,15 @@ class EffectManager:
             renderer: Renderer instance
             effect_type: Type of effect to use ('bars', 'circles', etc.)
             color_palette: Color palette to use
+            background_image: Path to optional background image
+            background_opacity: Blend opacity for background image (0.0-1.0)
         """
         self.analyzer = analyzer
         self.renderer = renderer
         self.effect_type = effect_type
         self.color_palette = color_palette
         self.background_image = background_image
+        self.background_opacity = max(0.0, min(1.0, background_opacity))
         self.current_effect = None
         self._initialized = False
         
@@ -95,6 +99,9 @@ class EffectManager:
             if self.background_image and hasattr(self.current_effect, 'set_background_image'):
                 self.current_effect.set_background_image(self.background_image)
         
+        if hasattr(self.current_effect, 'set_background_opacity'):
+            self.current_effect.set_background_opacity(self.background_opacity)
+        
         self._current_effect_name = effect_name
 
     def change_effect(self, effect_type):
@@ -114,6 +121,13 @@ class EffectManager:
         self.background_image = image_path or None
         if self.current_effect and hasattr(self.current_effect, 'set_background_image'):
             self.current_effect.set_background_image(self.background_image)
+
+    def set_background_opacity(self, opacity):
+        """Set background image opacity on the active effect and future recreations."""
+        opacity = max(0.0, min(1.0, opacity))
+        self.background_opacity = opacity
+        if self.current_effect and hasattr(self.current_effect, 'set_background_opacity'):
+            self.current_effect.set_background_opacity(opacity)
 
     def update(self, audio_data, delta_time):
         """

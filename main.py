@@ -204,6 +204,8 @@ def run_cli():
                         choices=['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow'])
     parser.add_argument('--background', '-b', default=None,
                         help='Optional image file used as the visualizer background')
+    parser.add_argument('--background-opacity', type=float, default=0.72,
+                        help='Background image opacity (0.0-1.0), default 0.72')
     parser.add_argument('--resolution', '-r', default=None,
                         choices=['720p', '1080p', '1440p', '4K'])
     parser.add_argument('--fps', type=int, default=None)
@@ -272,7 +274,8 @@ def run_export(args):
         renderer=ExportRenderer(width, height),
         effect_type=args.effect,
         color_palette=args.color,
-        background_image=args.background
+        background_image=args.background,
+        background_opacity=args.background_opacity
     )
     effect_manager.init()
     
@@ -407,7 +410,7 @@ def run_playback(args):
         renderer = ArrayRenderer(width, height, fps)
     
     renderer.init()
-    effect_manager = EffectManager(analyzer, renderer, args.effect, args.color, background_image=args.background)
+    effect_manager = EffectManager(analyzer, renderer, args.effect, args.color, background_image=args.background, background_opacity=args.background_opacity)
     effect_manager.init()
     
     try:

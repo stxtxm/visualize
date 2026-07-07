@@ -77,6 +77,8 @@ Définies dans `BaseEffect._get_color_palette()` :
 ### Image de fond
 
 - `BaseEffect` fournit `set_background_image()` et `_background_frame()` pour charger une image via Pillow, la recadrer à la résolution active et la rendre disponible en RGB numpy.
+- `background_opacity` (0.0–1.0, défaut 0.72) contrôle le mélange image / couleur unie. Accessible via `set_background_opacity()`.
+- `_background_frame()` utilise `self.background_opacity` si `opacity` n'est pas explicitement passé.
 - Le chemin `background_image` est propagé par `EffectManager`, le CLI (`--background`) et `VideoRecorder`.
 - `TranceScopeEffect` utilise l'image comme matière graphique beat-synced (gradation, dérive chromatique, glow) et elle est donc visible dans la preview comme dans l'export MP4.
 
@@ -137,7 +139,9 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtCol
   - Boutons Lecture, Stop, Exporter
   - Aperçu vidéo temps réel (Label Tkinter avec PhotoImage)
   - Logs en bas (redirige stderr via `LogDisplay`)
-  - Barre de progression export (2px, `NEON_CYAN`, dans `status_frame` via `_show_export_progress()` / `_export_finished()`)
+  - Barre de progression export : track teal `#0a2a33` + fill `NEON_CYAN`, 5px, dans `status_frame` via `_show_export_progress()` / `_export_finished()`
+  - Curseur `OPACITÉ FOND` (Scale 0–100%) avec affichage en temps réel, impact immédiat sur preview et export
+  - Bouton `✕ RETIRER LE FOND` qui vide l'image de fond
   - Footer : `self._footer_copyright` ("© 2026 Timothée Grollier"), `self._footer_linkedin` ("in", LinkedIn), `self._footer_website` ("www", site perso) — tous dans un `footer` Frame collé en bas
 - La boucle de lecture utilise `render_to_array()` via `HeadlessRenderer`
 - L'aperçu est redimensionné avec `LANCZOS` quand la fenêtre change de taille

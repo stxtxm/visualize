@@ -15,7 +15,7 @@ class VideoRecorder:
 
     def __init__(self, audio_file, output_file, width=1920, height=1080,
                  fps=60, effect_type='random', color_palette='psychedelic',
-                 background_image=None):
+                 background_image=None, background_opacity=0.72):
         """
         Initialize the video recorder.
         
@@ -27,6 +27,8 @@ class VideoRecorder:
             fps: Frames per second
             effect_type: Type of visual effect to use
             color_palette: Color palette to use
+            background_image: Path to optional background image
+            background_opacity: Blend opacity for background image (0.0-1.0)
         """
         self.audio_file = audio_file
         self.output_file = output_file
@@ -36,6 +38,7 @@ class VideoRecorder:
         self.effect_type = effect_type
         self.color_palette = color_palette
         self.background_image = background_image
+        self.background_opacity = background_opacity
         self._ffmpeg_cmd = self._build_ffmpeg_command()
         self._process = None
 
@@ -121,7 +124,8 @@ class VideoRecorder:
             renderer=_Renderer(self.width, self.height),
             effect_type=self.effect_type,
             color_palette=self.color_palette,
-            background_image=self.background_image
+            background_image=self.background_image,
+            background_opacity=self.background_opacity
         )
         manager.init()
 

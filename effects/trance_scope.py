@@ -25,8 +25,8 @@ except ImportError:
 class TranceScopeEffect(BaseEffect):
     """Modern psychedelic trance field built around BPM phase and spectral flux."""
 
-    def __init__(self, width, height, color_palette='psychedelic', background_image=None):
-        super().__init__(width, height, color_palette, background_image=background_image)
+    def __init__(self, width, height, color_palette='psychedelic', background_image=None, background_opacity=0.68):
+        super().__init__(width, height, color_palette, background_image=background_image, background_opacity=background_opacity)
         self.num_orbits = 144
         self.num_radial = 160
         self.orbit_values = np.zeros(self.num_orbits, dtype=np.float32)
@@ -124,7 +124,7 @@ class TranceScopeEffect(BaseEffect):
     def _render_cv2(self, cv2):
         W, H = self.width, self.height
         s = H / 450.0
-        frame = self._background_frame(base_color=(3, 4, 10), opacity=0.68)
+        frame = self._background_frame(base_color=(3, 4, 10))
         if frame is None:
             frame = np.zeros((H, W, 3), dtype=np.uint8)
             frame[:] = (3, 4, 10)
@@ -159,7 +159,7 @@ class TranceScopeEffect(BaseEffect):
 
     def _render_numpy(self):
         H, W = self.height, self.width
-        frame = self._background_frame(base_color=(3, 4, 10), opacity=0.68)
+        frame = self._background_frame(base_color=(3, 4, 10))
         if frame is None:
             frame = np.zeros((H, W, 3), dtype=np.uint8)
             frame[:] = (3, 4, 10)

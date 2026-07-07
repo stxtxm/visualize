@@ -64,6 +64,13 @@ class TestCLIArgumentParsing(unittest.TestCase):
         self.assertIn('Psychedelic', proc.stdout)
         self.assertIn('trance_scope', proc.stdout)
         self.assertIn('--background', proc.stdout)
+        self.assertIn('--background-opacity', proc.stdout)
+
+    def test_background_opacity_accepted_by_argparse(self):
+        proc = self._run_main(['nonexistent.wav', '--background-opacity', '0.5'])
+        output = (proc.stdout + proc.stderr).lower()
+        self.assertNotIn('unrecognized', output)
+        self.assertNotIn('invalid', output)
 
 
 class TestCLIExportInvocation(unittest.TestCase):
