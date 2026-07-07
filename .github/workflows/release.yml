@@ -73,15 +73,15 @@ jobs:
           body: |
             ## Release v0.0.6
 
-            Visualisateur Psychédélique autonome.
+            Standalone Psychedelic Visualizer.
 
-            Correctifs et améliorations :
-            - **Dialogue de fichiers : correction du crash (`AttributeError: 'FileDialog' object has no attribute 'listbox'`) — les tuples `padx`/`pady` à 2 éléments passés au constructeur du widget (`tk.Frame(..., pady=(4, 8))`) sont rejetés par cette version de Tk (``bad screen distance``) ; ils sont désormais appliqués via `.pack(pady=(4, 8))`, permettant à `_build_ui` de créer `self.listbox`.**
-            - **Dialogue de fichiers : bordures et contrastes renforcés (lisibles sur fond sombre).**
-            - **Ouverture par défaut dans le dossier utilisateur, y compris dans l'AppImage (détection `APPDIR`).**
-            - Dialogues de fichiers personnalisés — Les boîtes de sélection audio et d'export vidéo sont remplacées par un dialogue maison au thème sombre/néon de l'application : texte lisible (police 11, contraste élevé), champ de saisie confortable, navigation dossiers (🏠 / ⬆), filtres par type, et double-clic. Corrige le texte illisible et la saisie difficile sur Fedora (Wayland/GNOME) et dans l'AppImage sandboxée.
-            - Dialogue modal fiable — `parent` + `grab_set()` garantissent que le dialogue apparaît au-dessus de la fenêtre principale.
-            - Rendu Classic unifié — L'effet Neon Equalizer utilise un pipeline unique `render_to_array()` pour l'aperçu et l'export.
-            - Versionnage dynamique — La version est calquée sur le tag Git et affichée dans la fenêtre.
-            - Build robuste — Détection Podman/Docker, correction des permissions d'extraction sur CI.
+            Fixes and improvements:
+            - **File dialog crash fix (`AttributeError: 'FileDialog' object has no attribute 'listbox'`) — 2-element `padx`/`pady` tuples passed to the widget constructor (`tk.Frame(..., pady=(4, 8))`) are rejected by this Tk version (``bad screen distance``); they are now applied via `.pack(pady=(4, 8))`, allowing `_build_ui` to create `self.listbox`.**
+            - **File dialog: enhanced borders and contrast (readable on dark backgrounds).**
+            - **Default open in user home directory, including within the AppImage (`APPDIR` detection).**
+            - Custom file dialogs — Audio selection and video export dialogs replaced with a custom dark/neon-themed dialog matching the application: readable text (font size 11, high contrast), comfortable input field, folder navigation (🏠 / ⬆), type filters, and double-click support. Fixes unreadable text and difficult input on Fedora (Wayland/GNOME) and in the sandboxed AppImage.
+            - Reliable modal dialog — `parent` + `grab_set()` ensure the dialog appears above the main window.
+            - Unified Classic rendering — The Neon Equalizer effect uses a single `render_to_array()` pipeline for both preview and export.
+            - Dynamic versioning — Version is derived from the Git tag and displayed in the window title.
+            - Robust build — Podman/Docker detection, fixed extraction permissions on CI.
 
