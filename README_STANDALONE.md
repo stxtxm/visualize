@@ -116,17 +116,19 @@ NO_SOUND=1 ./Visualisateur_Psychedelic.AppImage
 
 ## 🔧 Prérequis pour le Build
 
+Le build utilise `build_standalone.sh`, qui détecte automatiquement **Docker** ou **Podman** (`$CONTAINER_CMD`).
+
 ### Sur Fedora
 ```bash
-sudo dnf install podman wget tar gzip python3-venv python3-pip
+sudo dnf install docker wget tar gzip python3-venv python3-pip
 ```
 
 ### Sur Debian/Ubuntu
 ```bash
-sudo apt install podman wget tar gzip python3-venv python3-pip
+sudo apt install docker.io wget tar gzip python3-venv python3-pip
 ```
 
-Le build se fait **dans un conteneur Podman** — pas besoin d'installer les dépendances Python en local.
+Le build se fait **dans un conteneur** (Docker par défaut, Podman si détecté) — pas besoin d'installer les dépendances Python en local.
 
 ---
 

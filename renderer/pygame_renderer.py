@@ -67,7 +67,6 @@ class PygameRenderer:
         # Initialiser Pygame
         if self._no_sound:
             pygame.display.init()
-            pygame.time.init()
             pygame.font.init()
         else:
             pygame.init()

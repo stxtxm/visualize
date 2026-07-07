@@ -25,65 +25,36 @@ Le problème de **freeze lors de la lecture** était causé par :
 - Amélioration de `_stop_playback()` pour forcer l'arrêt des threads bloqués
 - Utilisation de `ctypes` pour envoyer un signal d'arrêt au thread si nécessaire
 
-### 4. Nouveau script de lancement intelligent
-**Fichier** : `run_gui_fallback.sh`
-- Détection automatique de PulseAudio sur l'hôte
-- Si PulseAudio n'est pas disponible → lance en mode **NO_SOUND=1**
-- Plus besoin de configurer manuellement
+### 4. Lancement unifié
+**Fichier** : `main.py`
+- `python3 main.py` détecte automatiquement tkinter (GUI) ou le fallback pygame plein écran
+- Le mode `NO_SOUND=1` désactive la lecture audio tout en gardant la visualisation
+- Plus besoin de scripts de lancement séparés
 
 ## 🚀 Marche à suivre pour démarrer
 
-### Option 1 : Utiliser le fallback automatique (RECOMMANDÉ)
+### Lancer la GUI (RECOMMANDÉ)
 
 ```bash
-# Seit dans le dossier du projet
 cd /home/timo/dev/visualize
-
-# Reconstruire l'image (obligatoire après les changements)
-make rebuild
-
-# Lancer avec fallback automatique (détecte si PulseAudio est disponible)
-make run-fallback
-
-# Ou directement
-./run_gui_fallback.sh
+python3 main.py
 ```
 
-### Option 2 : Mode sans son (si PulseAudio ne fonctionne pas)
+### Mode sans son (si PulseAudio ne fonctionne pas)
 
 ```bash
-# Lancer explicitement sans son
-make run-no-sound
-
-# Ou avec variables d'environnement
-NO_SOUND=1 ./podman-run.sh
-```
-
-### Option 3 : Vérifier que PulseAudio est démarré
-
-Si vous voulez le son, démarrez PulseAudio d'abord :
-
-```bash
-# Démarrer PulseAudio (si pas déjà démarré)
-pulseaudio --start --exit-idle-time=-1
-
-# Vérifier que le socket existe
-ls -la /run/user/$(id -u)/pulse/
-
-# Puis lancer normalement
-make run
+NO_SOUND=1 python3 main.py
 ```
 
 ## 📝 Commandes utiles
 
 | Commande | Description |
 |----------|-------------|
-| `make rebuild` | Reconstruire l'image Podman avec les dernières modifications |
-| `make run` | Lancer la GUI (nécessite PulseAudio) |
-| `make run-fallback` | Lancer avec détection automatique PulseAudio |
-| `make run-no-sound` | Lancer sans son (désactive pydub/ffmpeg) |
-| `make clean` | Nettoyer les conteneurs |
-| `make stop` | Arrêter tous les conteneurs |
+| `python3 main.py` | Lancer la GUI (détecte tkinter, sinon fallback pygame plein écran) |
+| `NO_SOUND=1 python3 main.py` | Lancer sans son |
+| `python3 main.py audio.mp3 -o video.mp4` | Export vidéo via CLI |
+| `make standalone-appimage` | Construire l'AppImage autonome |
+| `python3 -m pytest tests/ -v` | Lancer les tests |
 
 ## 🔍 Dépannage
 
@@ -91,27 +62,12 @@ make run
 
 **Solution 1** : Utilisez le mode sans son
 ```bash
-make run-no-sound
+NO_SOUND=1 python3 main.py
 ```
 
 **Solution 2** : Vérifiez que PulseAudio est démarré
 ```bash
 pulseaudio --check && echo "PulseAudio OK" || echo "PulseAudio non démarré"
-```
-
-**Solution 3** : Vérifiez que le conteneur a bien été reconstruite
-```bash
-podman images | grep psychedelic
-# Devrait montrer "psychedelic-visualizer:latest" avec la date du jour
-```
-
-### Problème : La fenêtre ne se ferme pas
-
-**Solution** : Ce bug est corrigé. Si vous avez toujours le problème :
-1. Fermez le terminal avec Ctrl+C (si le conteneur est lancé en foreground)
-2. Ou exécutez :
-```bash
-podman stop psychedelic-visualizer-ui
 ```
 
 ### Problème : Pas de son dans la vidéo exportée
@@ -120,11 +76,9 @@ Le mode NO_SOUND ne désactive que la **lecture** dans la GUI. Pour l'export vid
 
 ## 📁 Fichiers modifiés
 
-- ✅ `main.py` - Correction du bug de fermeture
-- ✅ `audio/analyzer.py` - Meilleure gestion des erreurs + mode NO_SOUND
-- ✅ `ui/main_window.py` - Arrêt forcé des threads
-- ✅ `run_gui_fallback.sh` - Nouveau script intelligent
-- ✅ `Makefile` - Nouvelles cibles `run-fallback` et `run-no-sound`
+- `main.py` - Correction du bug de fermeture + lancement GUI/CLI unifié
+- `audio/analyzer.py` - Meilleure gestion des erreurs + mode NO_SOUND
+- `ui/main_window.py` - Arrêt forcé des threads
 
 ## 🎨 Nouveautés visuelles
 

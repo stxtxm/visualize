@@ -1,6 +1,6 @@
-.PHONY: help build run run-cli clean stop standalone-appimage standalone-clean
+.PHONY: help run-cli standalone-appimage standalone-clean
 
-# Nom de l'image
+# Nom de l'image (hérité, conservé pour compatibilité)
 IMAGE_NAME := psychedelic-visualizer
 IMAGE_TAG := latest
 AUDIO_DIR ?= ${HOME}/Music
@@ -10,12 +10,9 @@ help:
 	@echo "Visualisateur Psychédélique - Commandes"
 	@echo "=========================================="
 	@echo ""
-	@echo "Construction:"
-	@echo "  make build              - Construire l'image Podman"
-	@echo ""
 	@echo "Exécution:"
-	@echo "  make run                - Lancer l'interface graphique"
-	@echo "  make run-cli            - Export vidéo (voir ci-dessous)"
+	@echo "  python3 main.py             - Lancer la GUI"
+	@echo "  python3 main.py -h          - Afficher l'aide"
 	@echo ""
 	@echo "Export Vidéo (CLI):"
 	@echo "  make run-cli AUDIO=ma_musique.mp3 OUTPUT=ma_video.mp4"
@@ -27,18 +24,8 @@ help:
 	@echo "  make standalone-appimage - Build AppImage (recommandé)"
 	@echo "  make standalone-clean    - Nettoyer les builds standalone"
 	@echo ""
-	@echo "Nettoyage:"
-	@echo "  make clean               - Nettoyer les conteneurs"
-	@echo "  make stop                - Arrêter tous les conteneurs"
-
-build:
-	@echo "Construction de l'image Podman..."
-	./podman-build.sh
-
-run:
-	@echo "Lancement de l'interface graphique..."
-	@echo "Dossiers: Audio=$(AUDIO_DIR) Output=$(OUTPUT_DIR)"
-	AUDIO_DIR=$(AUDIO_DIR) OUTPUT_DIR=$(OUTPUT_DIR) ./podman-run.sh
+	@echo "Tests:"
+	@echo "  python3 -m pytest tests/ -v"
 
 run-cli:
 	@if [ -z "$(AUDIO)" ]; then \
@@ -51,18 +38,12 @@ run-cli:
 		exit 1; \
 	fi
 	@echo "Export vidéo: $(AUDIO) -> $(OUTPUT)"
-	AUDIO=$(AUDIO) OUTPUT=$(OUTPUT) EFFECT=$(EFFECT) COLOR=$(COLOR) RESOLUTION=$(RESOLUTION) FPS=$(FPS) PRESET=$(PRESET) ./podman-run-cli.sh "$(AUDIO)" "$(OUTPUT)"
-
-clean:
-	@echo "Nettoyage des conteneurs..."
-	podman stop psychedelic-visualizer-ui psychedelic-visualizer-cli 2>/dev/null || true
-	podman rm psychedelic-visualizer-ui psychedelic-visualizer-cli 2>/dev/null || true
-	@echo "Conteneurs nettoyés"
-
-stop:
-	@echo "Arrêt des conteneurs..."
-	podman stop psychedelic-visualizer-ui psychedelic-visualizer-cli 2>/dev/null || true
-	@echo "Conteneurs arrêtés"
+	python3 main.py "$(AUDIO)" --export "$(OUTPUT)" \
+		--effect $(or $(EFFECT),random) \
+		--color $(or $(COLOR),psychedelic) \
+		--resolution $(or $(RESOLUTION),) \
+		--fps $(or $(FPS),) \
+		--preset $(or $(PRESET),normal)
 
 standalone-appimage:
 	@echo "Build AppImage Linux..."
