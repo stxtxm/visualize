@@ -251,21 +251,19 @@ Déclenché sur push de tag `v*`.
 12. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
 13. **Références GUI stockées en instance** — Tout widget Tkinter qui doit être testé ou modifié depuis l'extérieur doit être stocké comme `self._nom_du_widget`. Actuellement : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`, `self._export_progress_bar`, `self._status_bar_inner`.
 
-### 🔴 CI — Ne JAMAIS hardcoder le body de release
+### 🔴 CI + Release — English release message obligatoire
 
-14. **`generate_release_notes: true`** dans `.github/workflows/release.yml` — La CI utilise `softprops/action-gh-release` avec l'option `generate_release_notes: true`. NE JAMAIS mettre de `body:` en dur dans la workflow : cela écrase le message de release à chaque push de tag. Pour personnaliser une release, utilisez `gh release edit` APRÈS la CI, ou modifiez-la sur GitHub directement.
-
-### 🔴 Langue — English only
-
-15. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
-16. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
-17. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
+14. **`generate_release_notes: true`** dans `.github/workflows/release.yml` — La CI utilise `softprops/action-gh-release` avec l'option `generate_release_notes: true`. NE JAMAIS mettre de `body:` en dur dans la workflow : cela écrase le message de release à chaque push de tag.
+15. **Éditer la release après la CI** — Dès que la CI a créé la release (auto-generated notes), vous devez immédiatement la modifier avec un message de release en anglais décrivant les changements. Utilisez `gh release edit vX.Y.Z --notes "..."` ou éditez-la sur GitHub directement.
+16. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
+17. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
+18. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
 
 ### 🟢 Recommandations
 
-18. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
-19. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
-20. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
+19. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
+20. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
+21. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
 
 ---
 
@@ -312,9 +310,12 @@ python3 tests/test_export.py
 bash build_standalone.sh
 
 # CI/CD (après commit)
-git tag v0.0.2 && git push origin v0.0.2
+git tag v0.X.Y && git push origin v0.X.Y
+
+# Ajouter les release notes en anglais après la CI
+gh release edit v0.X.Y --notes "## What's new in v0.X.Y ..."
 
 # Recréer un tag (si pipeline échoue)
-git tag -d v0.0.2 && git push --delete origin v0.0.2
-git tag v0.0.2 && git push origin v0.0.2
+git tag -d v0.X.Y && git push --delete origin v0.X.Y
+git tag v0.X.Y && git push origin v0.X.Y
 ```
