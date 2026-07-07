@@ -70,18 +70,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Visualisateur_Psychedelic.AppImage
-          body: |
-            ## Release v0.0.6
-
-            Standalone Psychedelic Visualizer.
-
-            Fixes and improvements:
-            - **File dialog crash fix (`AttributeError: 'FileDialog' object has no attribute 'listbox'`) — 2-element `padx`/`pady` tuples passed to the widget constructor (`tk.Frame(..., pady=(4, 8))`) are rejected by this Tk version (``bad screen distance``); they are now applied via `.pack(pady=(4, 8))`, allowing `_build_ui` to create `self.listbox`.**
-            - **File dialog: enhanced borders and contrast (readable on dark backgrounds).**
-            - **Default open in user home directory, including within the AppImage (`APPDIR` detection).**
-            - Custom file dialogs — Audio selection and video export dialogs replaced with a custom dark/neon-themed dialog matching the application: readable text (font size 11, high contrast), comfortable input field, folder navigation (🏠 / ⬆), type filters, and double-click support. Fixes unreadable text and difficult input on Fedora (Wayland/GNOME) and in the sandboxed AppImage.
-            - Reliable modal dialog — `parent` + `grab_set()` ensure the dialog appears above the main window.
-            - Unified Classic rendering — The Neon Equalizer effect uses a single `render_to_array()` pipeline for both preview and export.
-            - Dynamic versioning — Version is derived from the Git tag and displayed in the window title.
-            - Robust build — Podman/Docker detection, fixed extraction permissions on CI.
+          generate_release_notes: true
 
