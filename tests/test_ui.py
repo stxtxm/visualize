@@ -48,6 +48,12 @@ class TestFooterLabels(unittest.TestCase):
         self.assertEqual(label.cget("bg").lower(), "#0a0a12")
         self.assertEqual(label.cget("cursor"), "hand2")
 
+    def test_linkedin_hover_images_exist(self):
+        """LinkedIn should have a hover variant (brighter background)."""
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_icon_linkedin_hover'),
+                        "LinkedIn should have a hover icon")
+
     def test_website_label_exists(self):
         app = self._create_app()
         label = app._footer_website
@@ -55,6 +61,19 @@ class TestFooterLabels(unittest.TestCase):
         self.assertIsNotNone(label.cget("image"), "Website should have an image")
         self.assertEqual(label.cget("bg").lower(), "#0a0a12")
         self.assertEqual(label.cget("cursor"), "hand2")
+
+    def test_website_hover_images_exist(self):
+        """Website should have a hover variant (brighter background)."""
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_icon_website_hover'),
+                        "Website should have a hover icon")
+
+    def test_footer_self_reference(self):
+        """Footer frame should be stored as self._footer."""
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_footer'), "Footer frame should exist")
+        # Footer should have height 22
+        self.assertEqual(app._footer.cget("height"), 22)
 
 
 @unittest.skipUnless(_has_display(), "No display server available")
@@ -90,7 +109,7 @@ class TestBackgroundControls(unittest.TestCase):
 
 @unittest.skipUnless(_has_display(), "No display server available")
 class TestProgressBar(unittest.TestCase):
-    """Verify the improved export progress bar (track + fill)."""
+    """Verify the improved export progress bar (dedicated row between status and footer)."""
 
     def setUp(self):
         import tkinter as tk
@@ -104,20 +123,34 @@ class TestProgressBar(unittest.TestCase):
         from ui.main_window import MainWindow
         return MainWindow(self.root)
 
-    def test_progress_track_exists(self):
+    def test_progress_container_exists(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_progress_track'), "Progress track frame should exist")
-        track = app._export_progress_track
-        self.assertEqual(track.cget("height"), 5, "Track height should be 5px")
-        self.assertEqual(track.cget("bg").lower(), "#0a2a33")
+        self.assertTrue(hasattr(app, '_export_progress_container'),
+                        "Progress container frame should exist")
+        self.assertEqual(app._export_progress_container.cget("bg").lower(), "#0a0a12")
 
-    def test_progress_fill_exists(self):
+    def test_progress_bar_widget(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_progress_fill'), "Progress fill frame should exist")
-        fill = app._export_progress_fill
-        self.assertEqual(fill.cget("height"), 5, "Fill height should be 5px")
-        # Must match NEON_CYAN color
-        self.assertEqual(fill.cget("bg").lower(), app.NEON_CYAN.lower())
+        self.assertTrue(hasattr(app, '_export_progress_bar'),
+                        "Progress bar frame should exist")
+        self.assertEqual(app._export_progress_bar.cget("height"), 10,
+                         "Bar height should be 10px")
+        self.assertEqual(app._export_progress_bar.cget("bg").lower(), "#1a1a2e")
+
+    def test_progress_fill_widget(self):
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_export_progress_fill'),
+                        "Progress fill frame should exist")
+        self.assertEqual(app._export_progress_fill.cget("height"), 10,
+                         "Fill height should be 10px")
+        self.assertEqual(app._export_progress_fill.cget("bg").lower(), app.NEON_CYAN.lower())
+
+    def test_progress_percentage_label(self):
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_export_progress_pct'),
+                        "Progress percentage label should exist")
+        self.assertEqual(app._export_progress_pct.cget("fg").lower(), app.NEON_CYAN.lower())
+        self.assertEqual(app._export_progress_pct.cget("bg").lower(), "#0a0a12")
 
 
 if __name__ == '__main__':

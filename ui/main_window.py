@@ -255,52 +255,65 @@ class MainWindow:
         status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # Export progress bar: track (teal dark) + fill (neon cyan), 5px
-        self._status_bar_inner = status_frame
-        self._export_progress_track = tk.Frame(
-            status_frame, bg="#0a2a33", height=5, bd=0
+        # ── Export progress bar (between status and footer) ──
+        self._export_progress_container = tk.Frame(self.root, bg="#0a0a12", height=0)
+        self._export_progress_bar = tk.Frame(
+            self._export_progress_container, bg="#1a1a2e", height=10, bd=0,
+            highlightthickness=1, highlightbackground="#2a2a3e"
         )
         self._export_progress_fill = tk.Frame(
-            self._export_progress_track, bg=self.NEON_CYAN, height=5, bd=0
+            self._export_progress_bar, bg=self.NEON_CYAN, height=10, bd=0
+        )
+        self._export_progress_pct = tk.Label(
+            self._export_progress_container, text="", font=('Courier', 8, 'bold'),
+            fg=self.NEON_CYAN, bg="#0a0a12", anchor=tk.E, width=6
         )
 
         # ── Footer: copyright + social links ──
-        footer = tk.Frame(self.root, bg="#0a0a12", height=20)
-        footer.pack(side=tk.BOTTOM, fill=tk.X)
-        footer.pack_propagate(False)
+        self._footer = tk.Frame(self.root, bg="#0a0a12", height=22)
+        self._footer.pack(side=tk.BOTTOM, fill=tk.X)
+        self._footer.pack_propagate(False)
 
-        self._footer_copyright = tk.Label(footer, text="© 2026 Timothée Grollier",
+        self._footer_copyright = tk.Label(self._footer, text="© 2026 Timothée Grollier",
                  font=('Helvetica', 7), fg="#8a8aaa", bg="#0a0a12",
                  anchor=tk.W)
         self._footer_copyright.pack(side=tk.LEFT, padx=10)
 
-        def _make_icon(letter, bg_color, w=16, h=16):
-            img = Image.new("RGBA", (w, h), bg_color)
-            draw = ImageDraw.Draw(img)
-            try:
-                font = ImageFont.truetype("DejaVuSans-Bold", 9)
-            except (OSError, IOError):
-                font = ImageFont.load_default()
-            _, _, tw, th = draw.textbbox((0, 0), letter, font=font)
-            draw.text(((w - tw) / 2, (h - th) / 2 - 1), letter, fill="white", font=font)
-            return ImageTk.PhotoImage(img)
+        def _make_icon(letter, bg_color, hover_color, w=24, h=24, radius=4):
+            """Create a rounded-rect icon with text, returning (photo, hover_photo)."""
+            def _render(bg):
+                img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+                draw.rounded_rectangle((0, 0, w-1, h-1), radius=radius, fill=bg)
+                try:
+                    font = ImageFont.truetype("DejaVuSans-Bold", 11)
+                except (OSError, IOError):
+                    font = ImageFont.load_default()
+                _, _, tw, th = draw.textbbox((0, 0), letter, font=font)
+                draw.text(((w - tw) / 2, (h - th) / 2 - 1), letter, fill="white", font=font)
+                return ImageTk.PhotoImage(img)
+            return _render(bg_color), _render(hover_color)
 
-        social = tk.Frame(footer, bg="#0a0a12")
+        social = tk.Frame(self._footer, bg="#0a0a12")
         social.pack(side=tk.RIGHT, padx=(10, 15))
 
-        self._icon_linkedin = _make_icon("in", "#0a66c2")
+        self._icon_linkedin, self._icon_linkedin_hover = _make_icon("in", "#0a66c2", "#0a88e6")
         self._footer_linkedin = tk.Label(social, image=self._icon_linkedin,
                         bg="#0a0a12", cursor="hand2")
         self._footer_linkedin.pack(side=tk.LEFT, padx=(0, 8))
         self._footer_linkedin.bind("<Button-1>", lambda e: webbrowser.open(
             "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev"))
+        self._footer_linkedin.bind("<Enter>", lambda e: self._footer_linkedin.configure(image=self._icon_linkedin_hover))
+        self._footer_linkedin.bind("<Leave>", lambda e: self._footer_linkedin.configure(image=self._icon_linkedin))
 
-        self._icon_website = _make_icon("www", "#2a2a3e")
+        self._icon_website, self._icon_website_hover = _make_icon("www", "#2a2a3e", "#4a4a6e")
         self._footer_website = tk.Label(social, image=self._icon_website,
                         bg="#0a0a12", cursor="hand2")
         self._footer_website.pack(side=tk.LEFT)
         self._footer_website.bind("<Button-1>", lambda e: webbrowser.open(
             "https://timotheegrollier.github.io/"))
+        self._footer_website.bind("<Enter>", lambda e: self._footer_website.configure(image=self._icon_website_hover))
+        self._footer_website.bind("<Leave>", lambda e: self._footer_website.configure(image=self._icon_website))
 
     def _preset_changed(self, event=None):
         """Update resolution and FPS when preset changes."""
@@ -719,10 +732,17 @@ class MainWindow:
             messagebox.showerror("Erreur", f"Échec de la création du recorder: {str(e)}")
             return
         
+        # Afficher la barre de progression dédiée
+        self._export_progress_container.configure(height=24)
+        self._export_progress_container.pack(side=tk.BOTTOM, before=self._footer, fill=tk.X)
+        self._export_progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 5), pady=(4, 4))
+        self._export_progress_fill.place(x=0, y=0, width=0, relheight=1.0)
+        self._export_progress_pct.configure(text="0%")
+        self._export_progress_pct.pack(side=tk.RIGHT, padx=(0, 10), pady=(4, 4))
+
         self.btn_export.config(state=tk.DISABLED, text="⏳ EXPORT...")
         self.status_var.set(f"Export: {os.path.basename(filename)}")
         self._led_status.configure(fg="#ffaa00")
-        self._export_progress_track.pack(side=tk.BOTTOM, fill=tk.X, pady=(2, 0))
 
         export_thread = threading.Thread(
             target=self._export_loop,
@@ -734,22 +754,34 @@ class MainWindow:
     def _show_export_progress(self, current, total):
         pct = (current / total) * 100 if total > 0 else 0
         self.status_var.set(f"EXPORT {current}/{total} ({pct:.0f}%)")
-        w = self._export_progress_track.winfo_width()
-        self._export_progress_fill.place(x=0, y=0, width=max(1, int(w * pct / 100)), relheight=1.0)
+        w = self._export_progress_bar.winfo_width()
+        if w > 0:
+            self._export_progress_fill.place(x=0, y=0, width=max(1, int(w * pct / 100)), relheight=1.0)
+        self._export_progress_pct.configure(text=f"{pct:.0f}%")
 
     def _export_finished(self, basename=None, error=None):
         self.btn_export.config(state=tk.NORMAL, text="🎥 EXPORTER")
         if error:
             self._led_status.configure(fg="#ff3b3b")
             self.status_var.set(f"ÉCHEC: {error[:60]}")
-            self.root.after(3000, lambda: self._export_progress_track.pack_forget() or self._led_status.configure(fg=self.NEON_CYAN))
+            self.root.after(3000, lambda: (
+                self._export_progress_bar.pack_forget(),
+                self._export_progress_pct.pack_forget(),
+                self._export_progress_container.pack_forget(),
+                self._export_progress_container.configure(height=0),
+                self._led_status.configure(fg=self.NEON_CYAN)
+            ))
         else:
             self._led_status.configure(fg=self.NEON_GREEN)
             self.status_var.set(f"✓ EXPORT TERMINÉ: {basename}")
-            w = self._export_progress_track.winfo_width()
+            w = self._export_progress_bar.winfo_width()
             self._export_progress_fill.place(x=0, y=0, width=w, relheight=1.0)
+            self._export_progress_pct.configure(text="100%")
             self.root.after(2500, lambda: (
-                self._export_progress_track.pack_forget(),
+                self._export_progress_bar.pack_forget(),
+                self._export_progress_pct.pack_forget(),
+                self._export_progress_container.pack_forget(),
+                self._export_progress_container.configure(height=0),
                 self._led_status.configure(fg=self.NEON_CYAN),
                 self.status_var.set("PRÊT")
             ))
