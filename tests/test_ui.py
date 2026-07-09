@@ -177,6 +177,34 @@ class TestExportPopover(unittest.TestCase):
         self.assertFalse(hasattr(app, '_export_progress_track'),
                          "Old _export_progress_track should not exist")
 
+    def test_popover_hide_button_exists(self):
+        """Export popover should have a hide toggle button."""
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_export_popover_hide'),
+                        "Export popover hide button should exist")
+        self.assertEqual(app._export_popover_hide.cget("cursor"), "hand2")
+
+    def test_popover_toggle_method_exists(self):
+        """Toggle method for export popover should exist."""
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_toggle_export_popover'),
+                        "Toggle export popover method should exist")
+        self.assertTrue(hasattr(app, 'export_popover_hidden'),
+                        "Export popover hidden state should exist")
+
+    def test_popover_hidden_state_default(self):
+        """Export popover should be visible by default."""
+        app = self._create_app()
+        self.assertFalse(app.export_popover_hidden,
+                         "Export popover should be visible by default")
+
+    def test_icon_loading_fallback(self):
+        """Icons should have fallback if assets are missing."""
+        app = self._create_app()
+        # Even with missing files, icons should exist due to fallback
+        self.assertIsNotNone(app._icon_linkedin)
+        self.assertIsNotNone(app._icon_website)
+
 
 if __name__ == '__main__':
     unittest.main()

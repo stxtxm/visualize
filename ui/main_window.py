@@ -58,75 +58,54 @@ class MainWindow:
         # Pre-allocated PhotoImage for thread-safe updates
         self._pending_frame = None
         self._frame_lock = threading.Lock()
-        
+
+        # Export popover visibility state (persists between exports)
+        self.export_popover_hidden = False
+        self._export_in_progress = False
+        self._load_ui_preferences()
+
         self._setup_ui()
 
-    def _render_linkedin_icon(self, size=28):
-        """Draw a professional LinkedIn 'in' icon on a circular badge."""
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        cx, cy = size // 2, size // 2
-        r = size // 2 - 1
-        # Circle background
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="#0a66c2")
-        # White "in" text – smaller, crisp
+    def _load_ui_preferences(self):
+        """Load UI preferences from config file (export popover visibility)."""
+        import json
+        config_path = os.path.join(self._user_home_dir(), ".visualize_config.json")
         try:
-            font = ImageFont.truetype("DejaVuSans-Bold", 10)
-        except (OSError, IOError):
-            font = ImageFont.load_default()
-        _, _, tw, th = draw.textbbox((0, 0), "in", font=font)
-        draw.text((cx - tw / 2, cy - th / 2 - 0.5), "in", fill="white", font=font)
-        return ImageTk.PhotoImage(img)
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                    self.export_popover_hidden = config.get("export_popover_hidden", False)
+        except Exception as e:
+            print(f"[WARNING] Failed to load UI preferences: {e}")
+            self.export_popover_hidden = False
 
-    def _render_linkedin_icon_hover(self, size=28):
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        cx, cy = size // 2, size // 2
-        r = size // 2 - 1
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="#0c8ce6")
+    def _save_ui_preferences(self):
+        """Save UI preferences to config file."""
+        import json
+        config_path = os.path.join(self._user_home_dir(), ".visualize_config.json")
         try:
-            font = ImageFont.truetype("DejaVuSans-Bold", 10)
-        except (OSError, IOError):
-            font = ImageFont.load_default()
-        _, _, tw, th = draw.textbbox((0, 0), "in", font=font)
-        draw.text((cx - tw / 2, cy - th / 2 - 0.5), "in", fill="white", font=font)
-        return ImageTk.PhotoImage(img)
+            config = {
+                "export_popover_hidden": self.export_popover_hidden
+            }
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            print(f"[WARNING] Failed to save UI preferences: {e}")
 
-    def _render_website_icon(self, size=28):
-        """Draw a minimal globe icon for the website."""
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        cx, cy = size // 2, size // 2
-        r = size // 2 - 2
-        # Dark circle
-        draw.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill="#2a2a3e")
-        # Globe: outer circle
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=self.NEON_CYAN, width=1)
-        # Lat/long lines
-        # Horizontal
-        draw.arc((cx - r, cy - r, cx + r, cy + r), -30, 30, fill=self.NEON_CYAN, width=1)
-        draw.arc((cx - r, cy - r, cx + r, cy + r), 150, 210, fill=self.NEON_CYAN, width=1)
-        # Vertical
-        draw.arc((cx - r, cy - r, cx + r, cy + r), 60, 120, fill=self.NEON_CYAN, width=1)
-        draw.arc((cx - r, cy - r, cx + r, cy + r), 240, 300, fill=self.NEON_CYAN, width=1)
-        return ImageTk.PhotoImage(img)
-
-    def _render_website_icon_hover(self, size=28):
-        """Globe icon with brighter color on hover."""
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        cx, cy = size // 2, size // 2
-        r = size // 2 - 2
-        # Dark circle
-        draw.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill="#3a3a5e")
-        # Globe: outer circle
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline="#00ffff", width=1)
-        # Lat/long lines
-        draw.arc((cx - r, cy - r, cx + r, cy + r), -30, 30, fill="#00ffff", width=1)
-        draw.arc((cx - r, cy - r, cx + r, cy + r), 150, 210, fill="#00ffff", width=1)
-        draw.arc((cx - r, cy - r, cx + r, cy + r), 60, 120, fill="#00ffff", width=1)
-        draw.arc((cx - r, cy - r, cx + r, cy + r), 240, 300, fill="#00ffff", width=1)
-        return ImageTk.PhotoImage(img)
+    def _load_icon(self, path, size=28):
+        """Load an icon from file, with fallback to a simple colored circle if file not found."""
+        try:
+            img = Image.open(path)
+            img = img.resize((size, size), Image.LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except (FileNotFoundError, OSError, IOError) as e:
+            # Fallback: create a simple colored circle as placeholder
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            cx, cy = size // 2, size // 2
+            r = size // 2 - 2
+            draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=self.NEON_CYAN)
+            return ImageTk.PhotoImage(img)
 
     def _setup_ui(self):
         """Set up a modernized cyberpunk side-by-side UI."""
@@ -321,6 +300,17 @@ class MainWindow:
                                               font=('Helvetica', 8, 'bold'),
                                               bg="#0a0a12", fg=self.NEON_CYAN)
         self._export_popover_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Hide toggle button (eye icon)
+        self._export_popover_hide = tk.Label(popover_header, text="👁",
+                                              font=('Helvetica', 8, 'bold'),
+                                              bg="#0a0a12", fg=self.FG_MUTED,
+                                              cursor="hand2")
+        self._export_popover_hide.pack(side=tk.RIGHT, padx=(0, 6))
+        self._export_popover_hide.bind("<Button-1>", lambda e: self._toggle_export_popover())
+        self._export_popover_hide.bind("<Enter>", lambda e: self._export_popover_hide.configure(fg=self.NEON_CYAN))
+        self._export_popover_hide.bind("<Leave>", lambda e: self._export_popover_hide.configure(fg=self.FG_MUTED))
+        
         # Close button
         self._export_popover_close = tk.Label(popover_header, text="✕",
                                                font=('Helvetica', 8, 'bold'),
@@ -371,11 +361,12 @@ class MainWindow:
                  anchor=tk.W)
         self._footer_copyright.pack(side=tk.LEFT, padx=10)
 
-        # Social icons – pre-rendered with Pillow
-        self._icon_linkedin = self._render_linkedin_icon()
-        self._icon_linkedin_hover = self._render_linkedin_icon_hover()
-        self._icon_website = self._render_website_icon()
-        self._icon_website_hover = self._render_website_icon_hover()
+        # Social icons – loaded from professional assets
+        assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+        self._icon_linkedin = self._load_icon(os.path.join(assets_dir, "linkedin.png"), 28)
+        self._icon_linkedin_hover = self._load_icon(os.path.join(assets_dir, "linkedin_hover.png"), 28)
+        self._icon_website = self._load_icon(os.path.join(assets_dir, "website.png"), 28)
+        self._icon_website_hover = self._load_icon(os.path.join(assets_dir, "website_hover.png"), 28)
 
         social = tk.Frame(self._footer, bg="#0a0a12")
         social.pack(side=tk.RIGHT, padx=(10, 15))
@@ -395,6 +386,10 @@ class MainWindow:
             "https://timotheegrollier.github.io/"))
         self._footer_website.bind("<Enter>", lambda e: self._footer_website.configure(image=self._icon_website_hover))
         self._footer_website.bind("<Leave>", lambda e: self._footer_website.configure(image=self._icon_website))
+
+        # Keyboard shortcuts
+        self.root.bind("<Control-h>", self._toggle_export_popover)
+        self.root.bind("<Control-H>", self._toggle_export_popover)
 
     def _preset_changed(self, event=None):
         """Update resolution and FPS when preset changes."""
@@ -769,11 +764,23 @@ class MainWindow:
 
     def _show_export_popover(self):
         """Place the export popover at bottom-right of the preview canvas."""
+        if self.export_popover_hidden:
+            return
         self._export_popover.pack(side=tk.BOTTOM, anchor=tk.SE, padx=6, pady=6)
 
     def _hide_export_popover(self):
         """Hide the export popover."""
         self._export_popover.pack_forget()
+
+    def _toggle_export_popover(self, event=None):
+        """Toggle export popover visibility and save preference."""
+        self.export_popover_hidden = not self.export_popover_hidden
+        self._save_ui_preferences()
+        if self.export_popover_hidden:
+            self._hide_export_popover()
+        else:
+            if self._export_in_progress:
+                self._show_export_popover()
 
     def _export_video(self):
         """Export video."""
@@ -796,6 +803,9 @@ class MainWindow:
             return
         
         width, height = self._get_resolution()
+        
+        # Set export in progress flag
+        self._export_in_progress = True
         
         try:
             from recorder.video_recorder import VideoRecorder
@@ -832,12 +842,16 @@ class MainWindow:
         self.status_var.set(f"Export: {os.path.basename(filename)}")
         self._led_status.configure(fg="#ffaa00")
 
-        export_thread = threading.Thread(
-            target=self._export_loop,
-            args=(filename,),
-            daemon=True
-        )
-        export_thread.start()
+        try:
+            export_thread = threading.Thread(
+                target=self._export_loop,
+                args=(filename,),
+                daemon=True
+            )
+            export_thread.start()
+        except Exception as e:
+            self._export_in_progress = False
+            raise
 
     def _show_export_progress(self, current, total):
         pct = (current / total) * 100 if total > 0 else 0
@@ -849,6 +863,7 @@ class MainWindow:
         self._export_popover_pct.configure(text=f"{pct:.0f}%")
 
     def _export_finished(self, basename=None, error=None):
+        self._export_in_progress = False
         self.btn_export.config(state=tk.NORMAL, text="🎥 EXPORTER")
         if error:
             self._led_status.configure(fg="#ff3b3b")
