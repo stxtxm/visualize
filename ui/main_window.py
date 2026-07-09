@@ -1,18 +1,19 @@
 """
 Main window for the psychedelic visualizer GUI.
+Refactored with tabbed sidebar, theme switching, toast notifications,
+pulsing LED, recent files, timecode, volume, and keyboard shortcuts.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
-from ui.file_dialog import FileDialog
+from tkinter import messagebox, ttk
 import threading
 import os
 import sys
 import time
+import json
 import webbrowser
-from PIL import Image, ImageDraw, ImageFont, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
-# Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 try:
@@ -20,19 +21,28 @@ try:
 except ImportError:
     __version__ = "0.0.0"
 
+from ui.tab_panel import TabPanel
+from ui.tabs.file_tab import FileTab
+from ui.tabs.effects_tab import EffectsTab
+from ui.tabs.background_tab import BackgroundTab
+from ui.tabs.export_tab import ExportTab
+from ui.tabs.logs_tab import LogsTab, set_global_logs_tab
+from ui.preview import PreviewFrame
+from ui.toast import ToastManager
+from ui.theme import get_theme, THEME_NAMES
+
+
 class MainWindow:
     """
-    Main application window for the psychedelic visualizer.
+    Main application window with tabbed sidebar controls.
+    Supports dynamic theme switching, toast notifications, and more.
     """
 
     def __init__(self, root):
-        """
-        Initialize the main window.
-        
-        Args:
-            root: Tk root window
-        """
         self.root = root
+        self._theme_name = tk.StringVar(value="cyberpunk")
+        self._theme = get_theme("cyberpunk")
+
         self.is_playing = tk.BooleanVar(value=False)
         self._is_playing_event = threading.Event()
         self.audio_file = tk.StringVar(value="")
@@ -42,507 +52,589 @@ class MainWindow:
         self.resolution = tk.StringVar(value="1080p")
         self.fps = tk.IntVar(value=60)
         self.selected_preset = tk.StringVar(value="normal")
-        
+        self.opacity_var = tk.DoubleVar(value=72)
+        self.volume_var = tk.DoubleVar(value=80)
+
+        # Recent files
+        self._recent_files = []
+        self._load_recent_files()
+
+        # Playback / export state
         self.playback_thread = None
         self.analyzer = None
         self.preview_renderer = None
         self.effect_manager = None
         self.recorder = None
-        
-        # Frame skipping: skip frames if rendering is too slow
-        self._frame_skip_counter = 0
-        self._frame_skip_threshold = 0
-        self._last_frame_time = 0.0
+        self.audio_player = None
+        self._export_in_progress = False
+
+        # Frame timing
         self._frame_times = []
-        
-        # Pre-allocated PhotoImage for thread-safe updates
+        self._preview_render_size = (0, 0)
         self._pending_frame = None
         self._frame_lock = threading.Lock()
+        self._ui_frame_interval = 33
+        self._fps_counter = 0
+        self._fps_last_time = 0.0
+        self._fps_display = 0
+        self._playback_start_time = 0.0
+        self._timecode_str = tk.StringVar(value="00:00.000")
 
-        # Export popover visibility state (persists between exports)
-        self.export_popover_hidden = False
-        self._export_in_progress = False
-        self._export_last_pct = None
-        self._load_ui_preferences()
+        # Preview border glow animation
+        self._glow_direction = 1
+        self._glow_intensity = 0.5
+
+        # LED pulse animation
+        self._led_pulse = 0.0
+        self._led_pulse_dir = 1
 
         self._setup_ui()
+        self._bind_shortcuts()
 
-    def _load_ui_preferences(self):
-        """Load UI preferences from config file (export popover visibility)."""
-        import json
-        config_path = os.path.join(self._user_home_dir(), ".visualize_config.json")
+        # Toast manager
+        self.toast = ToastManager(self.root)
+
+    # ── Recent files ───────────────────────────────────────────────────
+    def _recent_files_path(self):
+        return os.path.join(os.path.expanduser("~"), ".visualize_recent.json")
+
+    def _load_recent_files(self):
         try:
-            if os.path.exists(config_path):
-                with open(config_path, "r") as f:
+            path = self._recent_files_path()
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    data = json.load(f)
+                    self._recent_files = data.get("recent", [])[:10]
+        except Exception:
+            self._recent_files = []
+
+    def _save_recent_file(self, path):
+        if path in self._recent_files:
+            self._recent_files.remove(path)
+        self._recent_files.insert(0, path)
+        self._recent_files = self._recent_files[:10]
+        try:
+            with open(self._recent_files_path(), "w") as f:
+                json.dump({"recent": self._recent_files}, f)
+        except Exception:
+            pass
+
+    # ── Theme application ──────────────────────────────────────────────
+    def _apply_theme(self, theme_name="cyberpunk"):
+        """Apply a theme to known UI surfaces. Only affects backgrounds,
+        not foregrounds of functional widgets (buttons, labels)."""
+        theme = get_theme(theme_name)
+        self._theme = theme
+        self._theme_name.set(theme_name)
+
+        # Root only — foregrounds are managed per-widget
+        self.root.configure(bg=theme.bg_dark)
+
+        # Footer surfaces
+        if hasattr(self, '_footer'):
+            self._footer.configure(bg=theme.footer_bg)
+        if hasattr(self, '_footer_copyright'):
+            self._footer_copyright.configure(bg=theme.footer_bg, fg=theme.footer_fg)
+
+        # Status bar surface
+        if hasattr(self, '_led_status'):
+            self._led_status.configure(bg=theme.status_bg)
+
+        # Preview border
+        if hasattr(self, '_preview_border'):
+            self._preview_border.configure(bg=theme.border)
+
+        # Save preference
+        self._save_theme_pref(theme_name)
+
+        # Toast notification
+        if hasattr(self, 'toast'):
+            self.toast.show(f"Theme: {theme.name}", 1.5, "info")
+
+    def _find_status_frame(self):
+        """Find the status bar frame."""
+        for child in self.root.winfo_children():
+            for sub in child.winfo_children() if hasattr(child, 'winfo_children') else []:
+                for s in sub.winfo_children() if hasattr(sub, 'winfo_children') else []:
+                    try:
+                        if s.cget("bg") in ("#0d0d18", "#111116"):
+                            return s
+                    except Exception:
+                        pass
+        return None
+
+    def _save_theme_pref(self, theme_name):
+        try:
+            path = os.path.join(os.path.expanduser("~"), ".visualize_config.json")
+            config = {}
+            if os.path.exists(path):
+                with open(path, "r") as f:
                     config = json.load(f)
-                    self.export_popover_hidden = config.get("export_popover_hidden", False)
-        except Exception as e:
-            print(f"[WARNING] Failed to load UI preferences: {e}")
-            self.export_popover_hidden = False
-
-    def _save_ui_preferences(self):
-        """Save UI preferences to config file."""
-        import json
-        config_path = os.path.join(self._user_home_dir(), ".visualize_config.json")
-        try:
-            config = {
-                "export_popover_hidden": self.export_popover_hidden
-            }
-            with open(config_path, "w") as f:
+            config["theme"] = theme_name
+            with open(path, "w") as f:
                 json.dump(config, f, indent=2)
-        except Exception as e:
-            print(f"[WARNING] Failed to save UI preferences: {e}")
+        except Exception:
+            pass
 
-    def _load_icon(self, path, size=28):
-        """Load an icon from file, with fallback to a simple colored circle if file not found."""
+    def _load_theme_pref(self):
         try:
-            img = Image.open(path)
-            img = img.resize((size, size), Image.LANCZOS)
-            return ImageTk.PhotoImage(img)
-        except (FileNotFoundError, OSError, IOError) as e:
-            # Fallback: create a simple colored circle as placeholder
-            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(img)
-            cx, cy = size // 2, size // 2
-            r = size // 2 - 2
-            draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=self.NEON_CYAN)
-            return ImageTk.PhotoImage(img)
+            path = os.path.join(os.path.expanduser("~"), ".visualize_config.json")
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    config = json.load(f)
+                    return config.get("theme", "cyberpunk")
+        except Exception:
+            pass
+        return "cyberpunk"
 
+    # ── UI Setup ───────────────────────────────────────────────────────
     def _setup_ui(self):
-        """Set up a modernized cyberpunk side-by-side UI."""
-        # Couleurs du thème cyberpunk / Winamp modernisé
-        self.BG_DARK = "#09090d"     # Fond principal ultra-sombre
-        self.BG_PANEL = "#12121d"    # Fond du panneau latéral (sidebar)
-        self.BG_CARD = "#1b1b2a"     # Fond des cartes/champs de saisie
-        self.FG_LIGHT = "#e2e2ee"    # Texte principal clair
-        self.FG_MUTED = "#85859e"    # Texte secondaire grisé
-        
-        self.NEON_CYAN = "#00e5ff"   # Cyan fluo
-        self.NEON_PINK = "#ff007f"   # Rose fluo
-        self.NEON_GREEN = "#39ff14"  # Vert fluo
-        self.NEON_AMBER = "#ffaa00"  # Orange fluo
-        
+        saved_theme = self._load_theme_pref()
+        theme = get_theme(saved_theme)
+        self._theme = theme
+        self._theme_name.set(saved_theme)
+
+        T = theme  # shorthand
+
         self.root.title(f"Visualisateur Psychédélique {__version__}")
-        self.root.geometry("1180x720")
-        self.root.minsize(980, 640)
-        self.root.configure(bg=self.BG_DARK)
-        
-        # Appliquer le style global TTK
-        style = ttk.Style()
-        style.theme_use('default')
-        style.configure('.', background=self.BG_DARK, foreground=self.FG_LIGHT)
-        style.configure('TFrame', background=self.BG_DARK)
-        
-        # Style pour les ComboBox de façon propre
-        style.map('TCombobox', fieldbackground=[('readonly', self.BG_CARD)],
-                              selectbackground=[('readonly', self.NEON_CYAN)],
-                              selectforeground=[('readonly', '#000000')],
-                              background=[('readonly', self.BG_CARD)])
-        style.configure('TCombobox', foreground=self.FG_LIGHT, fieldbackground=self.BG_CARD,
-                        bordercolor=self.BG_PANEL, arrowcolor=self.NEON_CYAN,
-                        font=('Helvetica', 9))
-        
-        # Main container
-        main_frame = tk.Frame(self.root, bg=self.BG_DARK, padx=12, pady=12)
+        self.root.geometry("1200x740")
+        self.root.minsize(1024, 680)
+        self.root.configure(bg=T.bg_dark)
+
+        # ── Main container ──
+        main_frame = tk.Frame(self.root, bg=T.bg_dark, padx=12, pady=12)
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # LEFT PANEL (SIDEBAR CONTROLS)
-        left_panel = tk.Frame(main_frame, bg=self.BG_PANEL, width=280, padx=15, pady=15, bd=1, relief="solid", highlightbackground=self.NEON_CYAN, highlightcolor=self.NEON_CYAN)
+
+        # ── LEFT: Tabbed sidebar ──
+        left_panel = tk.Frame(main_frame, bg=T.bg_panel, width=280,
+                              padx=0, pady=0, bd=1, relief="solid",
+                              highlightbackground=T.border,
+                              highlightcolor=T.border)
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
-        left_panel.pack_propagate(False) # Garder sa taille fixe
-        
-        # Branding
-        title_label = tk.Label(left_panel, text="PSYCHEDELIC", font=('Helvetica', 16, 'bold'), fg=self.NEON_CYAN, bg=self.BG_PANEL)
-        title_label.pack(anchor=tk.W, pady=(0, 2))
-        sub_label = tk.Label(left_panel, text=f"VISUALIZER v{__version__}", font=('Helvetica', 9, 'bold'), fg=self.NEON_PINK, bg=self.BG_PANEL)
-        sub_label.pack(anchor=tk.W, pady=(0, 20))
-        
-        # --- SECTION FILE ---
-        lbl_file = tk.Label(left_panel, text="FICHIER AUDIO", font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
-        lbl_file.pack(anchor=tk.W, pady=(0, 4))
-        
-        file_container = tk.Frame(left_panel, bg=self.BG_PANEL)
-        file_container.pack(fill=tk.X, pady=(0, 15))
-        
-        self.entry_file = tk.Entry(file_container, textvariable=self.audio_file, bg=self.BG_CARD, fg=self.FG_LIGHT, insertbackground=self.FG_LIGHT, bd=0, font=('Helvetica', 9), highlightthickness=1, highlightbackground="#2a2a3e", highlightcolor=self.NEON_CYAN)
-        self.entry_file.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
-        
-        btn_browse = tk.Button(file_container, text="...", command=self._open_file, bg="#252538", fg=self.FG_LIGHT, activebackground="#35354e", activeforeground=self.FG_LIGHT, bd=0, padx=8, font=('Helvetica', 9, 'bold'), cursor="hand2")
-        btn_browse.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Hover effect helper
-        def add_hover(widget, hover_bg, normal_bg):
-            widget.bind("<Enter>", lambda e: widget.configure(bg=hover_bg))
-            widget.bind("<Leave>", lambda e: widget.configure(bg=normal_bg))
-            
-        add_hover(btn_browse, "#35354e", "#252538")
-        
-        # --- SECTION CONTROLS ---
-        def create_dropdown(parent, label_text, variable, values, cmd=None):
-            lbl = tk.Label(parent, text=label_text, font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
-            lbl.pack(anchor=tk.W, pady=(8, 4))
-            combo = ttk.Combobox(parent, textvariable=variable, values=values, state='readonly')
-            combo.pack(fill=tk.X, pady=(0, 10))
-            if cmd:
-                combo.bind('<<ComboboxSelected>>', cmd)
-            return combo
-            
-        create_dropdown(left_panel, "EFFET", self.selected_effect,
-                        ['Trance Scope', 'Neon Equalizer', 'Psychedelic Plasma', '3D Cyber Tunnel'],
-                        self._effect_changed)
-        create_dropdown(left_panel, "PALETTE", self.selected_color,
-                        ['psychedelic', 'winamp_classic', 'retro', 'dark', 'rainbow'],
-                        self._palette_changed)
-        create_dropdown(left_panel, "RÉSOLUTION EXPORT", self.resolution, ['1080p', '1440p', '4K'])
-        create_dropdown(left_panel, "PRESET DE QUALITÉ", self.selected_preset, ['dev', 'fast', 'normal', 'high', '4k'], self._preset_changed)
+        left_panel.pack_propagate(False)
 
-        lbl_bg = tk.Label(left_panel, text="IMAGE DE FOND", font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
-        lbl_bg.pack(anchor=tk.W, pady=(8, 4))
-        bg_container = tk.Frame(left_panel, bg=self.BG_PANEL)
-        bg_container.pack(fill=tk.X, pady=(0, 10))
-        self.entry_background = tk.Entry(bg_container, textvariable=self.background_image, bg=self.BG_CARD,
-                                         fg=self.FG_LIGHT, insertbackground=self.FG_LIGHT, bd=0,
-                                         font=('Helvetica', 9), highlightthickness=1,
-                                         highlightbackground="#2a2a3e", highlightcolor=self.NEON_CYAN)
-        self.entry_background.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
-        btn_bg = tk.Button(bg_container, text="+", command=self._open_background_file, bg="#252538",
-                           fg=self.FG_LIGHT, activebackground="#35354e", activeforeground=self.FG_LIGHT,
-                           bd=0, padx=9, font=('Helvetica', 10, 'bold'), cursor="hand2")
-        btn_bg.pack(side=tk.RIGHT, fill=tk.Y)
-        add_hover(btn_bg, "#35354e", "#252538")
+        # Branding header
+        header = tk.Frame(left_panel, bg=T.bg_panel)
+        header.pack(fill=tk.X, padx=14, pady=(14, 4))
 
-        # ── Opacity slider for background ──
-        self.opacity_var = tk.DoubleVar(value=72)
-        opacity_frame = tk.Frame(left_panel, bg=self.BG_PANEL)
-        opacity_frame.pack(fill=tk.X, pady=(0, 4))
-        lbl_opacity = tk.Label(opacity_frame, text="OPACITÉ FOND", font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED, bg=self.BG_PANEL)
-        lbl_opacity.pack(anchor=tk.W)
-        slider_row = tk.Frame(opacity_frame, bg=self.BG_PANEL)
-        slider_row.pack(fill=tk.X, pady=(4, 0))
-        self.opacity_slider = tk.Scale(slider_row, from_=0, to=100, orient=tk.HORIZONTAL,
-                                       variable=self.opacity_var, command=self._on_opacity_change,
-                                       showvalue=False, bg=self.BG_PANEL, fg=self.FG_LIGHT,
-                                       highlightthickness=0, bd=0, troughcolor="#1a1a2e",
-                                       activebackground=self.NEON_CYAN, sliderlength=16, length=180)
-        self.opacity_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self._opacity_label = tk.Label(slider_row, text="72%", font=('Courier', 9, 'bold'),
-                                       fg=self.NEON_CYAN, bg=self.BG_PANEL, width=4, anchor=tk.E)
-        self._opacity_label.pack(side=tk.RIGHT, padx=(8, 0))
+        title_label = tk.Label(header, text="PSYCHEDELIC",
+                               font=('Helvetica', 15, 'bold'),
+                               fg=T.neon_primary, bg=T.bg_panel)
+        title_label.pack(anchor=tk.W)
 
-        # ── Remove background button ──
-        self.btn_remove_bg = tk.Button(left_panel, text="✕ RETIRER LE FOND",
-                                       command=self._remove_background,
-                                       bg="#1a1a2e", fg="#ff3b3b",
-                                       activebackground="#2a0a0a", activeforeground="#ff5b5b",
-                                       bd=0, padx=6, pady=3, font=('Helvetica', 8, 'bold'),
-                                       cursor="hand2")
-        self.btn_remove_bg.pack(fill=tk.X, pady=(0, 10))
-        add_hover(self.btn_remove_bg, "#2a0a0a", "#1a1a2e")
+        sub_label = tk.Label(header, text=f"VISUALIZER  v{__version__}",
+                             font=('Helvetica', 7, 'bold'),
+                             fg=T.neon_secondary, bg=T.bg_panel)
+        sub_label.pack(anchor=tk.W, pady=(0, 0))
 
-        # Spacer
-        left_panel.grid_rowconfigure(9, weight=1)
-        
-        # --- ACTION BUTTONS (PLAY/STOP) ---
-        btn_container = tk.Frame(left_panel, bg=self.BG_PANEL)
-        btn_container.pack(side=tk.BOTTOM, fill=tk.X, pady=(15, 0))
-        
-        # Lecture
-        self.btn_play = tk.Button(btn_container, text="▶  LECTURE", command=self._toggle_playback, bg=self.NEON_GREEN, fg="#05050a", activebackground="#a2ff8e", activeforeground="#05050a", bd=0, pady=6, font=('Helvetica', 10, 'bold'), cursor="hand2")
-        self.btn_play.pack(fill=tk.X, pady=(0, 8))
-        add_hover(self.btn_play, "#a2ff8e", self.NEON_GREEN)
-        
-        # Arrêter
-        self.btn_stop = tk.Button(btn_container, text="⏹  ARRÊTER", command=self._stop_playback, bg=self.NEON_PINK, fg="#ffffff", activebackground="#ff52a2", activeforeground="#ffffff", bd=0, pady=6, font=('Helvetica', 10, 'bold'), cursor="hand2")
-        self.btn_stop.pack(fill=tk.X, pady=(0, 15))
-        add_hover(self.btn_stop, "#ff52a2", self.NEON_PINK)
-        
-        # Export & Logs row
-        secondary_btn_frame = tk.Frame(btn_container, bg=self.BG_PANEL)
-        secondary_btn_frame.pack(fill=tk.X)
-        
-        self.btn_export = tk.Button(secondary_btn_frame, text="🎥 EXPORTER", command=self._export_video, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
-        self.btn_export.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        add_hover(self.btn_export, "#3a3a55", "#2a2a3e")
-        
-        btn_logs = tk.Button(secondary_btn_frame, text="📝 LOGS", command=self._show_logs, bg="#2a2a3e", fg=self.FG_LIGHT, activebackground="#3a3a55", activeforeground=self.FG_LIGHT, bd=0, pady=5, font=('Helvetica', 8, 'bold'), cursor="hand2")
-        btn_logs.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-        add_hover(btn_logs, "#3a3a55", "#2a2a3e")
-        
-        # RIGHT PANEL (PREVIEW + STATUS)
-        right_panel = tk.Frame(main_frame, bg=self.BG_DARK)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # Title of Aperçu
-        preview_title = tk.Label(right_panel, text="ÉCRAN DE PREVIEW", font=('Helvetica', 9, 'bold'), fg=self.NEON_CYAN, bg=self.BG_DARK)
-        preview_title.pack(anchor=tk.W, pady=(0, 8))
-        
-        # Preview screen container with glowing border
-        preview_border = tk.Frame(right_panel, bg=self.NEON_CYAN, bd=1)
-        preview_border.pack(fill=tk.BOTH, expand=True)
-        
-        self.preview = PreviewFrame(preview_border, bd=0, highlightthickness=0)
-        self.preview.pack(fill=tk.BOTH, expand=True)
-        
-        # ── Export progress popover (overlaid on preview, bottom-right) ──
-        # Parented to preview_border (a real Frame) so the overlay is reliably shown.
-        self._export_popover = tk.Frame(
-            preview_border, bg="#0c0c16", bd=0,
-            highlightthickness=1, highlightbackground="#1f6f7a",
-            padx=14, pady=10,
+        # Theme selector
+        theme_frame = tk.Frame(header, bg=T.bg_panel)
+        theme_frame.pack(fill=tk.X, pady=(6, 0))
+
+        theme_lbl = tk.Label(theme_frame, text="Theme",
+                             font=('Helvetica', 6, 'bold'),
+                             fg=T.fg_muted, bg=T.bg_panel)
+        theme_lbl.pack(side=tk.LEFT, padx=(0, 4))
+
+        theme_combo = ttk.Combobox(theme_frame, textvariable=self._theme_name,
+                                   values=THEME_NAMES, state='readonly',
+                                   width=14, font=('Helvetica', 8))
+        theme_combo.pack(side=tk.RIGHT)
+        theme_combo.bind('<<ComboboxSelected>>',
+                         lambda e: self._apply_theme(self._theme_name.get()))
+
+        # Separator
+        sep = tk.Frame(left_panel, bg=T.border, height=1)
+        sep.pack(fill=tk.X, padx=10, pady=(4, 4))
+
+        # Tab panel
+        self.tab_panel = TabPanel(left_panel)
+        self.tab_panel.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+
+        # Create tabs
+        self._file_tab = self.tab_panel.add_tab(
+            "🎵 FICHIER",
+            FileTab(self.tab_panel, self.audio_file,
+                    status_callback=self._set_status)
         )
-        # Inner container
-        self._export_popover_inner = tk.Frame(self._export_popover, bg="#0c0c16")
-        self._export_popover_inner.pack(fill=tk.BOTH)
+        self._effects_tab = self.tab_panel.add_tab(
+            "✨ EFFETS",
+            EffectsTab(self.tab_panel, self.selected_effect, self.selected_color,
+                       effect_changed_cb=self._effect_changed,
+                       palette_changed_cb=self._palette_changed)
+        )
+        self._bg_tab = self.tab_panel.add_tab(
+            "🖼 FOND",
+            BackgroundTab(self.tab_panel, self.background_image, self.opacity_var,
+                          status_callback=self._set_status)
+        )
+        self._export_tab = self.tab_panel.add_tab(
+            "📤 EXPORT",
+            ExportTab(self.tab_panel, self.audio_file, self.resolution, self.fps,
+                      self.selected_preset, self.selected_effect, self.selected_color,
+                      self.background_image,
+                      export_callback=self._on_export_request,
+                      status_callback=self._set_status)
+        )
+        self._logs_tab = self.tab_panel.add_tab(
+            "📋 LOGS",
+            LogsTab(self.tab_panel)
+        )
+        set_global_logs_tab(self._logs_tab)
 
-        # Header row: icon + label + hide (eye) + close (✕)
-        popover_header = tk.Frame(self._export_popover_inner, bg="#0c0c16")
-        popover_header.pack(fill=tk.X, pady=(0, 10))
-        self._export_popover_icon = tk.Label(popover_header, text="⬢", font=('Helvetica', 12),
-                                             bg="#0c0c16", fg=self.NEON_CYAN)
-        self._export_popover_icon.pack(side=tk.LEFT, padx=(0, 8))
-        self._export_popover_label = tk.Label(popover_header, text="EXPORT",
-                                              font=('Helvetica', 9, 'bold'),
-                                              bg="#0c0c16", fg=self.NEON_CYAN)
-        self._export_popover_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # ── Play / Stop / Volume ──
+        btn_container = tk.Frame(left_panel, bg=T.bg_panel)
+        btn_container.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 12))
 
-        self._export_popover_hide = tk.Label(popover_header, text="👁",
-                                             font=('Helvetica', 10, 'bold'),
-                                             bg="#0c0c16", fg=self.FG_MUTED,
-                                             cursor="hand2")
-        self._export_popover_hide.pack(side=tk.RIGHT, padx=(0, 10))
-        self._export_popover_hide.bind("<Button-1>", lambda e: self._toggle_export_popover())
-        self._export_popover_hide.bind("<Enter>", lambda e: self._export_popover_hide.configure(fg=self.NEON_CYAN))
-        self._export_popover_hide.bind("<Leave>", lambda e: self._export_popover_hide.configure(fg=self.FG_MUTED))
+        self.btn_play = tk.Button(
+            btn_container, text="▶  LECTURE",
+            command=self._toggle_playback,
+            bg=T.neon_accent, fg="#05050a",
+            activebackground="#a2ff8e", activeforeground="#05050a",
+            bd=0, pady=7, font=('Helvetica', 10, 'bold'), cursor="hand2",
+            relief="flat",
+        )
+        self.btn_play.pack(fill=tk.X, pady=(0, 5))
+        self._add_hover(self.btn_play, "#a2ff8e", T.neon_accent)
 
-        self._export_popover_close = tk.Label(popover_header, text="✕",
-                                              font=('Helvetica', 10, 'bold'),
-                                              bg="#0c0c16", fg="#555",
-                                              cursor="hand2")
-        self._export_popover_close.pack(side=tk.RIGHT)
-        self._export_popover_close.bind("<Button-1>", lambda e: self._hide_export_popover())
-        self._export_popover_close.bind("<Enter>", lambda e: self._export_popover_close.configure(fg="#ff3b3b"))
-        self._export_popover_close.bind("<Leave>", lambda e: self._export_popover_close.configure(fg="#555"))
+        self.btn_stop = tk.Button(
+            btn_container, text="⏹  ARRÊTER",
+            command=self._stop_playback,
+            bg="#2a1a2e", fg=T.fg_muted,
+            activebackground="#3a2a3e", activeforeground=T.fg_light,
+            bd=0, pady=7, font=('Helvetica', 10, 'bold'), cursor="hand2",
+            relief="flat",
+        )
+        self.btn_stop.pack(fill=tk.X)
+        self._add_hover(self.btn_stop, "#3a2a3e", "#2a1a2e")
 
-        # Progress bar drawn on a Canvas (rounded pill, gradient fill, glowing head)
-        self._export_canvas = tk.Canvas(self._export_popover_inner, height=14,
-                                        bg="#0c0c16", bd=0, highlightthickness=0, width=240)
-        self._export_canvas.pack(fill=tk.X)
-        self._export_popover_pct = tk.Label(self._export_popover_inner, text="0%",
-                                            font=('Courier', 9, 'bold'),
-                                            bg="#0c0c16", fg=self.NEON_CYAN,
-                                            anchor=tk.E)
-        self._export_popover_pct.pack(fill=tk.X, pady=(8, 0))
+        # Volume slider
+        vol_frame = tk.Frame(btn_container, bg=T.bg_panel)
+        vol_frame.pack(fill=tk.X, pady=(8, 0))
 
-        # Status Bar
+        vol_icon = tk.Label(vol_frame, text="🔊", font=('Helvetica', 8),
+                            bg=T.bg_panel, fg=T.fg_muted)
+        vol_icon.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.volume_slider = tk.Scale(
+            vol_frame, from_=0, to=100, orient=tk.HORIZONTAL,
+            variable=self.volume_var, command=self._on_volume_change,
+            showvalue=False, bg=T.bg_panel, fg=T.fg_light,
+            highlightthickness=0, bd=0, troughcolor="#1a1a2e",
+            activebackground=T.neon_primary, sliderlength=12, length=160,
+        )
+        self.volume_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self._volume_label = tk.Label(vol_frame, text="80%",
+                                      font=('Courier', 7, 'bold'),
+                                      fg=T.fg_muted, bg=T.bg_panel,
+                                      width=3, anchor=tk.E)
+        self._volume_label.pack(side=tk.RIGHT, padx=(4, 0))
+
+        # ── RIGHT: Preview + Status ──
+        right_panel = tk.Frame(main_frame, bg=T.bg_dark)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # Preview header
+        preview_header = tk.Frame(right_panel, bg=T.bg_dark)
+        preview_header.pack(fill=tk.X, pady=(0, 8))
+
+        preview_title = tk.Label(preview_header, text="APERÇU",
+                                 font=('Helvetica', 9, 'bold'),
+                                 fg=T.neon_primary, bg=T.bg_dark)
+        preview_title.pack(side=tk.LEFT)
+
+        timecode_label = tk.Label(preview_header, textvariable=self._timecode_str,
+                                  font=('Courier', 9, 'bold'),
+                                  fg=T.fg_muted, bg=T.bg_dark, padx=8)
+        timecode_label.pack(side=tk.RIGHT)
+
+        self._fps_display_label = tk.Label(
+            preview_header, text="-- FPS",
+            font=('Courier', 8, 'bold'), fg=T.fg_muted,
+            bg=T.bg_dark, padx=8,
+        )
+        self._fps_display_label.pack(side=tk.RIGHT)
+
+        # Preview with animated neon border
+        self._preview_border = tk.Frame(right_panel, bg=T.border, bd=1,
+                                        highlightthickness=0)
+        self._preview_border.pack(fill=tk.BOTH, expand=True)
+
+        self.preview = PreviewFrame(self._preview_border, bd=0,
+                                    highlightthickness=0,
+                                    on_click_empty=self._on_preview_click)
+        self.preview.pack(fill=tk.BOTH, expand=True)
+
+        self._animate_border()
+
+        # ── Status bar ──
         self.status_var = tk.StringVar(value="PRÊT")
-        status_frame = tk.Frame(right_panel, bg="#111116", height=24, bd=0)
+        status_frame = tk.Frame(right_panel, bg=T.status_bg, height=26, bd=0)
         status_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        self._led_status = tk.Label(status_frame, text="●", font=('Helvetica', 10), fg=self.NEON_CYAN, bg="#111116", padx=5)
+
+        self._led_status = tk.Label(status_frame, text="●",
+                                    font=('Helvetica', 9),
+                                    fg=T.neon_primary, bg=T.status_bg, padx=6)
         self._led_status.pack(side=tk.LEFT)
-        
-        # Update led status dynamically when playback state changes
+
         def update_led(*args):
             if self.is_playing.get():
-                self._led_status.configure(fg=self.NEON_GREEN)
+                self._led_status.configure(fg=T.neon_accent)
+                self.btn_play.configure(bg="#1a3a1a", fg=T.fg_muted,
+                                        text="▶  EN COURS")
+                self.btn_stop.configure(bg=T.neon_secondary, fg="#ffffff",
+                                        activebackground="#ff52a2")
             else:
-                self._led_status.configure(fg=self.NEON_CYAN)
+                self._led_status.configure(fg=T.neon_primary)
+                self.btn_play.configure(bg=T.neon_accent, fg="#05050a",
+                                        text="▶  LECTURE")
+                self.btn_stop.configure(bg="#2a1a2e", fg=T.fg_muted,
+                                        activebackground="#3a2a3e")
         self.is_playing.trace_add("write", update_led)
-        
-        status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
-        status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
-        # Persistent toggle to show/hide the export progress popover.
-        # This control always stays visible in the status bar, so the
-        # popover can be re-shown even after it has been hidden.
-        self.btn_toggle_popover = tk.Button(status_frame, text="📊 EXPORT",
-            command=self._toggle_export_popover,
-            bg="#1a1a2e", fg=self.NEON_CYAN,
-            activebackground="#2a2a4e", activeforeground=self.NEON_CYAN,
-            bd=0, padx=8, pady=0, font=('Helvetica', 8, 'bold'), cursor="hand2")
-        self.btn_toggle_popover.pack(side=tk.RIGHT, padx=(6, 0))
-        add_hover(self.btn_toggle_popover, "#2a2a4e", "#1a1a2e")
-        
-        # ── Footer: copyright (left) + social links (right) ──
-        self._footer = tk.Frame(self.root, bg="#0a0a12", height=46)
+        status_label = tk.Label(status_frame, textvariable=self.status_var,
+                                font=('Courier', 8, 'bold'),
+                                fg=T.neon_primary, bg=T.status_bg,
+                                anchor=tk.W)
+        status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+
+        # ── Footer ──
+        self._footer = tk.Frame(self.root, bg=T.footer_bg, height=42)
         self._footer.pack(side=tk.BOTTOM, fill=tk.X)
         self._footer.pack_propagate(False)
 
-        # Thin neon divider separating the footer from the app body
-        footer_divider = tk.Frame(self._footer, bg="#1c1c30", height=1, bd=0)
+        footer_divider = tk.Frame(self._footer, bg=T.border, height=1, bd=0)
         footer_divider.pack(side=tk.TOP, fill=tk.X)
 
-        # Copyright label, vertically centered on the left
-        self._footer_copyright = tk.Label(self._footer, text="© 2026 Timothée Grollier",
-                 font=('Helvetica', 8, 'bold'), fg="#9a9acb", bg="#0a0a12",
-                 anchor=tk.W, padx=16)
+        self._footer_copyright = tk.Label(
+            self._footer, text="© 2026 Timothée Grollier",
+            font=('Helvetica', 7, 'bold'), fg=T.footer_fg, bg=T.footer_bg,
+            anchor=tk.W, padx=16,
+        )
         self._footer_copyright.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Social icons – loaded from brand-styled assets (38x38 chips)
-        assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
-        icon_size = 38
-        self._icon_linkedin = self._load_icon(os.path.join(assets_dir, "linkedin.png"), icon_size)
-        self._icon_linkedin_hover = self._load_icon(os.path.join(assets_dir, "linkedin_hover.png"), icon_size)
-        self._icon_website = self._load_icon(os.path.join(assets_dir, "website.png"), icon_size)
-        self._icon_website_hover = self._load_icon(os.path.join(assets_dir, "website_hover.png"), icon_size)
+        # Social icons
+        assets_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets"
+        )
+        icon_size = 34
+        self._icon_linkedin = self._load_icon(
+            os.path.join(assets_dir, "linkedin.png"), icon_size
+        )
+        self._icon_linkedin_hover = self._load_icon(
+            os.path.join(assets_dir, "linkedin_hover.png"), icon_size
+        )
+        self._icon_website = self._load_icon(
+            os.path.join(assets_dir, "website.png"), icon_size
+        )
+        self._icon_website_hover = self._load_icon(
+            os.path.join(assets_dir, "website_hover.png"), icon_size
+        )
 
-        social = tk.Frame(self._footer, bg="#0a0a12")
-        social.pack(side=tk.RIGHT, padx=12, pady=0, fill=tk.Y)
+        social = tk.Frame(self._footer, bg=T.footer_bg)
+        social.pack(side=tk.RIGHT, padx=10, pady=0, fill=tk.Y)
 
         def _make_social(parent, icon, icon_hover, url, tooltip):
-            lbl = tk.Label(parent, image=icon, bg="#0a0a12", cursor="hand2", padx=5)
+            lbl = tk.Label(parent, image=icon, bg=T.footer_bg,
+                           cursor="hand2", padx=4)
             lbl.pack(side=tk.LEFT)
             lbl.bind("<Button-1>", lambda e: webbrowser.open(url))
-            lbl.bind("<Enter>", lambda e: (lbl.configure(image=icon_hover),
-                                           lbl.configure(bg="#14142a")))
-            lbl.bind("<Leave>", lambda e: (lbl.configure(image=icon),
-                                           lbl.configure(bg="#0a0a12")))
+            lbl.bind("<Enter>", lambda e: (
+                lbl.configure(image=icon_hover), lbl.configure(bg="#14142a")
+            ))
+            lbl.bind("<Leave>", lambda e: (
+                lbl.configure(image=icon), lbl.configure(bg=T.footer_bg)
+            ))
             return lbl
 
         self._footer_linkedin = _make_social(
             social, self._icon_linkedin, self._icon_linkedin_hover,
-            "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev", "LinkedIn")
+            "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev", "LinkedIn"
+        )
         self._footer_website = _make_social(
             social, self._icon_website, self._icon_website_hover,
-            "https://timotheegrollier.github.io/", "Site web")
-
-        # Keyboard shortcuts
-        self.root.bind("<Control-h>", self._toggle_export_popover)
-        self.root.bind("<Control-H>", self._toggle_export_popover)
-
-    def _preset_changed(self, event=None):
-        """Update resolution and FPS when preset changes."""
-        from quality_presets import get_preset
-        preset = get_preset(self.selected_preset.get())
-        self.resolution.set(preset['resolution'])
-        self.fps.set(preset['fps'])
-        self.status_var.set(f"Préglage: {preset['name']}")
-
-    def _palette_changed(self, event=None):
-        """Apply palette changes to the live effect when playback is running."""
-        if self.effect_manager:
-            self.effect_manager.change_palette(self.selected_color.get())
-            self.status_var.set(f"Palette: {self.selected_color.get()}")
-
-    def _effect_changed(self, event=None):
-        """Apply effect changes to the live preview."""
-        if self.effect_manager:
-            self.effect_manager.change_effect(self._get_effect_key())
-            self.effect_manager.set_background_image(self.background_image.get() or None)
-            self.status_var.set(f"Effet: {self.selected_effect.get()}")
-    
-    def _open_file(self):
-        """Open file dialog to select audio file from input directory."""
-        filetypes = [
-            ('Fichiers audio', '*.mp3 *.wav *.flac *.ogg *.aac'),
-            ('Tous les fichiers', '*.*')
-        ]
-        
-        initial_dir = self._default_browse_dir()
-        
-        filename = FileDialog.show(
-            self.root,
-            mode="open",
-            title="Sélectionner un fichier audio",
-            initial_dir=initial_dir,
-            filetypes=filetypes
+            "https://timotheegrollier.github.io/", "Site web"
         )
-        
-        if filename:
-            self.audio_file.set(filename)
-            self.status_var.set(f"Fichier chargé: {os.path.basename(filename)}")
 
-    def _open_background_file(self):
-        """Open file dialog to select an image background for preview and export."""
-        filetypes = [
-            ('Images', '*.png *.jpg *.jpeg *.webp *.bmp'),
-            ('Tous les fichiers', '*.*')
-        ]
-        filename = FileDialog.show(
-            self.root,
-            mode="open",
-            title="Sélectionner une image de fond",
-            initial_dir=self._user_home_dir(),
-            filetypes=filetypes
-        )
-        if filename:
-            self.background_image.set(filename)
-            if self.effect_manager:
-                self.effect_manager.set_background_image(filename)
-            self.status_var.set(f"Fond: {os.path.basename(filename)}")
+        # Apply saved theme
+        self._apply_theme(saved_theme)
 
-    def _on_opacity_change(self, val):
-        """Update background opacity in real-time from slider."""
-        opacity = float(val) / 100.0
-        self._opacity_label.configure(text=f"{int(float(val)):.0f}%")
-        if self.effect_manager:
-            self.effect_manager.set_background_opacity(opacity)
+    # ── Keyboard shortcuts ─────────────────────────────────────────────
+    def _bind_shortcuts(self):
+        self.root.bind("<space>", lambda e: self._toggle_playback())
+        self.root.bind("<Control-p>", lambda e: self._toggle_playback())
+        self.root.bind("<Control-s>", lambda e: self._stop_playback())
+        self.root.bind("<Control-e>", lambda e: self._export_tab.btn_export.invoke())
+        self.root.bind("<Escape>", lambda e: self._stop_playback())
 
-    def _remove_background(self):
-        """Clear the background image from preview and export."""
-        self.background_image.set("")
-        if self.effect_manager:
-            self.effect_manager.set_background_image(None)
-        self.status_var.set("Fond retiré")
+    # ── Volume control ─────────────────────────────────────────────────
+    def _on_volume_change(self, val):
+        pct = int(float(val))
+        self._volume_label.configure(text=f"{pct}%")
+        # AudioPlayer may not support set_volume — silently ignore
+
+    # ── Preview border glow animation ──────────────────────────────────
+    def _animate_border(self):
+        if self.is_playing.get():
+            self._glow_intensity += 0.03 * self._glow_direction
+            if self._glow_intensity >= 1.0:
+                self._glow_direction = -1
+            elif self._glow_intensity <= 0.3:
+                self._glow_direction = 1
+
+            c0 = self._theme.neon_primary
+            c1 = self._theme.neon_accent
+            r0, g0, b0 = int(c0[1:3], 16), int(c0[3:5], 16), int(c0[5:7], 16)
+            r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+            i = self._glow_intensity
+            r = int(r0 + (r1 - r0) * i)
+            g = int(g0 + (g1 - g0) * i)
+            b = int(b0 + (b1 - b0) * i)
+            colour = f"#{r:02x}{g:02x}{b:02x}"
+            self._preview_border.configure(bg=colour)
+        else:
+            self._preview_border.configure(bg=self._theme.border)
+
+        self.root.after(50, self._animate_border)
+
+    # ── Pulsing LED ────────────────────────────────────────────────────
+    def _animate_led(self):
+        """Pulse the status LED when playing."""
+        if self.is_playing.get():
+            self._led_pulse += 0.05 * self._led_pulse_dir
+            if self._led_pulse >= 1.0:
+                self._led_pulse_dir = -1
+            elif self._led_pulse <= 0.3:
+                self._led_pulse_dir = 1
+
+            c = self._theme.neon_accent
+            r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+            r = int(r * self._led_pulse)
+            g = int(g * self._led_pulse)
+            b = int(b * self._led_pulse)
+            colour = f"#{r:02x}{g:02x}{b:02x}"
+            self._led_status.configure(fg=colour)
+
+        self.root.after(80, self._animate_led)
+
+    # ── Helpers ────────────────────────────────────────────────────────
+    def _load_icon(self, path, size=28):
+        try:
+            img = Image.open(path)
+            img = img.resize((size, size), Image.LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except (FileNotFoundError, OSError, IOError):
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            cx = cy = size // 2
+            r = size // 2 - 2
+            draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=self._theme.neon_primary)
+            return ImageTk.PhotoImage(img)
+
+    def _add_hover(self, widget, hover_bg, normal_bg):
+        widget.bind("<Enter>", lambda e: widget.configure(bg=hover_bg))
+        widget.bind("<Leave>", lambda e: widget.configure(bg=normal_bg))
+
+    def _set_status(self, message):
+        self.status_var.set(message)
 
     def _get_effect_key(self):
-        """Map GUI labels to internal effect identifiers."""
         effect_name_map = {
             "Trance Scope": "trance_scope",
             "Neon Equalizer": "neon_equalizer",
             "Psychedelic Plasma": "psychedelic_plasma",
-            "3D Cyber Tunnel": "3d_cyber_tunnel"
+            "3D Cyber Tunnel": "3d_cyber_tunnel",
+            "Bars": "bars",
+            "Circles": "circles",
+            "Particles": "particles",
+            "Wave": "wave",
+            "Spectrum": "spectrum",
         }
         return effect_name_map.get(self.selected_effect.get(), "trance_scope")
 
+    def _get_resolution(self):
+        resolutions = {
+            '1080p': (1920, 1080),
+            '1440p': (2560, 1440),
+            '4K': (3840, 2160),
+        }
+        return resolutions.get(self.resolution.get(), (1920, 1080))
+
+    # ── Effect / Palette callbacks ─────────────────────────────────────
+    def _effect_changed(self, event=None):
+        if self.effect_manager:
+            self.effect_manager.change_effect(self._get_effect_key())
+            self.effect_manager.set_background_image(
+                self.background_image.get() or None
+            )
+            self._set_status(f"Effet: {self.selected_effect.get()}")
+
+    def _palette_changed(self, event=None):
+        if self.effect_manager:
+            self.effect_manager.change_palette(self.selected_color.get())
+            self._set_status(f"Palette: {self.selected_color.get()}")
+
+    # ── Preview interaction ────────────────────────────────────────────
+    def _on_preview_click(self):
+        """Open the file selection dialog when preview is clicked while empty."""
+        self._file_tab._open_file()
+
+    # ── Playback ───────────────────────────────────────────────────────
     def _toggle_playback(self):
-        """Toggle playback."""
         if not self.audio_file.get():
-            messagebox.showerror("Erreur", "Veuillez sélectionner un fichier audio d'abord.")
+            messagebox.showerror("Erreur",
+                                 "Veuillez sélectionner un fichier audio d'abord.")
             return
-        
         if self.is_playing.get():
             self._stop_playback()
         else:
             self._start_playback()
 
     def _start_playback(self):
-        """Start playback and preview."""
         self.is_playing.set(True)
         self._is_playing_event.set()
-        
-        # Stop existing thread if any
+
         if self.playback_thread and self.playback_thread.is_alive():
             self._stop_playback()
-        
-        # Initialize analyzer (RAM-efficient streaming mode)
+
+        # Save to recent files
+        self._save_recent_file(self.audio_file.get())
+
+        # Init analyzer
         try:
             from audio.analyzer import AudioAnalyzer
             self.analyzer = AudioAnalyzer(self.audio_file.get(), load_file=False)
         except Exception as e:
-            self.status_var.set(f"Erreur: {str(e)}")
+            self._set_status(f"Erreur: {str(e)}")
             self.is_playing.set(False)
             self._is_playing_event.clear()
             return
-        
-        # Initialize audio player
+
+        # Init audio player
         try:
             from audio.player import AudioPlayer
             self.audio_player = AudioPlayer(
                 sample_rate=self.analyzer.sample_rate,
                 chunk_size=self.analyzer.chunk_size,
-                channels=2
+                channels=2,
             )
-            # Démarrer la lecture en flux direct depuis le fichier
-            self.audio_player.start_from_file(self.audio_file.get(), loop=self.analyzer.loop, analyzer=self.analyzer)
+            self.audio_player.start_from_file(
+                self.audio_file.get(), loop=self.analyzer.loop,
+                analyzer=self.analyzer
+            )
+            try:
+                self.audio_player.set_volume(self.volume_var.get() / 100.0)
+            except AttributeError:
+                pass  # AudioPlayer may not support set_volume
         except Exception as e:
             import traceback
             print(f"[MAIN] AudioPlayer init FAILED: {e}", file=sys.stderr, flush=True)
             traceback.print_exc(file=sys.stderr)
-            self.status_var.set(f"Erreur audio: {str(e)}")
+            self._set_status(f"Erreur audio: {str(e)}")
             self.audio_player = None
-        
-        # Détecter le renderer à utiliser
+
+        # Detect renderer
         self._has_pygame = False
         try:
             import os as _os
@@ -552,83 +644,69 @@ class MainWindow:
             if not _pg.get_init():
                 _pg.init()
             self._has_pygame = True
-        except ImportError:
+        except (ImportError, Exception):
             self._has_pygame = False
-        except Exception:
-            self._has_pygame = False
-        
-        # Créer le renderer à la taille exacte du canvas preview (pas de resize)
+
+        # Create renderer
         try:
-            pw = max(self.preview.winfo_width(), 200)
-            ph = max(self.preview.winfo_height(), 100)
+            pw, ph = self.preview.get_display_size()
             self._preview_render_size = (pw, ph)
 
             if self._has_pygame:
                 from renderer.headless_renderer import HeadlessRenderer
                 self.preview_renderer = HeadlessRenderer(
-                    width=pw,
-                    height=ph,
-                    fps=self.fps.get()
+                    width=pw, height=ph, fps=self.fps.get()
                 )
                 self.preview_renderer.init()
             else:
                 from renderer.array_renderer import ArrayRenderer
                 self.preview_renderer = ArrayRenderer(
-                    width=pw,
-                    height=ph,
-                    fps=self.fps.get()
+                    width=pw, height=ph, fps=self.fps.get()
                 )
         except Exception as e:
-            self.status_var.set(f"Erreur: {str(e)}")
+            self._set_status(f"Erreur: {str(e)}")
             self.is_playing.set(False)
             self._is_playing_event.clear()
             return
-        
-        # Create effect manager with reduced resolution
+
+        # Create effect manager
         try:
             from effects.manager import EffectManager
-            effect_key = self._get_effect_key()
-            
             self.effect_manager = EffectManager(
                 analyzer=self.analyzer,
                 renderer=self.preview_renderer,
-                effect_type=effect_key,
+                effect_type=self._get_effect_key(),
                 color_palette=self.selected_color.get(),
-                background_image=self.background_image.get() or None
+                background_image=self.background_image.get() or None,
+                background_opacity=self.opacity_var.get() / 100.0,
             )
             self.effect_manager.init()
         except Exception as e:
-            self.status_var.set(f"Erreur: {str(e)}")
+            self._set_status(f"Erreur: {str(e)}")
             self.is_playing.set(False)
             self._is_playing_event.clear()
             return
-        
-        # Reset frame skipping
-        self._frame_skip_counter = 0
-        self._frame_skip_threshold = 0
+
         self._frame_times = []
-        
-        # Start playback in a separate thread
+        self._fps_counter = 0
+        self._fps_last_time = time.time()
+        self._playback_start_time = time.time()
+
         self.playback_thread = threading.Thread(
-            target=self._playback_loop,
-            daemon=True
+            target=self._playback_loop, daemon=True
         )
         self.playback_thread.start()
-        
-        self.status_var.set("Lecture en cours...")
+        self._set_status("Lecture en cours...")
+        self.toast.show(f"▶ {os.path.basename(self.audio_file.get())}", 1.5, "success")
 
     def _playback_loop(self):
-        """Playback loop for preview."""
         try:
             self.analyzer.start_stream()
             self.preview_renderer.init()
 
             iteration = 0
-            try:
-                from ui.log_display import log_message
-                log_message("Playback: Boucle de lecture démarrée")
-            except:
-                pass
+            last_ui_update = 0.0
+            last_timecode_update = 0.0
 
             while self._is_playing_event.is_set():
                 iteration += 1
@@ -637,31 +715,17 @@ class MainWindow:
                     self._is_playing_event.clear()
                     break
 
-                delta_time = self.preview_renderer.clock.tick(self.fps.get()) / 1000.0
+                delta_time = self.preview_renderer.clock.tick(
+                    self.fps.get()
+                ) / 1000.0
 
-                # Vérifier si le canvas a changé de taille → recréer l'effet
-                pw = max(self.preview.winfo_width(), 200)
-                ph = max(self.preview.winfo_height(), 100)
-                if (pw, ph) != getattr(self, '_preview_render_size', (0, 0)):
-                    try:
-                        from effects.manager import EffectManager
-                        effect_key = self._get_effect_key()
-                        self.preview_renderer.width = pw
-                        self.preview_renderer.height = ph
-                        self.effect_manager = EffectManager(
-                            analyzer=self.analyzer,
-                            renderer=self.preview_renderer,
-                            effect_type=effect_key,
-                            color_palette=self.selected_color.get(),
-                background_image=self.background_image.get() or None,
-                background_opacity=self.opacity_var.get() / 100.0
-            )
-                        self.effect_manager.init()
-                        self._preview_render_size = (pw, ph)
-                    except Exception:
-                        pass
+                pw, ph = self.preview.get_display_size()
+                if (pw, ph) != self._preview_render_size:
+                    self._resize_effect(pw, ph)
 
-                if not hasattr(self, 'audio_player') or self.audio_player is None or not self.audio_player.is_playing:
+                if (not hasattr(self, 'audio_player')
+                        or self.audio_player is None
+                        or not self.audio_player.is_playing):
                     break
 
                 chunk = self.analyzer.get_next_chunk()
@@ -669,95 +733,100 @@ class MainWindow:
                     break
 
                 audio_data = self.analyzer.analyze_chunk(chunk)
-
-                # Saut de frame adaptatif si le rendu est trop lent
-                target_frame_time = 1.0 / max(self.fps.get(), 1)
-                if delta_time > target_frame_time * 1.5:
-                    self._frame_skip_threshold = min(3, self._frame_skip_threshold + 1)
-                elif delta_time < target_frame_time * 0.8:
-                    self._frame_skip_threshold = max(0, self._frame_skip_threshold - 1)
-
-                self._frame_skip_counter += 1
-                if self._frame_skip_counter <= self._frame_skip_threshold:
-                    self.effect_manager.current_effect.update(audio_data, delta_time)
-                    continue
-                self._frame_skip_counter = 0
-
                 self.effect_manager.current_effect.update(audio_data, delta_time)
 
-                # Rendu via render_to_array() (identique à l'export)
                 arr = self.effect_manager.current_effect.render_to_array()
                 frame = self._capture_frame(arr)
 
                 if frame is not None:
                     with self._frame_lock:
                         self._pending_frame = frame
+
+                now = time.time()
+                if now - last_ui_update > (self._ui_frame_interval / 1000.0):
+                    last_ui_update = now
                     self.root.after(0, self._update_preview_from_pending)
+
+                if now - last_timecode_update > 0.1:
+                    last_timecode_update = now
+                    elapsed = now - self._playback_start_time
+                    mins = int(elapsed // 60)
+                    secs = int(elapsed % 60)
+                    millis = int((elapsed * 1000) % 1000)
+                    self.root.after(
+                        0,
+                        lambda m=mins, s=secs, ms=millis:
+                            self._timecode_str.set(f"{m:02d}:{s:02d}.{ms:03d}")
+                    )
+
+                self._fps_counter += 1
+                elapsed = now - self._fps_last_time
+                if elapsed >= 1.0:
+                    self._fps_display = int(self._fps_counter / elapsed)
+                    self._fps_counter = 0
+                    self._fps_last_time = now
+                    self.root.after(0, self._update_fps_display)
 
                 self.preview_renderer.present()
 
-            try:
-                from ui.log_display import log_message
-                log_message(f"Playback: Boucle terminée après {iteration} itérations")
-            except:
-                pass
+            self._logs_tab.add_message(
+                f"Playback: terminé après {iteration} itérations", "INFO"
+            )
 
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda em=error_msg: self.status_var.set(f"Erreur: {em}"))
+            self.root.after(
+                0, lambda em=error_msg: self._set_status(f"Erreur: {em}")
+            )
         finally:
-            if hasattr(self, 'audio_player') and self.audio_player:
-                try:
-                    self.audio_player.cleanup()
-                except Exception:
-                    pass
-            if hasattr(self, 'analyzer') and self.analyzer:
-                self.analyzer.cleanup()
-            if hasattr(self, 'preview_renderer') and self.preview_renderer:
-                self.preview_renderer.cleanup()
-            self.is_playing.set(False)
-            self._is_playing_event.clear()
-            self.root.after(0, lambda: self.status_var.set("Lecture arrêtée"))
+            self._cleanup_playback()
+
+    def _update_fps_display(self):
+        colour = self._theme.neon_accent if self._fps_display >= 30 else self._theme.neon_warn
+        if self._fps_display < 15:
+            colour = "#ff3b3b"
+        self._fps_display_label.configure(text=f"{self._fps_display} FPS", fg=colour)
+
+    def _resize_effect(self, new_w, new_h):
+        try:
+            self.preview_renderer.width = new_w
+            self.preview_renderer.height = new_h
+            if hasattr(self.effect_manager, 'current_effect'):
+                self.effect_manager.current_effect.width = new_w
+                self.effect_manager.current_effect.height = new_h
+            self._preview_render_size = (new_w, new_h)
+        except Exception:
+            pass
 
     def _update_preview_from_pending(self):
-        """Affiche l'image dans le canvas (thread principal). Resize LANCZOS si besoin."""
         from PIL import Image, ImageTk
-
         with self._frame_lock:
             pil_img = self._pending_frame
             self._pending_frame = None
-
         if pil_img is None:
             return
-
         pw, ph = self.preview.winfo_width(), self.preview.winfo_height()
         if pw > 10 and ph > 10 and (pw, ph) != pil_img.size:
             pil_img = pil_img.resize((pw, ph), Image.LANCZOS)
         self.preview.update_image(ImageTk.PhotoImage(pil_img))
 
     def _capture_frame(self, arr):
-        """
-        Convertit un frame numpy en PIL Image (appelé depuis le thread de rendu).
-        Le redimensionnement est fait dans _update_preview_from_pending (thread principal).
-        """
         from PIL import Image
-
-        if arr is not None and len(arr.shape) == 3 and arr.shape[0] > 0 and arr.shape[1] > 0:
+        if (arr is not None and len(arr.shape) == 3
+                and arr.shape[0] > 0 and arr.shape[1] > 0):
             return Image.fromarray(arr)
         return None
 
     def _stop_playback(self):
-        """Stop playback."""
         self.is_playing.set(False)
         self._is_playing_event.clear()
-        
-        # Arrêter le lecteur audio en premier pour libérer les tubes/pipes bloqués
+
         if hasattr(self, 'audio_player') and self.audio_player:
             try:
                 self.audio_player.cleanup()
             except Exception:
                 pass
-        
+
         if self.playback_thread and self.playback_thread.is_alive():
             self.playback_thread.join(timeout=0.2)
             if self.playback_thread.is_alive():
@@ -765,308 +834,124 @@ class MainWindow:
                 try:
                     thread_id = self.playback_thread.ident
                     if thread_id:
-                        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), ctypes.py_object(SystemExit))
+                        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                            ctypes.c_long(thread_id), ctypes.py_object(SystemExit)
+                        )
                         if res == 0:
                             pass
                         elif res != 1:
-                            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), ctypes.c_long(0))
+                            ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                                ctypes.c_long(thread_id), ctypes.c_long(0)
+                            )
                 except Exception as e:
-                    print(f"Warning: Impossible d'arrêter le thread proprement: {e}")
-        
+                    print(f"Warning: thread stop failed: {e}")
+
+        self._cleanup_playback()
+        self.preview.clear()
+        self._fps_display_label.configure(text="-- FPS", fg=self._theme.fg_muted)
+        self._timecode_str.set("00:00.000")
+        self._set_status("Lecture arrêtée")
+
+    def _cleanup_playback(self):
+        if hasattr(self, 'audio_player') and self.audio_player:
+            try:
+                self.audio_player.cleanup()
+            except Exception:
+                pass
         if hasattr(self, 'analyzer') and self.analyzer:
             self.analyzer.cleanup()
         if hasattr(self, 'preview_renderer') and self.preview_renderer:
             self.preview_renderer.cleanup()
-        
-        self.preview.clear()
-        self.status_var.set("Lecture arrêtée")
+        self.is_playing.set(False)
+        self._is_playing_event.clear()
 
-    # ── Export progress drawing helpers ──────────────────────────────────────
-    @staticmethod
-    def _rgb(c):
-        return "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
-
-    @staticmethod
-    def _lerp(c0, c1, t):
-        return tuple(int(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
-
-    @staticmethod
-    def _round_rect(c, x0, y0, x1, y1, r, **kw):
-        """Draw a filled rounded rectangle on a Tkinter Canvas."""
-        r = min(r, (x1 - x0) / 2.0, (y1 - y0) / 2.0)
-        if r < 0:
-            r = 0
-        c.create_arc(x0, y0, x0 + 2 * r, y0 + 2 * r, start=90, extent=90,
-                     style='pieslice', **kw)
-        c.create_arc(x1 - 2 * r, y0, x1, y0 + 2 * r, start=0, extent=90,
-                     style='pieslice', **kw)
-        c.create_arc(x1 - 2 * r, y1 - 2 * r, x1, y1, start=270, extent=90,
-                     style='pieslice', **kw)
-        c.create_arc(x0, y1 - 2 * r, x0 + 2 * r, y1, start=180, extent=90,
-                     style='pieslice', **kw)
-        c.create_rectangle(x0 + r, y0, x1 - r, y1, **kw)
-        c.create_rectangle(x0, y0 + r, x1, y1 - r, **kw)
-
-    def _draw_export_progress(self, pct, success_color=False, error_color=False):
-        """Render the rounded progress pill on the export canvas."""
-        c = self._export_canvas
-        try:
-            c.update_idletasks()
-        except Exception:
-            return
-        w = c.winfo_width()
-        h = c.winfo_height()
-        if w <= 2 or h <= 2:
+    # ── Export ─────────────────────────────────────────────────────────
+    def _on_export_request(self, filename):
+        if self._export_in_progress:
             return
 
-        pct = max(0.0, min(100.0, pct))
-        state = (round(pct, 1), success_color, error_color)
-        if getattr(self, '_export_last_pct', None) == state:
-            return
-        self._export_last_pct = state
-
-        c.delete("all")
-        r = h / 2.0
-        # Track
-        self._round_rect(c, 1.5, 1.5, w - 1.5, h - 1.5, r - 1,
-                         fill="#14233b", outline="#24405e", width=1)
-
-        fw = (w - 3) * pct / 100.0
-        if fw > 1:
-            x0 = 1.5
-            x1 = x0 + fw
-            if error_color:
-                c0, c1 = (255, 90, 90), (255, 40, 40)
-            elif success_color:
-                c0, c1 = (57, 255, 20), (20, 200, 90)
-            else:
-                c0, c1 = (0, 229, 255), (255, 0, 127)  # cyan → pink
-
-            if fw > 2 * r:
-                left = x0 + r
-                right = max(left + 0.5, x1 - r)
-                steps = max(1, int(right - left))
-                for i in range(steps):
-                    x = left + i
-                    col = self._lerp(c0, c1, i / steps)
-                    c.create_line(x, 2, x, h - 2, fill=self._rgb(col), width=1)
-                # Rounded caps
-                c.create_arc(x0, 1.5, x0 + 2 * r, h - 1.5, start=90, extent=90,
-                             style='pieslice', fill=self._rgb(c0))
-                c.create_arc(x0, 1.5, x0 + 2 * r, h - 1.5, start=180, extent=90,
-                             style='pieslice', fill=self._rgb(c0))
-                c.create_arc(x1 - 2 * r, 1.5, x1, h - 1.5, start=0, extent=90,
-                             style='pieslice', fill=self._rgb(c1))
-                c.create_arc(x1 - 2 * r, 1.5, x1, h - 1.5, start=270, extent=90,
-                             style='pieslice', fill=self._rgb(c1))
-                # Glossy top highlight
-                c.create_line(left, 3, right, 3, fill="#cffcff", width=1)
-            else:
-                self._round_rect(c, x0, 1.5, max(x0 + 1, x1), h - 1.5, r - 1,
-                                 fill=self._rgb(c0), outline="")
-        c.update_idletasks()
-
-    def _set_popover_visible(self, visible, persist=False):
-        """Show or hide the export popover and keep the toggle button in sync."""
-        if visible:
-            if not self._export_popover.winfo_ismapped():
-                self._export_popover.place(relx=1.0, rely=1.0, anchor='se',
-                                           x=-12, y=-12)
-                self._export_popover.lift()
-            self._draw_export_progress(0)
-        else:
-            self._export_popover.place_forget()
-            self._export_last_pct = None
-        if persist:
-            self.export_popover_hidden = not visible
-            self._save_ui_preferences()
-        self._update_popover_toggle_button()
-
-    def _update_popover_toggle_button(self):
-        """Reflect the popover state on the persistent status-bar toggle."""
-        if not hasattr(self, 'btn_toggle_popover'):
-            return
-        if self._export_popover.winfo_ismapped():
-            self.btn_toggle_popover.configure(text="📊 EXPORT", fg=self.NEON_GREEN)
-        else:
-            self.btn_toggle_popover.configure(text="📊 EXPORT", fg=self.NEON_CYAN)
-
-    def _show_export_popover(self, force=False):
-        """Show the export popover, overlaid on the preview (bottom-right)."""
-        if self.export_popover_hidden and not force:
-            return
-        self._set_popover_visible(True)
-
-    def _hide_export_popover(self):
-        """Hide the export popover."""
-        self._set_popover_visible(False)
-
-    def _toggle_export_popover(self, event=None):
-        """Toggle export popover visibility and persist the preference."""
-        self._set_popover_visible(not self._export_popover.winfo_ismapped(),
-                                  persist=True)
-
-    def _export_video(self):
-        """Export video."""
-        if not self.audio_file.get():
-            messagebox.showerror("Erreur", "Veuillez sélectionner un fichier audio d'abord.")
-            return
-        
-        initial_dir = self._default_browse_dir()
-
-        filename = FileDialog.show(
-            self.root,
-            mode="save",
-            title="Enregistrer la vidéo",
-            initial_dir=initial_dir,
-            defaultextension=".mp4",
-            filetypes=[('Fichiers MP4', '*.mp4'), ('Tous les fichiers', '*.*')]
-        )
-        
-        if not filename:
-            return
-        
         width, height = self._get_resolution()
-        
-        # Set export in progress flag
         self._export_in_progress = True
-        
+
         try:
             from recorder.video_recorder import VideoRecorder
             from quality_presets import get_preset, build_ffmpeg_cmd
-            
+
             preset = get_preset(self.selected_preset.get())
-            
+
             self.recorder = VideoRecorder(
                 audio_file=self.audio_file.get(),
                 output_file=filename,
-                width=width,
-                height=height,
+                width=width, height=height,
                 fps=self.fps.get(),
                 effect_type=self._get_effect_key(),
                 color_palette=self.selected_color.get(),
-                background_image=self.background_image.get() or None
+                background_image=self.background_image.get() or None,
             )
             self.recorder._ffmpeg_cmd = build_ffmpeg_cmd(
-                width, height, self.fps.get(), 
+                width, height, self.fps.get(),
                 self.audio_file.get(), filename, self.selected_preset.get()
             )
         except Exception as e:
             messagebox.showerror("Erreur", f"Échec de la création du recorder: {str(e)}")
-            return
-        
-        # Show export popover
-        self._export_popover_label.configure(text="EXPORT EN COURS")
-        self._export_popover_pct.configure(text="0%")
-        self._export_popover_close.configure(fg="#555")
-        self._show_export_popover()
-
-        self.btn_export.config(state=tk.DISABLED, text="⏳ EXPORT...")
-        self.status_var.set(f"Export: {os.path.basename(filename)}")
-        self._led_status.configure(fg="#ffaa00")
-
-        try:
-            export_thread = threading.Thread(
-                target=self._export_loop,
-                args=(filename,),
-                daemon=True
-            )
-            export_thread.start()
-        except Exception as e:
             self._export_in_progress = False
-            raise
+            return
 
-    def _show_export_progress(self, current, total):
-        pct = (current / total) * 100 if total > 0 else 0
-        self.status_var.set(f"EXPORT {current}/{total} ({pct:.0f}%)")
-        self._export_popover_label.configure(text=f"EXPORT {current}/{total}")
-        self._draw_export_progress(pct)
-        self._export_popover_pct.configure(text=f"{pct:.0f}%")
+        self._export_tab.set_export_button_state(False)
+        self._export_tab.show_progress(0, 1)
+        self._set_status(f"Export: {os.path.basename(filename)}")
+        self._led_status.configure(fg=self._theme.neon_warn)
 
-    def _export_finished(self, basename=None, error=None):
-        self._export_in_progress = False
-        self.btn_export.config(state=tk.NORMAL, text="🎥 EXPORTER")
-        if error:
-            self._led_status.configure(fg="#ff3b3b")
-            self.status_var.set(f"ÉCHEC: {error[:60]}")
-            self._export_popover_label.configure(text="EXPORT ÉCHOUÉ")
-            self._export_popover_pct.configure(text="ERR")
-            self._draw_export_progress(100, error_color=True)
-            self._export_popover_close.configure(fg="#ff3b3b")
-            self.root.after(5000, lambda: (
-                self._hide_export_popover(),
-                self._led_status.configure(fg=self.NEON_CYAN)
-            ))
-        else:
-            self._led_status.configure(fg=self.NEON_GREEN)
-            self.status_var.set(f"✓ EXPORT TERMINÉ: {basename}")
-            self._draw_export_progress(100, success_color=True)
-            self._export_popover_label.configure(text="✓ EXPORT TERMINÉ")
-            self._export_popover_pct.configure(text="100%")
-            self.root.after(3000, lambda: (
-                self._hide_export_popover(),
-                self._led_status.configure(fg=self.NEON_CYAN),
-                self.status_var.set("PRÊT")
-            ))
+        export_thread = threading.Thread(
+            target=self._export_loop, args=(filename,), daemon=True
+        )
+        export_thread.start()
 
     def _export_loop(self, filename):
-        """Export loop."""
         try:
             self.recorder.record(
-                progress_callback=lambda c, t: self.root.after(0, lambda: self._show_export_progress(c, t))
+                progress_callback=lambda c, t: self.root.after(
+                    0, lambda: self._export_tab.show_progress(c, t)
+                )
             )
             basename = os.path.basename(filename)
             self.root.after(0, lambda bn=basename: self._export_finished(bn))
-            self.root.after(0, lambda f=filename: messagebox.showinfo("Succès", f"Vidéo exportée vers\n{f}"))
+            self.root.after(0, lambda f=filename: messagebox.showinfo(
+                "Succès", f"Vidéo exportée vers\n{f}"
+            ))
         except Exception as e:
             error_msg = str(e)
             self.root.after(0, lambda em=error_msg: self._export_finished(error=em))
-            self.root.after(0, lambda em=error_msg: messagebox.showerror("Erreur", f"Échec de l'export:\n{em}"))
+            self.root.after(0, lambda em=error_msg: messagebox.showerror(
+                "Erreur", f"Échec de l'export:\n{em}"
+            ))
 
-    @staticmethod
-    def _user_home_dir():
-        """Return a reliable user home directory, even inside an AppImage sandbox."""
-        for candidate in (os.path.expanduser("~"), os.environ.get("HOME"), os.environ.get("USERPROFILE")):
-            if candidate and os.path.isdir(candidate):
-                return candidate
-        return os.path.dirname(os.path.abspath(__file__))
+    def _export_finished(self, basename=None, error=None):
+        self._export_in_progress = False
+        self._export_tab.set_export_button_state(True)
 
-    def _default_browse_dir(self):
-        """Return the default directory for file dialogs.
+        if error:
+            self._led_status.configure(fg="#ff3b3b")
+            self._set_status(f"ÉCHEC: {error[:60]}")
+            self._export_tab.show_progress_error(error)
+            self.toast.show(f"Export échoué: {error[:40]}", 3.0, "error")
+            self.root.after(5000, lambda: (
+                self._export_tab.hide_progress(),
+                self._led_status.configure(fg=self._theme.neon_primary),
+                self._set_status("PRÊT"),
+            ))
+        else:
+            self._led_status.configure(fg=self._theme.neon_accent)
+            self._set_status(f"✓ EXPORT TERMINÉ: {basename}")
+            self._export_tab.show_progress_success(basename)
+            self.toast.show(f"✓ Export terminé: {basename}", 3.0, "success")
+            self.root.after(3000, lambda: (
+                self._export_tab.hide_progress(),
+                self._led_status.configure(fg=self._theme.neon_primary),
+                self._set_status("PRÊT"),
+            ))
 
-        When running inside an AppImage (APPDIR set), force user home.
-        Otherwise, prefer the project ``input`` folder when it exists,
-        falling back to user home.
-        """
-        if os.environ.get("APPDIR"):
-            return self._user_home_dir()
-        candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'input')
-        return candidate if os.path.isdir(candidate) else self._user_home_dir()
-
-    def _get_resolution(self):
-        """Get selected resolution."""
-        resolution = self.resolution.get()
-        resolutions = {
-            '1080p': (1920, 1080),
-            '1440p': (2560, 1440),
-            '4K': (3840, 2160)
-        }
-        return resolutions.get(resolution, (1920, 1080))
-
-    def _show_logs(self):
-        """Affiche la fenêtre des logs."""
-        try:
-            from ui.log_display import show_log_window
-            log_root = tk.Toplevel(self.root)
-            log_root.title("Logs - Visualisateur Psychédélique")
-            show_log_window(log_root)
-        except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible d'afficher les logs: {e}")
-    
+    # ── Run ────────────────────────────────────────────────────────────
     def run(self):
-        """Run the main loop."""
+        self._animate_led()
         self.root.mainloop()
-
-
-# Import PreviewFrame
-from ui.preview import PreviewFrame

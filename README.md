@@ -13,6 +13,12 @@
 - **Additional effects**: Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel, Particles, Wave, Spectrum
 - **5 color palettes**: Psychedelic, Retro, Winamp Classic, Dark, Rainbow
 - **Tkinter GUI** with real-time preview, effect/palette controls, background image selection, and export settings
+- **Tabbed sidebar interface** : File, Effects, Background, Export, and Logs tabs for an organized, ergonomic workflow
+- **4 selectable themes** : Cyberpunk, Synthwave, Matrix, Tokyo Night (persisted between sessions)
+- **Live preview HUD** : FPS counter, playback timecode, and animated neon border
+- **Toast notifications** for playback, export, and theme changes
+- **Click-to-select** : click the empty preview to open the file picker
+- **Keyboard shortcuts** : Space/Ctrl+P play, Ctrl+S/Esc stop, Ctrl+E export
 - **MP4 video export** (H.264 + AAC) : 720p, 1080p, 1440p, 4K
 - **Standalone AppImage** : zero system dependencies, works on any Linux distro
 - **Pygame fullscreen mode** with drag-and-drop (fallback when tkinter is unavailable)

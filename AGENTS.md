@@ -131,25 +131,29 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtCol
 
 ### MainWindow (`ui/main_window.py`)
 
-- Fenêtre Tkinter avec :
-  - Sélection fichier audio (parcours ou glisser-déposer)
-  - Menu déroulant résolution + présélection qualité
-  - Effet et palette exposés dans la GUI — valeur par défaut : `Trance Scope` + `psychedelic`
-  - Bouton image de fond : l'image est appliquée immédiatement à la preview et exportée dans le MP4
-  - Boutons Lecture, Stop, Exporter
-  - Aperçu vidéo temps réel (Label Tkinter avec PhotoImage)
-  - Logs en bas (redirige stderr via `LogDisplay`)
-  - Barre de progression export : track teal `#0a2a33` + fill `NEON_CYAN`, 5px, dans `status_frame` via `_show_export_progress()` / `_export_finished()`
-  - Curseur `OPACITÉ FOND` (Scale 0–100%) avec affichage en temps réel, impact immédiat sur preview et export
-  - Bouton `✕ RETIRER LE FOND` qui vide l'image de fond
-  - Footer : `self._footer_copyright` ("© 2026 Timothée Grollier"), `self._footer_linkedin` ("in", LinkedIn), `self._footer_website` ("www", site perso) — tous dans un `footer` Frame collé en bas
-- La boucle de lecture utilise `render_to_array()` via `HeadlessRenderer`
+- Fenêtre Tkinter avec architecture à onglets (`TabPanel` + `ui/tabs/`) :
+  - **Onglet Fichier** (`FileTab`) : sélection fichier audio (parcours), infos fichier (taille, durée)
+  - **Onglet Effets** (`EffectsTab`) : effet + palette avec description dynamique
+  - **Onglet Fond** (`BackgroundTab`) : image de fond + curseur opacité temps réel
+  - **Onglet Export** (`ExportTab`) : résolution, FPS, présélection, bouton export + barre progression intégrée
+  - **Onglet Logs** (`LogsTab`) : logs colorés intégrés
+- Boutons Lecture/Stop + curseur volume sous les onglets
+- **4 thèmes** (`ui/theme.py`) : Cyberpunk, Synthwave, Matrix, Tokyo Night — sélecteur dans le header, persisté dans `~/.visualize_config.json`
+- **Toasts** (`ui/toast.py`) : notifications overlay pour lecture/export/thème
+- **HUD preview** : compteur FPS, timecode `00:00.000`, bordure néon animée
+- **LED pulsante** dans la status bar pendant la lecture
+- **Raccourcis** : Space/Ctrl+P (play), Ctrl+S/Esc (stop), Ctrl+E (export)
+- **Clic sur preview vide** → ouvre le dialog de sélection de fichier
+- Footer : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`
+- La boucle de lecture utilise `render_to_array()` via `HeadlessRenderer` (ou `ArrayRenderer` fallback)
 - L'aperçu est redimensionné avec `LANCZOS` quand la fenêtre change de taille
 - Effet recréé dynamiquement si la taille de fenêtre change
 
 ### PreviewFrame (`ui/preview.py`)
 
-- Bind `<Configure>` pour resize dynamique
+- `tk.Canvas` avec `update_image()` (PhotoImage) et `clear()`
+- Bind `<Configure>` pour recentrer l'image
+- Bind `<Button-1>` : si vide, déclenche `on_click_empty` callback (ouvre le dialog fichier)
 - Plus de dimensions fixes — utilise `winfo_width()` / `winfo_height()`
 
 ---
