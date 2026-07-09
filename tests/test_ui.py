@@ -68,7 +68,7 @@ class TestFooterLabels(unittest.TestCase):
     def test_footer_self_reference(self):
         app = self._create_app()
         self.assertTrue(hasattr(app, '_footer'), "Footer frame should exist")
-        self.assertEqual(app._footer.cget("height"), 24)
+        self.assertEqual(app._footer.cget("height"), 36)
 
 
 @unittest.skipUnless(_has_display(), "No display server available")
@@ -194,6 +194,11 @@ class TestExportPopover(unittest.TestCase):
 
     def test_popover_hidden_state_default(self):
         """Export popover should be visible by default."""
+        # Reset preferences to ensure clean state
+        import os
+        config_path = os.path.expanduser("~/.visualize_config.json")
+        if os.path.exists(config_path):
+            os.remove(config_path)
         app = self._create_app()
         self.assertFalse(app.export_popover_hidden,
                          "Export popover should be visible by default")

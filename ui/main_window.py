@@ -352,24 +352,24 @@ class MainWindow:
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
         # ── Footer: copyright + social links ──
-        self._footer = tk.Frame(self.root, bg="#0a0a12", height=24)
+        self._footer = tk.Frame(self.root, bg="#0a0a12", height=36)
         self._footer.pack(side=tk.BOTTOM, fill=tk.X)
         self._footer.pack_propagate(False)
 
         self._footer_copyright = tk.Label(self._footer, text="© 2026 Timothée Grollier",
-                 font=('Helvetica', 7), fg="#8a8aaa", bg="#0a0a12",
+                 font=('Helvetica', 8), fg="#8a8aaa", bg="#0a0a12",
                  anchor=tk.W)
-        self._footer_copyright.pack(side=tk.LEFT, padx=10)
+        self._footer_copyright.pack(side=tk.LEFT, padx=12, pady=6)
 
         # Social icons – loaded from professional assets
         assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
-        self._icon_linkedin = self._load_icon(os.path.join(assets_dir, "linkedin.png"), 28)
-        self._icon_linkedin_hover = self._load_icon(os.path.join(assets_dir, "linkedin_hover.png"), 28)
-        self._icon_website = self._load_icon(os.path.join(assets_dir, "website.png"), 28)
-        self._icon_website_hover = self._load_icon(os.path.join(assets_dir, "website_hover.png"), 28)
+        self._icon_linkedin = self._load_icon(os.path.join(assets_dir, "linkedin.png"), 24)
+        self._icon_linkedin_hover = self._load_icon(os.path.join(assets_dir, "linkedin_hover.png"), 24)
+        self._icon_website = self._load_icon(os.path.join(assets_dir, "website.png"), 24)
+        self._icon_website_hover = self._load_icon(os.path.join(assets_dir, "website_hover.png"), 24)
 
         social = tk.Frame(self._footer, bg="#0a0a12")
-        social.pack(side=tk.RIGHT, padx=(10, 15))
+        social.pack(side=tk.RIGHT, padx=(12, 16), pady=4)
 
         self._footer_linkedin = tk.Label(social, image=self._icon_linkedin,
                         bg="#0a0a12", cursor="hand2")
