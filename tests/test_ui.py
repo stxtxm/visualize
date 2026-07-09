@@ -68,7 +68,7 @@ class TestFooterLabels(unittest.TestCase):
     def test_footer_self_reference(self):
         app = self._create_app()
         self.assertTrue(hasattr(app, '_footer'), "Footer frame should exist")
-        self.assertEqual(app._footer.cget("height"), 36)
+        self.assertEqual(app._footer.cget("height"), 40)
 
 
 @unittest.skipUnless(_has_display(), "No display server available")
