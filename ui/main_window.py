@@ -62,6 +62,7 @@ class MainWindow:
         # Export popover visibility state (persists between exports)
         self.export_popover_hidden = False
         self._export_in_progress = False
+        self._export_last_pct = None
         self._load_ui_preferences()
 
         self._setup_ui()
@@ -283,54 +284,54 @@ class MainWindow:
         self.preview.pack(fill=tk.BOTH, expand=True)
         
         # ── Export progress popover (overlaid on preview, bottom-right) ──
+        # Parented to preview_border (a real Frame) so the overlay is reliably shown.
         self._export_popover = tk.Frame(
-            self.preview, bg="#0a0a12", bd=0,
-            highlightthickness=1, highlightbackground=self.NEON_CYAN
+            preview_border, bg="#0c0c16", bd=0,
+            highlightthickness=1, highlightbackground="#1f6f7a",
+            padx=14, pady=10,
         )
-        # Inner container with padding
-        self._export_popover_inner = tk.Frame(self._export_popover, bg="#0a0a12")
-        self._export_popover_inner.pack(fill=tk.BOTH, padx=10, pady=6)
-        # Header row: icon + label
-        popover_header = tk.Frame(self._export_popover_inner, bg="#0a0a12")
-        popover_header.pack(fill=tk.X, pady=(0, 4))
-        self._export_popover_icon = tk.Label(popover_header, text="🎥", font=('Helvetica', 8),
-                                             bg="#0a0a12", fg=self.FG_LIGHT)
-        self._export_popover_icon.pack(side=tk.LEFT, padx=(0, 6))
+        # Inner container
+        self._export_popover_inner = tk.Frame(self._export_popover, bg="#0c0c16")
+        self._export_popover_inner.pack(fill=tk.BOTH)
+
+        # Header row: icon + label + hide (eye) + close (✕)
+        popover_header = tk.Frame(self._export_popover_inner, bg="#0c0c16")
+        popover_header.pack(fill=tk.X, pady=(0, 10))
+        self._export_popover_icon = tk.Label(popover_header, text="⬢", font=('Helvetica', 12),
+                                             bg="#0c0c16", fg=self.NEON_CYAN)
+        self._export_popover_icon.pack(side=tk.LEFT, padx=(0, 8))
         self._export_popover_label = tk.Label(popover_header, text="EXPORT",
-                                              font=('Helvetica', 8, 'bold'),
-                                              bg="#0a0a12", fg=self.NEON_CYAN)
+                                              font=('Helvetica', 9, 'bold'),
+                                              bg="#0c0c16", fg=self.NEON_CYAN)
         self._export_popover_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # Hide toggle button (eye icon)
+
         self._export_popover_hide = tk.Label(popover_header, text="👁",
-                                              font=('Helvetica', 8, 'bold'),
-                                              bg="#0a0a12", fg=self.FG_MUTED,
-                                              cursor="hand2")
-        self._export_popover_hide.pack(side=tk.RIGHT, padx=(0, 6))
+                                             font=('Helvetica', 10, 'bold'),
+                                             bg="#0c0c16", fg=self.FG_MUTED,
+                                             cursor="hand2")
+        self._export_popover_hide.pack(side=tk.RIGHT, padx=(0, 10))
         self._export_popover_hide.bind("<Button-1>", lambda e: self._toggle_export_popover())
         self._export_popover_hide.bind("<Enter>", lambda e: self._export_popover_hide.configure(fg=self.NEON_CYAN))
         self._export_popover_hide.bind("<Leave>", lambda e: self._export_popover_hide.configure(fg=self.FG_MUTED))
-        
-        # Close button
+
         self._export_popover_close = tk.Label(popover_header, text="✕",
-                                               font=('Helvetica', 8, 'bold'),
-                                               bg="#0a0a12", fg="#555",
-                                               cursor="hand2")
-        self._export_popover_close.pack(side=tk.RIGHT, padx=(6, 0))
+                                              font=('Helvetica', 10, 'bold'),
+                                              bg="#0c0c16", fg="#555",
+                                              cursor="hand2")
+        self._export_popover_close.pack(side=tk.RIGHT)
         self._export_popover_close.bind("<Button-1>", lambda e: self._hide_export_popover())
         self._export_popover_close.bind("<Enter>", lambda e: self._export_popover_close.configure(fg="#ff3b3b"))
         self._export_popover_close.bind("<Leave>", lambda e: self._export_popover_close.configure(fg="#555"))
-        # Progress bar row
-        progress_row = tk.Frame(self._export_popover_inner, bg="#0a0a12")
-        progress_row.pack(fill=tk.X)
-        self._export_popover_track = tk.Frame(progress_row, bg="#1a1a2e", height=4, bd=0)
-        self._export_popover_track.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        self._export_popover_fill = tk.Frame(self._export_popover_track, bg=self.NEON_CYAN, height=4, bd=0)
-        self._export_popover_fill.place(x=0, y=0, width=0, relheight=1.0)
-        self._export_popover_pct = tk.Label(progress_row, text="0%",
-                                            font=('Courier', 8, 'bold'),
-                                            bg="#0a0a12", fg=self.NEON_CYAN, width=4, anchor=tk.E)
-        self._export_popover_pct.pack(side=tk.RIGHT)
+
+        # Progress bar drawn on a Canvas (rounded pill, gradient fill, glowing head)
+        self._export_canvas = tk.Canvas(self._export_popover_inner, height=14,
+                                        bg="#0c0c16", bd=0, highlightthickness=0, width=240)
+        self._export_canvas.pack(fill=tk.X)
+        self._export_popover_pct = tk.Label(self._export_popover_inner, text="0%",
+                                            font=('Courier', 9, 'bold'),
+                                            bg="#0c0c16", fg=self.NEON_CYAN,
+                                            anchor=tk.E)
+        self._export_popover_pct.pack(fill=tk.X, pady=(8, 0))
 
         # Status Bar
         self.status_var = tk.StringVar(value="PRÊT")
@@ -350,47 +351,60 @@ class MainWindow:
         
         status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        # Persistent toggle to show/hide the export progress popover.
+        # This control always stays visible in the status bar, so the
+        # popover can be re-shown even after it has been hidden.
+        self.btn_toggle_popover = tk.Button(status_frame, text="📊 EXPORT",
+            command=self._toggle_export_popover,
+            bg="#1a1a2e", fg=self.NEON_CYAN,
+            activebackground="#2a2a4e", activeforeground=self.NEON_CYAN,
+            bd=0, padx=8, pady=0, font=('Helvetica', 8, 'bold'), cursor="hand2")
+        self.btn_toggle_popover.pack(side=tk.RIGHT, padx=(6, 0))
+        add_hover(self.btn_toggle_popover, "#2a2a4e", "#1a1a2e")
         
-        # ── Footer: copyright + social links ──
-        self._footer = tk.Frame(self.root, bg="#0a0a12", height=40)
+        # ── Footer: copyright (left) + social links (right) ──
+        self._footer = tk.Frame(self.root, bg="#0a0a12", height=46)
         self._footer.pack(side=tk.BOTTOM, fill=tk.X)
         self._footer.pack_propagate(False)
 
-        # Right side container: copyright + social icons
-        footer_right = tk.Frame(self._footer, bg="#0a0a12")
-        footer_right.pack(side=tk.RIGHT, padx=16, pady=4)
+        # Thin neon divider separating the footer from the app body
+        footer_divider = tk.Frame(self._footer, bg="#1c1c30", height=1, bd=0)
+        footer_divider.pack(side=tk.TOP, fill=tk.X)
 
-        # Copyright label on the right side
-        self._footer_copyright = tk.Label(footer_right, text="© 2026 Timothée Grollier",
-                 font=('Helvetica', 8), fg="#8a8aaa", bg="#0a0a12",
-                 anchor=tk.W)
-        self._footer_copyright.pack(side=tk.LEFT, padx=(0, 12))
+        # Copyright label, vertically centered on the left
+        self._footer_copyright = tk.Label(self._footer, text="© 2026 Timothée Grollier",
+                 font=('Helvetica', 8, 'bold'), fg="#9a9acb", bg="#0a0a12",
+                 anchor=tk.W, padx=16)
+        self._footer_copyright.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Social icons – loaded from professional assets (30x30)
+        # Social icons – loaded from brand-styled assets (38x38 chips)
         assets_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
-        self._icon_linkedin = self._load_icon(os.path.join(assets_dir, "linkedin.png"), 30)
-        self._icon_linkedin_hover = self._load_icon(os.path.join(assets_dir, "linkedin_hover.png"), 30)
-        self._icon_website = self._load_icon(os.path.join(assets_dir, "website.png"), 30)
-        self._icon_website_hover = self._load_icon(os.path.join(assets_dir, "website_hover.png"), 30)
+        icon_size = 38
+        self._icon_linkedin = self._load_icon(os.path.join(assets_dir, "linkedin.png"), icon_size)
+        self._icon_linkedin_hover = self._load_icon(os.path.join(assets_dir, "linkedin_hover.png"), icon_size)
+        self._icon_website = self._load_icon(os.path.join(assets_dir, "website.png"), icon_size)
+        self._icon_website_hover = self._load_icon(os.path.join(assets_dir, "website_hover.png"), icon_size)
 
-        social = tk.Frame(footer_right, bg="#0a0a12")
-        social.pack(side=tk.LEFT, padx=(0, 0))
+        social = tk.Frame(self._footer, bg="#0a0a12")
+        social.pack(side=tk.RIGHT, padx=12, pady=0, fill=tk.Y)
 
-        self._footer_linkedin = tk.Label(social, image=self._icon_linkedin,
-                        bg="#0a0a12", cursor="hand2")
-        self._footer_linkedin.pack(side=tk.LEFT, padx=(0, 8))
-        self._footer_linkedin.bind("<Button-1>", lambda e: webbrowser.open(
-            "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev"))
-        self._footer_linkedin.bind("<Enter>", lambda e: self._footer_linkedin.configure(image=self._icon_linkedin_hover))
-        self._footer_linkedin.bind("<Leave>", lambda e: self._footer_linkedin.configure(image=self._icon_linkedin))
+        def _make_social(parent, icon, icon_hover, url, tooltip):
+            lbl = tk.Label(parent, image=icon, bg="#0a0a12", cursor="hand2", padx=5)
+            lbl.pack(side=tk.LEFT)
+            lbl.bind("<Button-1>", lambda e: webbrowser.open(url))
+            lbl.bind("<Enter>", lambda e: (lbl.configure(image=icon_hover),
+                                           lbl.configure(bg="#14142a")))
+            lbl.bind("<Leave>", lambda e: (lbl.configure(image=icon),
+                                           lbl.configure(bg="#0a0a12")))
+            return lbl
 
-        self._footer_website = tk.Label(social, image=self._icon_website,
-                        bg="#0a0a12", cursor="hand2")
-        self._footer_website.pack(side=tk.LEFT)
-        self._footer_website.bind("<Button-1>", lambda e: webbrowser.open(
-            "https://timotheegrollier.github.io/"))
-        self._footer_website.bind("<Enter>", lambda e: self._footer_website.configure(image=self._icon_website_hover))
-        self._footer_website.bind("<Leave>", lambda e: self._footer_website.configure(image=self._icon_website))
+        self._footer_linkedin = _make_social(
+            social, self._icon_linkedin, self._icon_linkedin_hover,
+            "https://fr.linkedin.com/in/timoth%C3%A9e-grollier-dev", "LinkedIn")
+        self._footer_website = _make_social(
+            social, self._icon_website, self._icon_website_hover,
+            "https://timotheegrollier.github.io/", "Site web")
 
         # Keyboard shortcuts
         self.root.bind("<Control-h>", self._toggle_export_popover)
@@ -767,25 +781,130 @@ class MainWindow:
         self.preview.clear()
         self.status_var.set("Lecture arrêtée")
 
-    def _show_export_popover(self):
-        """Place the export popover at bottom-right of the preview canvas."""
-        if self.export_popover_hidden:
+    # ── Export progress drawing helpers ──────────────────────────────────────
+    @staticmethod
+    def _rgb(c):
+        return "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
+
+    @staticmethod
+    def _lerp(c0, c1, t):
+        return tuple(int(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
+
+    @staticmethod
+    def _round_rect(c, x0, y0, x1, y1, r, **kw):
+        """Draw a filled rounded rectangle on a Tkinter Canvas."""
+        r = min(r, (x1 - x0) / 2.0, (y1 - y0) / 2.0)
+        if r < 0:
+            r = 0
+        c.create_arc(x0, y0, x0 + 2 * r, y0 + 2 * r, start=90, extent=90,
+                     style='pieslice', **kw)
+        c.create_arc(x1 - 2 * r, y0, x1, y0 + 2 * r, start=0, extent=90,
+                     style='pieslice', **kw)
+        c.create_arc(x1 - 2 * r, y1 - 2 * r, x1, y1, start=270, extent=90,
+                     style='pieslice', **kw)
+        c.create_arc(x0, y1 - 2 * r, x0 + 2 * r, y1, start=180, extent=90,
+                     style='pieslice', **kw)
+        c.create_rectangle(x0 + r, y0, x1 - r, y1, **kw)
+        c.create_rectangle(x0, y0 + r, x1, y1 - r, **kw)
+
+    def _draw_export_progress(self, pct, success_color=False, error_color=False):
+        """Render the rounded progress pill on the export canvas."""
+        c = self._export_canvas
+        try:
+            c.update_idletasks()
+        except Exception:
             return
-        self._export_popover.pack(side=tk.BOTTOM, anchor=tk.SE, padx=6, pady=6)
+        w = c.winfo_width()
+        h = c.winfo_height()
+        if w <= 2 or h <= 2:
+            return
+
+        pct = max(0.0, min(100.0, pct))
+        state = (round(pct, 1), success_color, error_color)
+        if getattr(self, '_export_last_pct', None) == state:
+            return
+        self._export_last_pct = state
+
+        c.delete("all")
+        r = h / 2.0
+        # Track
+        self._round_rect(c, 1.5, 1.5, w - 1.5, h - 1.5, r - 1,
+                         fill="#14233b", outline="#24405e", width=1)
+
+        fw = (w - 3) * pct / 100.0
+        if fw > 1:
+            x0 = 1.5
+            x1 = x0 + fw
+            if error_color:
+                c0, c1 = (255, 90, 90), (255, 40, 40)
+            elif success_color:
+                c0, c1 = (57, 255, 20), (20, 200, 90)
+            else:
+                c0, c1 = (0, 229, 255), (255, 0, 127)  # cyan → pink
+
+            if fw > 2 * r:
+                left = x0 + r
+                right = max(left + 0.5, x1 - r)
+                steps = max(1, int(right - left))
+                for i in range(steps):
+                    x = left + i
+                    col = self._lerp(c0, c1, i / steps)
+                    c.create_line(x, 2, x, h - 2, fill=self._rgb(col), width=1)
+                # Rounded caps
+                c.create_arc(x0, 1.5, x0 + 2 * r, h - 1.5, start=90, extent=90,
+                             style='pieslice', fill=self._rgb(c0))
+                c.create_arc(x0, 1.5, x0 + 2 * r, h - 1.5, start=180, extent=90,
+                             style='pieslice', fill=self._rgb(c0))
+                c.create_arc(x1 - 2 * r, 1.5, x1, h - 1.5, start=0, extent=90,
+                             style='pieslice', fill=self._rgb(c1))
+                c.create_arc(x1 - 2 * r, 1.5, x1, h - 1.5, start=270, extent=90,
+                             style='pieslice', fill=self._rgb(c1))
+                # Glossy top highlight
+                c.create_line(left, 3, right, 3, fill="#cffcff", width=1)
+            else:
+                self._round_rect(c, x0, 1.5, max(x0 + 1, x1), h - 1.5, r - 1,
+                                 fill=self._rgb(c0), outline="")
+        c.update_idletasks()
+
+    def _set_popover_visible(self, visible, persist=False):
+        """Show or hide the export popover and keep the toggle button in sync."""
+        if visible:
+            if not self._export_popover.winfo_ismapped():
+                self._export_popover.place(relx=1.0, rely=1.0, anchor='se',
+                                           x=-12, y=-12)
+                self._export_popover.lift()
+            self._draw_export_progress(0)
+        else:
+            self._export_popover.place_forget()
+            self._export_last_pct = None
+        if persist:
+            self.export_popover_hidden = not visible
+            self._save_ui_preferences()
+        self._update_popover_toggle_button()
+
+    def _update_popover_toggle_button(self):
+        """Reflect the popover state on the persistent status-bar toggle."""
+        if not hasattr(self, 'btn_toggle_popover'):
+            return
+        if self._export_popover.winfo_ismapped():
+            self.btn_toggle_popover.configure(text="📊 EXPORT", fg=self.NEON_GREEN)
+        else:
+            self.btn_toggle_popover.configure(text="📊 EXPORT", fg=self.NEON_CYAN)
+
+    def _show_export_popover(self, force=False):
+        """Show the export popover, overlaid on the preview (bottom-right)."""
+        if self.export_popover_hidden and not force:
+            return
+        self._set_popover_visible(True)
 
     def _hide_export_popover(self):
         """Hide the export popover."""
-        self._export_popover.pack_forget()
+        self._set_popover_visible(False)
 
     def _toggle_export_popover(self, event=None):
-        """Toggle export popover visibility and save preference."""
-        self.export_popover_hidden = not self.export_popover_hidden
-        self._save_ui_preferences()
-        if self.export_popover_hidden:
-            self._hide_export_popover()
-        else:
-            if self._export_in_progress:
-                self._show_export_popover()
+        """Toggle export popover visibility and persist the preference."""
+        self._set_popover_visible(not self._export_popover.winfo_ismapped(),
+                                  persist=True)
 
     def _export_video(self):
         """Export video."""
@@ -839,7 +958,6 @@ class MainWindow:
         # Show export popover
         self._export_popover_label.configure(text="EXPORT EN COURS")
         self._export_popover_pct.configure(text="0%")
-        self._export_popover_fill.place(x=0, y=0, width=0, relheight=1.0)
         self._export_popover_close.configure(fg="#555")
         self._show_export_popover()
 
@@ -862,9 +980,7 @@ class MainWindow:
         pct = (current / total) * 100 if total > 0 else 0
         self.status_var.set(f"EXPORT {current}/{total} ({pct:.0f}%)")
         self._export_popover_label.configure(text=f"EXPORT {current}/{total}")
-        w = self._export_popover_track.winfo_width()
-        if w > 0:
-            self._export_popover_fill.place(x=0, y=0, width=max(1, int(w * pct / 100)), relheight=1.0)
+        self._draw_export_progress(pct)
         self._export_popover_pct.configure(text=f"{pct:.0f}%")
 
     def _export_finished(self, basename=None, error=None):
@@ -875,6 +991,7 @@ class MainWindow:
             self.status_var.set(f"ÉCHEC: {error[:60]}")
             self._export_popover_label.configure(text="EXPORT ÉCHOUÉ")
             self._export_popover_pct.configure(text="ERR")
+            self._draw_export_progress(100, error_color=True)
             self._export_popover_close.configure(fg="#ff3b3b")
             self.root.after(5000, lambda: (
                 self._hide_export_popover(),
@@ -883,9 +1000,7 @@ class MainWindow:
         else:
             self._led_status.configure(fg=self.NEON_GREEN)
             self.status_var.set(f"✓ EXPORT TERMINÉ: {basename}")
-            w = self._export_popover_track.winfo_width()
-            if w > 0:
-                self._export_popover_fill.place(x=0, y=0, width=w, relheight=1.0)
+            self._draw_export_progress(100, success_color=True)
             self._export_popover_label.configure(text="✓ EXPORT TERMINÉ")
             self._export_popover_pct.configure(text="100%")
             self.root.after(3000, lambda: (

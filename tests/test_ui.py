@@ -37,7 +37,7 @@ class TestFooterLabels(unittest.TestCase):
         self.assertIsNotNone(label)
         self.assertIn("Timothée Grollier", label.cget("text"))
         self.assertIn("2026", label.cget("text"))
-        self.assertEqual(label.cget("fg").lower(), "#8a8aaa")
+        self.assertEqual(label.cget("fg").lower(), "#9a9acb")
 
     def test_linkedin_label_exists(self):
         app = self._create_app()
@@ -68,7 +68,7 @@ class TestFooterLabels(unittest.TestCase):
     def test_footer_self_reference(self):
         app = self._create_app()
         self.assertTrue(hasattr(app, '_footer'), "Footer frame should exist")
-        self.assertEqual(app._footer.cget("height"), 40)
+        self.assertEqual(app._footer.cget("height"), 46)
 
 
 @unittest.skipUnless(_has_display(), "No display server available")
@@ -140,20 +140,21 @@ class TestExportPopover(unittest.TestCase):
                         "Export popover close button should exist")
         self.assertEqual(app._export_popover_close.cget("cursor"), "hand2")
 
-    def test_popover_track_exists(self):
+    def test_popover_canvas_exists(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_popover_track'),
-                        "Export popover progress track should exist")
-        self.assertEqual(app._export_popover_track.cget("height"), 4,
-                         "Track height should be 4px")
+        self.assertTrue(hasattr(app, '_export_canvas'),
+                        "Export popover progress canvas should exist")
+        self.assertEqual(int(app._export_canvas.cget("height")), 14,
+                         "Canvas height should be 14px")
 
-    def test_popover_fill_exists(self):
+    def test_popover_draw_method_exists(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_popover_fill'),
-                        "Export popover progress fill should exist")
-        self.assertEqual(app._export_popover_fill.cget("height"), 4,
-                         "Fill height should be 4px")
-        self.assertEqual(app._export_popover_fill.cget("bg").lower(), app.NEON_CYAN.lower())
+        self.assertTrue(hasattr(app, '_draw_export_progress'),
+                        "Export popover should have a draw method")
+        # Should not raise even before the widget is laid out
+        app._draw_export_progress(50)
+        app._draw_export_progress(100, success_color=True)
+        app._draw_export_progress(100, error_color=True)
 
     def test_popover_pct_label(self):
         app = self._create_app()
@@ -184,6 +185,21 @@ class TestExportPopover(unittest.TestCase):
                         "Export popover hide button should exist")
         self.assertEqual(app._export_popover_hide.cget("cursor"), "hand2")
 
+    def test_persistent_toggle_button_exists(self):
+        """A persistent status-bar button must always allow re-showing the popover."""
+        app = self._create_app()
+        self.assertTrue(hasattr(app, 'btn_toggle_popover'),
+                        "Persistent popover toggle button should exist")
+        self.assertEqual(app.btn_toggle_popover.cget("cursor"), "hand2")
+        # It must be able to re-show the popover even after it was hidden.
+        app._set_popover_visible(False)
+        self.assertEqual(app._export_popover.place_info(), {},
+                         "Popover should be unmanaged (hidden) after hide")
+        app._toggle_export_popover()
+        # After toggling from hidden, the popover is managed again (re-shown).
+        self.assertNotEqual(app._export_popover.place_info(), {},
+                            "Popover should be re-shown by the persistent toggle")
+
     def test_popover_toggle_method_exists(self):
         """Toggle method for export popover should exist."""
         app = self._create_app()
@@ -209,6 +225,51 @@ class TestExportPopover(unittest.TestCase):
         # Even with missing files, icons should exist due to fallback
         self.assertIsNotNone(app._icon_linkedin)
         self.assertIsNotNone(app._icon_website)
+
+
+@unittest.skipUnless(_has_display(), "No display server available")
+class TestSocialIconVisibility(unittest.TestCase):
+    """Verify the footer social icons are legible (high contrast on dark bg)."""
+
+    FOOTER_BG = (10, 10, 18)  # #0a0a12
+
+    def setUp(self):
+        import tkinter as tk
+        self.root = tk.Tk()
+        self.root.withdraw()
+
+    def tearDown(self):
+        self.root.destroy()
+
+    def _assets_dir(self):
+        import os
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base, "assets")
+
+    def _icon_stats(self, name):
+        from PIL import Image
+        import os
+        path = os.path.join(self._assets_dir(), name)
+        self.assertTrue(os.path.exists(path), f"Missing icon asset: {name}")
+        im = Image.open(path).convert("RGBA")
+        px = [p for p in im.getdata() if p[3] > 200]
+        self.assertGreater(len(px), 500, f"{name} looks empty")
+        avg = tuple(sum(c[i] for c in px) // len(px) for i in range(3))
+        dist = sum((avg[i] - self.FOOTER_BG[i]) ** 2 for i in range(3)) ** 0.5
+        return avg, dist
+
+    def test_linkedin_icon_visible(self):
+        avg, dist = self._icon_stats("linkedin.png")
+        self.assertGreater(dist, 60, "LinkedIn icon too close to footer bg (unreadable)")
+
+    def test_website_icon_visible(self):
+        avg, dist = self._icon_stats("website.png")
+        self.assertGreater(dist, 60, "Website icon too close to footer bg (unreadable)")
+
+    def test_hover_icons_visible(self):
+        for name in ("linkedin_hover.png", "website_hover.png"):
+            avg, dist = self._icon_stats(name)
+            self.assertGreater(dist, 60, f"{name} too close to footer bg (unreadable)")
 
 
 if __name__ == '__main__':
