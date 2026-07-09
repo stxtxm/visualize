@@ -61,6 +61,73 @@ class MainWindow:
         
         self._setup_ui()
 
+    def _render_linkedin_icon(self, size=28):
+        """Draw a professional LinkedIn 'in' icon on a circular badge."""
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        cx, cy = size // 2, size // 2
+        r = size // 2 - 1
+        # Circle background
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="#0a66c2")
+        # White "in" text – smaller, crisp
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold", 10)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+        _, _, tw, th = draw.textbbox((0, 0), "in", font=font)
+        draw.text((cx - tw / 2, cy - th / 2 - 0.5), "in", fill="white", font=font)
+        return ImageTk.PhotoImage(img)
+
+    def _render_linkedin_icon_hover(self, size=28):
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        cx, cy = size // 2, size // 2
+        r = size // 2 - 1
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="#0c8ce6")
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold", 10)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+        _, _, tw, th = draw.textbbox((0, 0), "in", font=font)
+        draw.text((cx - tw / 2, cy - th / 2 - 0.5), "in", fill="white", font=font)
+        return ImageTk.PhotoImage(img)
+
+    def _render_website_icon(self, size=28):
+        """Draw a minimal globe icon for the website."""
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        cx, cy = size // 2, size // 2
+        r = size // 2 - 2
+        # Dark circle
+        draw.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill="#2a2a3e")
+        # Globe: outer circle
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=self.NEON_CYAN, width=1)
+        # Lat/long lines
+        # Horizontal
+        draw.arc((cx - r, cy - r, cx + r, cy + r), -30, 30, fill=self.NEON_CYAN, width=1)
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 150, 210, fill=self.NEON_CYAN, width=1)
+        # Vertical
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 60, 120, fill=self.NEON_CYAN, width=1)
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 240, 300, fill=self.NEON_CYAN, width=1)
+        return ImageTk.PhotoImage(img)
+
+    def _render_website_icon_hover(self, size=28):
+        """Globe icon with brighter color on hover."""
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        cx, cy = size // 2, size // 2
+        r = size // 2 - 2
+        # Dark circle
+        draw.ellipse((cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1), fill="#3a3a5e")
+        # Globe: outer circle
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline="#00ffff", width=1)
+        # Lat/long lines
+        draw.arc((cx - r, cy - r, cx + r, cy + r), -30, 30, fill="#00ffff", width=1)
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 150, 210, fill="#00ffff", width=1)
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 60, 120, fill="#00ffff", width=1)
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 240, 300, fill="#00ffff", width=1)
+        return ImageTk.PhotoImage(img)
+
     def _setup_ui(self):
         """Set up a modernized cyberpunk side-by-side UI."""
         # Couleurs du thème cyberpunk / Winamp modernisé
@@ -236,6 +303,45 @@ class MainWindow:
         self.preview = PreviewFrame(preview_border, bd=0, highlightthickness=0)
         self.preview.pack(fill=tk.BOTH, expand=True)
         
+        # ── Export progress popover (overlaid on preview, bottom-right) ──
+        self._export_popover = tk.Frame(
+            self.preview, bg="#0a0a12", bd=0,
+            highlightthickness=1, highlightbackground=self.NEON_CYAN
+        )
+        # Inner container with padding
+        self._export_popover_inner = tk.Frame(self._export_popover, bg="#0a0a12")
+        self._export_popover_inner.pack(fill=tk.BOTH, padx=10, pady=6)
+        # Header row: icon + label
+        popover_header = tk.Frame(self._export_popover_inner, bg="#0a0a12")
+        popover_header.pack(fill=tk.X, pady=(0, 4))
+        self._export_popover_icon = tk.Label(popover_header, text="🎥", font=('Helvetica', 8),
+                                             bg="#0a0a12", fg=self.FG_LIGHT)
+        self._export_popover_icon.pack(side=tk.LEFT, padx=(0, 6))
+        self._export_popover_label = tk.Label(popover_header, text="EXPORT",
+                                              font=('Helvetica', 8, 'bold'),
+                                              bg="#0a0a12", fg=self.NEON_CYAN)
+        self._export_popover_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Close button
+        self._export_popover_close = tk.Label(popover_header, text="✕",
+                                               font=('Helvetica', 8, 'bold'),
+                                               bg="#0a0a12", fg="#555",
+                                               cursor="hand2")
+        self._export_popover_close.pack(side=tk.RIGHT, padx=(6, 0))
+        self._export_popover_close.bind("<Button-1>", lambda e: self._hide_export_popover())
+        self._export_popover_close.bind("<Enter>", lambda e: self._export_popover_close.configure(fg="#ff3b3b"))
+        self._export_popover_close.bind("<Leave>", lambda e: self._export_popover_close.configure(fg="#555"))
+        # Progress bar row
+        progress_row = tk.Frame(self._export_popover_inner, bg="#0a0a12")
+        progress_row.pack(fill=tk.X)
+        self._export_popover_track = tk.Frame(progress_row, bg="#1a1a2e", height=4, bd=0)
+        self._export_popover_track.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        self._export_popover_fill = tk.Frame(self._export_popover_track, bg=self.NEON_CYAN, height=4, bd=0)
+        self._export_popover_fill.place(x=0, y=0, width=0, relheight=1.0)
+        self._export_popover_pct = tk.Label(progress_row, text="0%",
+                                            font=('Courier', 8, 'bold'),
+                                            bg="#0a0a12", fg=self.NEON_CYAN, width=4, anchor=tk.E)
+        self._export_popover_pct.pack(side=tk.RIGHT)
+
         # Status Bar
         self.status_var = tk.StringVar(value="PRÊT")
         status_frame = tk.Frame(right_panel, bg="#111116", height=24, bd=0)
@@ -255,22 +361,8 @@ class MainWindow:
         status_label = tk.Label(status_frame, textvariable=self.status_var, font=('Courier', 9, 'bold'), fg=self.NEON_CYAN, bg="#111116", anchor=tk.W)
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # ── Export progress bar (between status and footer) ──
-        self._export_progress_container = tk.Frame(self.root, bg="#0a0a12", height=0)
-        self._export_progress_bar = tk.Frame(
-            self._export_progress_container, bg="#1a1a2e", height=10, bd=0,
-            highlightthickness=1, highlightbackground="#2a2a3e"
-        )
-        self._export_progress_fill = tk.Frame(
-            self._export_progress_bar, bg=self.NEON_CYAN, height=10, bd=0
-        )
-        self._export_progress_pct = tk.Label(
-            self._export_progress_container, text="", font=('Courier', 8, 'bold'),
-            fg=self.NEON_CYAN, bg="#0a0a12", anchor=tk.E, width=6
-        )
-
         # ── Footer: copyright + social links ──
-        self._footer = tk.Frame(self.root, bg="#0a0a12", height=22)
+        self._footer = tk.Frame(self.root, bg="#0a0a12", height=24)
         self._footer.pack(side=tk.BOTTOM, fill=tk.X)
         self._footer.pack_propagate(False)
 
@@ -279,25 +371,15 @@ class MainWindow:
                  anchor=tk.W)
         self._footer_copyright.pack(side=tk.LEFT, padx=10)
 
-        def _make_icon(letter, bg_color, hover_color, w=24, h=24, radius=4):
-            """Create a rounded-rect icon with text, returning (photo, hover_photo)."""
-            def _render(bg):
-                img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-                draw = ImageDraw.Draw(img)
-                draw.rounded_rectangle((0, 0, w-1, h-1), radius=radius, fill=bg)
-                try:
-                    font = ImageFont.truetype("DejaVuSans-Bold", 11)
-                except (OSError, IOError):
-                    font = ImageFont.load_default()
-                _, _, tw, th = draw.textbbox((0, 0), letter, font=font)
-                draw.text(((w - tw) / 2, (h - th) / 2 - 1), letter, fill="white", font=font)
-                return ImageTk.PhotoImage(img)
-            return _render(bg_color), _render(hover_color)
+        # Social icons – pre-rendered with Pillow
+        self._icon_linkedin = self._render_linkedin_icon()
+        self._icon_linkedin_hover = self._render_linkedin_icon_hover()
+        self._icon_website = self._render_website_icon()
+        self._icon_website_hover = self._render_website_icon_hover()
 
         social = tk.Frame(self._footer, bg="#0a0a12")
         social.pack(side=tk.RIGHT, padx=(10, 15))
 
-        self._icon_linkedin, self._icon_linkedin_hover = _make_icon("in", "#0a66c2", "#0a88e6")
         self._footer_linkedin = tk.Label(social, image=self._icon_linkedin,
                         bg="#0a0a12", cursor="hand2")
         self._footer_linkedin.pack(side=tk.LEFT, padx=(0, 8))
@@ -306,7 +388,6 @@ class MainWindow:
         self._footer_linkedin.bind("<Enter>", lambda e: self._footer_linkedin.configure(image=self._icon_linkedin_hover))
         self._footer_linkedin.bind("<Leave>", lambda e: self._footer_linkedin.configure(image=self._icon_linkedin))
 
-        self._icon_website, self._icon_website_hover = _make_icon("www", "#2a2a3e", "#4a4a6e")
         self._footer_website = tk.Label(social, image=self._icon_website,
                         bg="#0a0a12", cursor="hand2")
         self._footer_website.pack(side=tk.LEFT)
@@ -686,6 +767,14 @@ class MainWindow:
         self.preview.clear()
         self.status_var.set("Lecture arrêtée")
 
+    def _show_export_popover(self):
+        """Place the export popover at bottom-right of the preview canvas."""
+        self._export_popover.pack(side=tk.BOTTOM, anchor=tk.SE, padx=6, pady=6)
+
+    def _hide_export_popover(self):
+        """Hide the export popover."""
+        self._export_popover.pack_forget()
+
     def _export_video(self):
         """Export video."""
         if not self.audio_file.get():
@@ -732,13 +821,12 @@ class MainWindow:
             messagebox.showerror("Erreur", f"Échec de la création du recorder: {str(e)}")
             return
         
-        # Afficher la barre de progression dédiée
-        self._export_progress_container.configure(height=24)
-        self._export_progress_container.pack(side=tk.BOTTOM, before=self._footer, fill=tk.X)
-        self._export_progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 5), pady=(4, 4))
-        self._export_progress_fill.place(x=0, y=0, width=0, relheight=1.0)
-        self._export_progress_pct.configure(text="0%")
-        self._export_progress_pct.pack(side=tk.RIGHT, padx=(0, 10), pady=(4, 4))
+        # Show export popover
+        self._export_popover_label.configure(text="EXPORT EN COURS")
+        self._export_popover_pct.configure(text="0%")
+        self._export_popover_fill.place(x=0, y=0, width=0, relheight=1.0)
+        self._export_popover_close.configure(fg="#555")
+        self._show_export_popover()
 
         self.btn_export.config(state=tk.DISABLED, text="⏳ EXPORT...")
         self.status_var.set(f"Export: {os.path.basename(filename)}")
@@ -754,34 +842,34 @@ class MainWindow:
     def _show_export_progress(self, current, total):
         pct = (current / total) * 100 if total > 0 else 0
         self.status_var.set(f"EXPORT {current}/{total} ({pct:.0f}%)")
-        w = self._export_progress_bar.winfo_width()
+        self._export_popover_label.configure(text=f"EXPORT {current}/{total}")
+        w = self._export_popover_track.winfo_width()
         if w > 0:
-            self._export_progress_fill.place(x=0, y=0, width=max(1, int(w * pct / 100)), relheight=1.0)
-        self._export_progress_pct.configure(text=f"{pct:.0f}%")
+            self._export_popover_fill.place(x=0, y=0, width=max(1, int(w * pct / 100)), relheight=1.0)
+        self._export_popover_pct.configure(text=f"{pct:.0f}%")
 
     def _export_finished(self, basename=None, error=None):
         self.btn_export.config(state=tk.NORMAL, text="🎥 EXPORTER")
         if error:
             self._led_status.configure(fg="#ff3b3b")
             self.status_var.set(f"ÉCHEC: {error[:60]}")
-            self.root.after(3000, lambda: (
-                self._export_progress_bar.pack_forget(),
-                self._export_progress_pct.pack_forget(),
-                self._export_progress_container.pack_forget(),
-                self._export_progress_container.configure(height=0),
+            self._export_popover_label.configure(text="EXPORT ÉCHOUÉ")
+            self._export_popover_pct.configure(text="ERR")
+            self._export_popover_close.configure(fg="#ff3b3b")
+            self.root.after(5000, lambda: (
+                self._hide_export_popover(),
                 self._led_status.configure(fg=self.NEON_CYAN)
             ))
         else:
             self._led_status.configure(fg=self.NEON_GREEN)
             self.status_var.set(f"✓ EXPORT TERMINÉ: {basename}")
-            w = self._export_progress_bar.winfo_width()
-            self._export_progress_fill.place(x=0, y=0, width=w, relheight=1.0)
-            self._export_progress_pct.configure(text="100%")
-            self.root.after(2500, lambda: (
-                self._export_progress_bar.pack_forget(),
-                self._export_progress_pct.pack_forget(),
-                self._export_progress_container.pack_forget(),
-                self._export_progress_container.configure(height=0),
+            w = self._export_popover_track.winfo_width()
+            if w > 0:
+                self._export_popover_fill.place(x=0, y=0, width=w, relheight=1.0)
+            self._export_popover_label.configure(text="✓ EXPORT TERMINÉ")
+            self._export_popover_pct.configure(text="100%")
+            self.root.after(3000, lambda: (
+                self._hide_export_popover(),
                 self._led_status.configure(fg=self.NEON_CYAN),
                 self.status_var.set("PRÊT")
             ))

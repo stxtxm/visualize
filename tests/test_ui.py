@@ -37,7 +37,6 @@ class TestFooterLabels(unittest.TestCase):
         self.assertIsNotNone(label)
         self.assertIn("Timothée Grollier", label.cget("text"))
         self.assertIn("2026", label.cget("text"))
-        # Should be lighter than old #4a4a5e
         self.assertEqual(label.cget("fg").lower(), "#8a8aaa")
 
     def test_linkedin_label_exists(self):
@@ -49,7 +48,6 @@ class TestFooterLabels(unittest.TestCase):
         self.assertEqual(label.cget("cursor"), "hand2")
 
     def test_linkedin_hover_images_exist(self):
-        """LinkedIn should have a hover variant (brighter background)."""
         app = self._create_app()
         self.assertTrue(hasattr(app, '_icon_linkedin_hover'),
                         "LinkedIn should have a hover icon")
@@ -63,17 +61,14 @@ class TestFooterLabels(unittest.TestCase):
         self.assertEqual(label.cget("cursor"), "hand2")
 
     def test_website_hover_images_exist(self):
-        """Website should have a hover variant (brighter background)."""
         app = self._create_app()
         self.assertTrue(hasattr(app, '_icon_website_hover'),
                         "Website should have a hover icon")
 
     def test_footer_self_reference(self):
-        """Footer frame should be stored as self._footer."""
         app = self._create_app()
         self.assertTrue(hasattr(app, '_footer'), "Footer frame should exist")
-        # Footer should have height 22
-        self.assertEqual(app._footer.cget("height"), 22)
+        self.assertEqual(app._footer.cget("height"), 24)
 
 
 @unittest.skipUnless(_has_display(), "No display server available")
@@ -108,8 +103,8 @@ class TestBackgroundControls(unittest.TestCase):
 
 
 @unittest.skipUnless(_has_display(), "No display server available")
-class TestProgressBar(unittest.TestCase):
-    """Verify the improved export progress bar (dedicated row between status and footer)."""
+class TestExportPopover(unittest.TestCase):
+    """Verify the export progress popover (overlaid on preview, bottom-right)."""
 
     def setUp(self):
         import tkinter as tk
@@ -123,34 +118,64 @@ class TestProgressBar(unittest.TestCase):
         from ui.main_window import MainWindow
         return MainWindow(self.root)
 
-    def test_progress_container_exists(self):
+    def test_popover_exists(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_progress_container'),
-                        "Progress container frame should exist")
-        self.assertEqual(app._export_progress_container.cget("bg").lower(), "#0a0a12")
+        self.assertTrue(hasattr(app, '_export_popover'),
+                        "Export popover frame should exist")
 
-    def test_progress_bar_widget(self):
+    def test_popover_inner_exists(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_progress_bar'),
-                        "Progress bar frame should exist")
-        self.assertEqual(app._export_progress_bar.cget("height"), 10,
-                         "Bar height should be 10px")
-        self.assertEqual(app._export_progress_bar.cget("bg").lower(), "#1a1a2e")
+        self.assertTrue(hasattr(app, '_export_popover_inner'),
+                        "Export popover inner frame should exist")
 
-    def test_progress_fill_widget(self):
+    def test_popover_label_exists(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_progress_fill'),
-                        "Progress fill frame should exist")
-        self.assertEqual(app._export_progress_fill.cget("height"), 10,
-                         "Fill height should be 10px")
-        self.assertEqual(app._export_progress_fill.cget("bg").lower(), app.NEON_CYAN.lower())
+        self.assertTrue(hasattr(app, '_export_popover_label'),
+                        "Export popover label should exist")
+        self.assertEqual(app._export_popover_label.cget("fg").lower(), app.NEON_CYAN.lower())
 
-    def test_progress_percentage_label(self):
+    def test_popover_close_button(self):
         app = self._create_app()
-        self.assertTrue(hasattr(app, '_export_progress_pct'),
-                        "Progress percentage label should exist")
-        self.assertEqual(app._export_progress_pct.cget("fg").lower(), app.NEON_CYAN.lower())
-        self.assertEqual(app._export_progress_pct.cget("bg").lower(), "#0a0a12")
+        self.assertTrue(hasattr(app, '_export_popover_close'),
+                        "Export popover close button should exist")
+        self.assertEqual(app._export_popover_close.cget("cursor"), "hand2")
+
+    def test_popover_track_exists(self):
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_export_popover_track'),
+                        "Export popover progress track should exist")
+        self.assertEqual(app._export_popover_track.cget("height"), 4,
+                         "Track height should be 4px")
+
+    def test_popover_fill_exists(self):
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_export_popover_fill'),
+                        "Export popover progress fill should exist")
+        self.assertEqual(app._export_popover_fill.cget("height"), 4,
+                         "Fill height should be 4px")
+        self.assertEqual(app._export_popover_fill.cget("bg").lower(), app.NEON_CYAN.lower())
+
+    def test_popover_pct_label(self):
+        app = self._create_app()
+        self.assertTrue(hasattr(app, '_export_popover_pct'),
+                        "Export popover percentage label should exist")
+        self.assertEqual(app._export_popover_pct.cget("fg").lower(), app.NEON_CYAN.lower())
+
+    def test_popover_hide_show(self):
+        """Test show/hide methods work without error."""
+        app = self._create_app()
+        app._show_export_popover()
+        app._hide_export_popover()
+
+    def test_old_progress_bar_removed(self):
+        """Old export progress bar widgets should no longer exist."""
+        app = self._create_app()
+        self.assertFalse(hasattr(app, '_export_progress_container'),
+                         "Old _export_progress_container should not exist")
+        self.assertFalse(hasattr(app, '_export_progress_bar'),
+                         "Old _export_progress_bar should not exist")
+        self.assertFalse(hasattr(app, '_export_progress_track'),
+                         "Old _export_progress_track should not exist")
 
 
 if __name__ == '__main__':
