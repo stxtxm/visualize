@@ -3,7 +3,7 @@ File selection tab for the psychedelic visualizer.
 """
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import os
 import sys
 
@@ -23,11 +23,12 @@ class FileTab(tk.Frame):
     NEON_CYAN = "#00e5ff"
     NEON_GREEN = "#39ff14"
 
-    def __init__(self, master, audio_file_var, status_callback=None):
+    def __init__(self, master, audio_file_var, status_callback=None, audio_device_var=None):
         super().__init__(master)
         self.configure(bg=self.BG_PANEL)
         self.audio_file = audio_file_var
         self.status_callback = status_callback
+        self.audio_device_var = audio_device_var
         self._file_info_text = None
         self._build_ui()
 
@@ -83,8 +84,69 @@ class FileTab(tk.Frame):
         )
         info_label.pack(fill=tk.X, padx=12, pady=(0, 10))
 
+        # ── Audio device selector ──
+        if self.audio_device_var is not None:
+            dev_sep = tk.Frame(self, bg="#2a2a3e", height=1)
+            dev_sep.pack(fill=tk.X, padx=12, pady=(0, 12))
+
+            dev_title = tk.Label(self, text="SORTIE AUDIO",
+                                 font=('Helvetica', 8, 'bold'), fg=self.FG_MUTED,
+                                 bg=self.BG_PANEL)
+            dev_title.pack(anchor=tk.W, padx=12, pady=(0, 6))
+
+            dev_row = tk.Frame(self, bg=self.BG_PANEL)
+            dev_row.pack(fill=tk.X, padx=12, pady=(0, 6))
+
+            self._device_combo = ttk.Combobox(
+                dev_row, textvariable=self.audio_device_var,
+                state='readonly', width=28, font=('Helvetica', 8),
+            )
+            self._device_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            btn_refresh = tk.Button(
+                dev_row, text="🔄", command=self._refresh_devices,
+                bg="#252538", fg=self.FG_LIGHT, activebackground="#35354e",
+                activeforeground=self.FG_LIGHT, bd=0, padx=6,
+                font=('Helvetica', 9), cursor="hand2"
+            )
+            btn_refresh.pack(side=tk.RIGHT, padx=(4, 0))
+            self._add_hover(btn_refresh, "#35354e", "#252538")
+
+            self._refresh_devices()
+
         # Track the file variable for info updates
         self.audio_file.trace_add("write", self._on_file_changed)
+
+    def _refresh_devices(self):
+        """Refresh the audio device list from sounddevice."""
+        try:
+            from audio.player import AudioPlayer
+            devices = AudioPlayer.list_devices()
+            # Build display names: "index: name (api)"
+            display_names = []
+            for d in devices:
+                label = f"{d['index']}: {d['name']} ({d['api']})"
+                display_names.append(label)
+            self._device_combo['values'] = display_names
+            # If current value is not in list, try to match by name
+            current = self.audio_device_var.get()
+            if current and current not in display_names:
+                # Try to find by device name substring
+                for d in devices:
+                    if current in d['name'] or current == str(d['index']):
+                        match = f"{d['index']}: {d['name']} ({d['api']})"
+                        self.audio_device_var.set(match)
+                        break
+            if not current and display_names:
+                # Default: select "default" or first device
+                for label in display_names:
+                    if 'default' in label.lower():
+                        self.audio_device_var.set(label)
+                        break
+                if not self.audio_device_var.get() and display_names:
+                    self.audio_device_var.set(display_names[0])
+        except Exception as e:
+            print(f"[FileTab] refresh_devices error: {e}", file=sys.stderr, flush=True)
 
     def _open_file(self):
         filetypes = [

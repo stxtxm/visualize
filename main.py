@@ -206,6 +206,8 @@ def run_cli():
                         help='Optional image file used as the visualizer background')
     parser.add_argument('--background-opacity', type=float, default=0.72,
                         help='Background image opacity (0.0-1.0), default 0.72')
+    parser.add_argument('--audio-device', '-d', type=str, default=None,
+                        help='Audio output device index or name substring (use "list" to show available devices)')
     parser.add_argument('--resolution', '-r', default=None,
                         choices=['720p', '1080p', '1440p', '4K'])
     parser.add_argument('--fps', type=int, default=None)
@@ -227,6 +229,17 @@ def run_cli():
         _run_pygame_fallback()
         return
     
+    # Handle --audio-device list before requiring audio file
+    if args.audio_device and args.audio_device.lower() == 'list':
+        from audio.player import AudioPlayer
+        devices = AudioPlayer.list_devices()
+        print("\nAvailable audio output devices:")
+        print("-" * 60)
+        for d in devices:
+            print(f"  {d['index']}: {d['name']} ({d['api']}) - {d['channels']} ch")
+        print()
+        sys.exit(0)
+
     # Need audio file
     if not args.audio_file:
         print("Utilisation: python3 main.py <fichier_audio>")
@@ -385,8 +398,24 @@ def run_export(args):
 
 def run_playback(args):
     from audio.analyzer import AudioAnalyzer
+    from audio.player import AudioPlayer
     from effects.manager import EffectManager
     from quality_presets import get_preset, RESOLUTIONS
+    
+    # Resolve audio device
+    device_id = None
+    if args.audio_device:
+        if args.audio_device.isdigit():
+            device_id = int(args.audio_device)
+        else:
+            # Try to match by name substring
+            devices = AudioPlayer.list_devices()
+            for d in devices:
+                if args.audio_device.lower() in d['name'].lower():
+                    device_id = d['index']
+                    break
+            if device_id is None:
+                print(f"Warning: no device found matching '{args.audio_device}', using default")
     
     try:
         import pygame

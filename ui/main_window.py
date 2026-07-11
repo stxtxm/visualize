@@ -59,6 +59,11 @@ class MainWindow:
         self._recent_files = []
         self._load_recent_files()
 
+        # Audio device — load from config
+        saved_device = self._load_audio_device_pref()
+        self.audio_device = tk.StringVar(value=saved_device)
+        self.audio_device.trace_add("write", self._audio_device_changed)
+
         # Playback / export state
         self.playback_thread = None
         self.analyzer = None
@@ -255,7 +260,8 @@ class MainWindow:
         self._file_tab = self.tab_panel.add_tab(
             "🎵 FICHIER",
             FileTab(self.tab_panel, self.audio_file,
-                    status_callback=self._set_status)
+                    status_callback=self._set_status,
+                    audio_device_var=self.audio_device)
         )
         self._effects_tab = self.tab_panel.add_tab(
             "✨ EFFETS",
@@ -561,6 +567,59 @@ class MainWindow:
         }
         return resolutions.get(self.resolution.get(), (1920, 1080))
 
+    # ── Audio device persistence ──────────────────────────────────────
+    def _config_path(self):
+        return os.path.join(os.path.expanduser("~"), ".visualize_config.json")
+
+    def _load_audio_device_pref(self):
+        try:
+            path = self._config_path()
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    config = json.load(f)
+                    return config.get("audio_device", "")
+        except Exception:
+            pass
+        return ""
+
+    def _save_audio_device_pref(self, device_str):
+        try:
+            path = self._config_path()
+            config = {}
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    config = json.load(f)
+            config["audio_device"] = device_str
+            with open(path, "w") as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            pass
+
+    def _audio_device_changed(self, *args):
+        device_str = self.audio_device.get()
+        self._save_audio_device_pref(device_str)
+
+    def _resolve_device_id(self):
+        """Convert audio_device string (format: 'index: name (api)') to integer device index."""
+        device_str = self.audio_device.get().strip()
+        if not device_str:
+            return None
+        # Parse "index: name (api)" format
+        if ':' in device_str:
+            try:
+                return int(device_str.split(':')[0].strip())
+            except (ValueError, IndexError):
+                pass
+        # If it's a plain number
+        if device_str.isdigit():
+            return int(device_str)
+        # Otherwise try to match device name
+        from audio.player import AudioPlayer
+        for dev in AudioPlayer.list_devices():
+            if device_str in dev['name']:
+                return dev['index']
+        return None
+
     # ── Effect / Palette callbacks ─────────────────────────────────────
     def _effect_changed(self, event=None):
         if self.effect_manager:
@@ -614,10 +673,12 @@ class MainWindow:
         # Init audio player
         try:
             from audio.player import AudioPlayer
+            device_id = self._resolve_device_id()
             self.audio_player = AudioPlayer(
                 sample_rate=self.analyzer.sample_rate,
                 chunk_size=self.analyzer.chunk_size,
                 channels=2,
+                device_id=device_id,
             )
             self.audio_player.start_from_file(
                 self.audio_file.get(), loop=self.analyzer.loop,

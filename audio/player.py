@@ -40,7 +40,7 @@ class AudioPlayer:
     Falls back to pygame.mixer buffers or subprocess if unavailable.
     """
 
-    def __init__(self, sample_rate=44100, chunk_size=1024, channels=2):
+    def __init__(self, sample_rate=44100, chunk_size=1024, channels=2, device_id=None):
         """
         Initialize the audio player.
 
@@ -48,10 +48,12 @@ class AudioPlayer:
             sample_rate: Sample rate in Hz
             chunk_size: Number of samples per chunk
             channels: Number of audio channels (1=mono, 2=stereo)
+            device_id: Sounddevice device index (None = system default)
         """
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.channels = channels
+        self.device_id = device_id
         self.is_playing = False
         self._thread = None
         self._buffer = []
@@ -169,6 +171,41 @@ class AudioPlayer:
             self._backend_name = None
             self._backend = None
             warnings.warn("Aucun backend audio disponible pour la lecture sonore")
+
+    @staticmethod
+    def list_devices():
+        """
+        List available audio output devices via sounddevice.
+        Returns list of dicts with keys: index, name, channels, api.
+        Returns empty list if sounddevice is not available.
+        """
+        try:
+            import sounddevice as sd
+            devices = []
+            for i, d in enumerate(sd.query_devices()):
+                if d['max_output_channels'] > 0:
+                    devices.append({
+                        'index': i,
+                        'name': d['name'],
+                        'channels': d['max_output_channels'],
+                        'api': sd.query_hostapis()[d['hostapi']]['name'],
+                    })
+            return devices
+        except ImportError:
+            return []
+        except Exception as e:
+            _log(f"list_devices error: {e}")
+            return []
+
+    def set_device(self, device_id):
+        """
+        Set the audio output device by index.
+        Note: takes effect on next playback start.
+        Args:
+            device_id: sounddevice device index, or None for system default
+        """
+        self.device_id = device_id
+        _log(f"device set to: {device_id}")
 
     def get_elapsed_seconds(self):
         """Return elapsed playback time in seconds (for A/V sync)."""
@@ -448,14 +485,17 @@ class AudioPlayer:
 
         try:
             blocksize = max(self.chunk_size, 512)
-            self._stream = sd.OutputStream(
+            kwargs = dict(
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 callback=callback,
                 blocksize=blocksize,
                 dtype='float32',
-                latency='low'
+                latency='low',
             )
+            if self.device_id is not None:
+                kwargs['device'] = self.device_id
+            self._stream = sd.OutputStream(**kwargs)
             self._stream.start()
             _log("sounddevice stream started successfully")
         except Exception as e:
