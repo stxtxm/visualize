@@ -407,6 +407,12 @@ def run_playback(args):
     if args.audio_device:
         if args.audio_device.isdigit():
             device_id = int(args.audio_device)
+            # Verify the device index still exists
+            devices = AudioPlayer.list_devices()
+            available_indices = [d['index'] for d in devices]
+            if device_id not in available_indices:
+                print(f"Warning: device {device_id} no longer available, using default")
+                device_id = None
         else:
             # Try to match by name substring
             devices = AudioPlayer.list_devices()
@@ -442,9 +448,20 @@ def run_playback(args):
     effect_manager = EffectManager(analyzer, renderer, args.effect, args.color, background_image=args.background, background_opacity=args.background_opacity)
     effect_manager.init()
     
+    # Create audio player with resolved device
+    audio_player = AudioPlayer(
+        sample_rate=analyzer.sample_rate,
+        chunk_size=analyzer.chunk_size,
+        channels=2,
+        device_id=device_id,
+    )
+    audio_player.start()
+    
     try:
         while renderer.handle_events():
             chunk = analyzer.get_next_chunk()
+            if chunk is not None:
+                audio_player.play_chunk(chunk)
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.current_effect.update(audio_data, 1.0/fps)
             if _has_pygame:
@@ -459,6 +476,8 @@ def run_playback(args):
     finally:
         analyzer.cleanup()
         renderer.cleanup()
+        if audio_player:
+            audio_player.cleanup()
 
 
 if __name__ == '__main__':

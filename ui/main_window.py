@@ -600,19 +600,41 @@ class MainWindow:
         self._save_audio_device_pref(device_str)
 
     def _resolve_device_id(self):
-        """Convert audio_device string (format: 'index: name (api)') to integer device index."""
+        """Convert audio_device string (format: 'index: name (api)') to integer device index.
+        Returns None if the saved device is no longer available (fallback to system default)."""
         device_str = self.audio_device.get().strip()
         if not device_str:
             return None
+        
         # Parse "index: name (api)" format
+        saved_index = None
         if ':' in device_str:
             try:
-                return int(device_str.split(':')[0].strip())
+                saved_index = int(device_str.split(':')[0].strip())
             except (ValueError, IndexError):
                 pass
-        # If it's a plain number
-        if device_str.isdigit():
-            return int(device_str)
+        elif device_str.isdigit():
+            saved_index = int(device_str)
+        
+        # If we have an index, verify it still exists
+        if saved_index is not None:
+            from audio.player import AudioPlayer
+            devices = AudioPlayer.list_devices()
+            available_indices = [d['index'] for d in devices]
+            
+            if saved_index in available_indices:
+                return saved_index
+            
+            # Device no longer available - fallback to system default
+            self._set_status("Périphérique audio indisponible, utilisation du défaut système")
+            self.toast.show("Périphérique audio débranché, retour au défaut", 2.0, "warning")
+            
+            # Clear the saved preference
+            self.audio_device.set("")
+            self._save_audio_device_pref("")
+            
+            return None
+        
         # Otherwise try to match device name
         from audio.player import AudioPlayer
         for dev in AudioPlayer.list_devices():

@@ -128,6 +128,7 @@ class FileTab(tk.Frame):
                 label = f"{d['index']}: {d['name']} ({d['api']})"
                 display_names.append(label)
             self._device_combo['values'] = display_names
+            
             # If current value is not in list, try to match by name
             current = self.audio_device_var.get()
             if current and current not in display_names:
@@ -137,7 +138,9 @@ class FileTab(tk.Frame):
                         match = f"{d['index']}: {d['name']} ({d['api']})"
                         self.audio_device_var.set(match)
                         break
-            if not current and display_names:
+            
+            # If no valid device selected, pick a default
+            if not self.audio_device_var.get() and display_names:
                 # Default: select "default" or first device
                 for label in display_names:
                     if 'default' in label.lower():
