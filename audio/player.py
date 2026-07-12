@@ -484,14 +484,15 @@ class AudioPlayer:
                 outdata.fill(0)
 
         try:
-            blocksize = max(self.chunk_size, 512)
+            # Use larger blocksize to reduce underrun risk on PipeWire/Fedora
+            blocksize = max(self.chunk_size * 4, 1024)
             kwargs = dict(
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 callback=callback,
                 blocksize=blocksize,
                 dtype='float32',
-                latency='low',
+                latency='high',  # Use high latency to reduce underruns
             )
             if self.device_id is not None:
                 kwargs['device'] = self.device_id
