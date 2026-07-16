@@ -216,14 +216,10 @@ class SpectrumEffect(BaseEffect):
         center_color = self.colors[int(self.time * 4) % len(self.colors)]
         cv2.circle(frame, (self.center_x, self.center_y), center_size, center_color, 2)
         
-        # Ajouter les cercles concentriques
         for i in range(3):
             radius = base_radius + i * 30
             alpha = 0.2 * (1 - i / 3)
             circle_color = center_color
-            
-            overlay = frame.copy()
-            cv2.circle(overlay, (self.center_x, self.center_y), radius, circle_color, 1)
-            frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+            self._draw_alpha_circle(frame, cv2, (self.center_x, self.center_y), radius, circle_color, alpha, thickness=1)
         
         return frame

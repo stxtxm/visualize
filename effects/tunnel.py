@@ -266,11 +266,7 @@ class TunnelEffect(BaseEffect):
             if len(points) > 2:
                 polygon = np.array(points, dtype=np.int32)
                 alpha = 0.8 * (1 - i / self.num_rings)
-                
-                # Dessiner le polygone avec transparence
-                overlay = frame.copy()
-                cv2.fillPoly(overlay, [polygon], color)
-                frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+                self._draw_alpha_poly(frame, cv2, polygon, color, alpha)
         
         # Dessiner les particules
         for p in self.particles:

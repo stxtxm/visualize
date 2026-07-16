@@ -27,7 +27,8 @@ class ExportTab(tk.Frame):
 
     def __init__(self, master, audio_file_var, resolution_var, fps_var,
                  preset_var, effect_var, palette_var, bg_image_var,
-                 export_callback=None, status_callback=None):
+                 export_callback=None, cancel_callback=None,
+                 status_callback=None):
         super().__init__(master)
         self.configure(bg=self.BG_PANEL)
         self._audio_file = audio_file_var
@@ -38,6 +39,7 @@ class ExportTab(tk.Frame):
         self._palette = palette_var
         self._bg_image = bg_image_var
         self._export_callback = export_callback
+        self._cancel_callback = cancel_callback
         self._status_callback = status_callback
         self._build_ui()
 
@@ -106,6 +108,18 @@ class ExportTab(tk.Frame):
         )
         self._progress_pct.pack(fill=tk.X, pady=(2, 0))
 
+        # Cancel button (hidden by default)
+        self.btn_cancel = tk.Button(
+            self._progress_frame, text="✕ ANNULER",
+            command=self._on_cancel_click,
+            bg="#3a1a2a", fg="#ff6b6b",
+            activebackground="#5a2a3a", activeforeground="#ff6b6b",
+            bd=0, pady=6, font=('Helvetica', 9, 'bold'), cursor="hand2",
+        )
+        self.btn_cancel.pack(fill=tk.X, pady=(6, 0))
+        self._add_hover(self.btn_cancel, "#5a2a3a", "#3a1a2a")
+        self.btn_cancel.pack_forget()  # hidden initially
+
         # Hide progress initially
         self._progress_frame.pack_forget()
 
@@ -170,8 +184,22 @@ class ExportTab(tk.Frame):
         self._progress_frame.update_idletasks()
 
     def hide_progress(self):
-        """Hide the progress bar."""
+        """Hide the progress bar and cancel button."""
+        self.btn_cancel.pack_forget()
         self._progress_frame.pack_forget()
+
+    def show_cancel_button(self):
+        """Show the cancel button."""
+        self.btn_cancel.pack(fill=tk.X, pady=(6, 0))
+
+    def hide_cancel_button(self):
+        """Hide the cancel button."""
+        self.btn_cancel.pack_forget()
+
+    def _on_cancel_click(self):
+        """Called when the user clicks the cancel button."""
+        if self._cancel_callback:
+            self._cancel_callback()
 
     def set_export_button_state(self, enabled=True):
         """Enable or disable the export button."""

@@ -125,11 +125,6 @@ class WaveEffect(BaseEffect):
             # Dessiner le polygone avec transparence
             if len(points) > 2:
                 polygon = np.array(points, dtype=np.int32)
-                # Créer une couche de superposition
-                overlay = frame.copy()
-                cv2.fillPoly(overlay, [polygon], color)
-                # Appliquer avec alpha
-                alpha = 0.25
-                frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+                self._draw_alpha_poly(frame, cv2, polygon, color, 0.25)
         
         return frame

@@ -213,6 +213,9 @@ def run_cli():
     parser.add_argument('--fps', type=int, default=None)
     parser.add_argument('--preset', '-p', default='normal',
                         choices=['dev', 'fast', 'normal', 'high', '4k'])
+    parser.add_argument('--render-scale', type=float, default=1.0,
+                        help='Render scale factor (0.25-1.0). Lower = faster export, '
+                             'ffmpeg upscales to target resolution. Default 1.0')
     parser.add_argument('--fullscreen', '-f', action='store_true')
     parser.add_argument('--no-gui', action='store_true')
     args = parser.parse_args()
@@ -264,7 +267,7 @@ def run_export(args):
     from audio.analyzer import AudioAnalyzer
     from effects.manager import EffectManager
     from quality_presets import get_preset, RESOLUTIONS, build_ffmpeg_cmd
-    import cv2, subprocess, numpy as np
+    import subprocess, numpy as np
     
     preset = get_preset(args.preset)
     res = args.resolution or preset['resolution']
@@ -277,6 +280,10 @@ def run_export(args):
     analyzer = AudioAnalyzer(args.audio_file, loop=False)
     analyzer.start_stream()
     
+    render_scale = min(1.0, max(0.1, args.render_scale))
+    render_width = max(1, int(width * render_scale))
+    render_height = max(1, int(height * render_scale))
+
     class ExportRenderer:
         def __init__(self, w, h):
             self.width = w
@@ -284,7 +291,7 @@ def run_export(args):
 
     effect_manager = EffectManager(
         analyzer=analyzer,
-        renderer=ExportRenderer(width, height),
+        renderer=ExportRenderer(render_width, render_height),
         effect_type=args.effect,
         color_palette=args.color,
         background_image=args.background,
@@ -295,8 +302,11 @@ def run_export(args):
     audio_duration = analyzer.get_duration_seconds()
     total_frames = int(audio_duration * fps)
     print(f"  Duration: {audio_duration:.0f}s, Frames: {total_frames}")
+    if render_scale < 1.0:
+        print(f"  Render scale: {render_scale}x ({render_width}x{render_height})")
     
-    ffmpeg_cmd = build_ffmpeg_cmd(width, height, fps, args.audio_file, args.export, args.preset)
+    ffmpeg_cmd = build_ffmpeg_cmd(width, height, fps, args.audio_file, args.export, args.preset,
+                                  render_width=render_width, render_height=render_height)
     
     # Vérifier que le fichier audio existe
     if not os.path.exists(args.audio_file):
@@ -326,7 +336,7 @@ def run_export(args):
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.current_effect.update(audio_data, 1.0/fps)
             frame = effect_manager.current_effect.render_to_array()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame = frame[:, :, ::-1]  # RGB → BGR view (no copy)
             
             if process.poll() is not None:
                 break

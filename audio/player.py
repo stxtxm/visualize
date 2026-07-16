@@ -65,8 +65,11 @@ class AudioPlayer:
         self._subproc = None  # persistent subprocess for pw-play/ffplay streaming
         self._is_from_data = False
         
-        # Audio queue for streaming backends
-        self._audio_queue = queue.Queue(maxsize=64)
+        # Audio queue for streaming backends (larger = more underrun protection)
+        self._audio_queue = queue.Queue(maxsize=256)
+        
+        # Last good chunk, replayed on underrun instead of silence
+        self._last_chunk_f32 = None
         
         # Timestamp tracking for audio/video sync
         self._current_chunk_index = 0
@@ -452,16 +455,29 @@ class AudioPlayer:
         """Start sounddevice streaming backend."""
         import sounddevice as sd
 
+        # Tell ALSA to stfu about harmless underrun recovery messages
+        os.environ.setdefault('ALSA_NO_ERROR_REPORT', '1')
+
+        # Pre-fill queue with several silent chunks before starting
+        # to absorb initial scheduling jitter
+        silent_chunk = np.zeros(self.chunk_size * self.channels, dtype=np.int16)
+        for _ in range(8):
+            try:
+                self._audio_queue.put_nowait(silent_chunk.copy())
+            except queue.Full:
+                break
+
         def callback(outdata, frames, time_info, status):
             if status:
                 print(f"sounddevice status: {status}", file=sys.stderr)
-            try:
-                chunk = self._audio_queue.get_nowait()
-            except queue.Empty:
-                outdata.fill(0)
-                return
-
-            if chunk is not None and len(chunk) > 0:
+            pos = 0
+            last_consumed = None
+            while pos < frames:
+                try:
+                    chunk = self._audio_queue.get_nowait()
+                except queue.Empty:
+                    break
+                # Convert chunk to float32
                 if hasattr(chunk, 'dtype') and chunk.dtype == np.int16:
                     chunk_f32 = chunk.astype(np.float32) / 32768.0
                 elif isinstance(chunk, (list, tuple)):
@@ -470,29 +486,47 @@ class AudioPlayer:
                     chunk_f32 = np.asarray(chunk, dtype=np.float32)
                     if np.max(np.abs(chunk_f32)) > 1.0:
                         chunk_f32 = chunk_f32 / 32768.0
-                if len(chunk_f32) > frames:
-                    chunk_f32 = chunk_f32[:frames]
-                elif len(chunk_f32) < frames:
-                    chunk_f32 = np.pad(chunk_f32, (0, frames - len(chunk_f32)))
-                if self.channels == 2 and chunk_f32.ndim == 1:
-                    outdata[:] = np.column_stack((chunk_f32, chunk_f32))
+                # Handle mono→stereo
+                if chunk_f32.ndim == 1 and self.channels == 2:
+                    chunk_f32 = np.column_stack((chunk_f32, chunk_f32))
                 elif chunk_f32.ndim == 1:
-                    outdata[:] = chunk_f32.reshape(-1, 1)
+                    chunk_f32 = chunk_f32.reshape(-1, 1)
+                # Copy into output buffer
+                remaining = frames - pos
+                take = min(len(chunk_f32), remaining)
+                outdata[pos:pos + take] = chunk_f32[:take]
+                pos += take
+                last_consumed = chunk_f32[:take].copy()
+
+            if last_consumed is not None:
+                self._last_chunk_f32 = last_consumed
+
+            # Fill any remaining frames with last known chunk or silence
+            if pos < frames:
+                if self._last_chunk_f32 is not None:
+                    remaining = frames - pos
+                    take = min(len(self._last_chunk_f32), remaining)
+                    if self._last_chunk_f32.ndim == 1 and self.channels == 2:
+                        outdata[pos:] = np.column_stack(
+                            (self._last_chunk_f32[:take],
+                             self._last_chunk_f32[:take])
+                        )
+                    else:
+                        outdata[pos:pos + take] = self._last_chunk_f32[:take]
+                    if pos + take < frames:
+                        outdata[pos + take:] = 0
                 else:
-                    outdata[:] = chunk_f32
-            else:
-                outdata.fill(0)
+                    outdata[pos:] = 0
 
         try:
-            # Use larger blocksize to reduce underrun risk on PipeWire/Fedora
-            blocksize = max(self.chunk_size * 4, 1024)
+            blocksize = max(self.chunk_size * 4, 4096)
             kwargs = dict(
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 callback=callback,
                 blocksize=blocksize,
                 dtype='float32',
-                latency='high',  # Use high latency to reduce underruns
+                latency='high',
             )
             if self.device_id is not None:
                 kwargs['device'] = self.device_id
@@ -882,6 +916,7 @@ class AudioPlayer:
             self._subproc = None
 
         # Clear queues
+        self._last_chunk_f32 = None
         with self._buffer_lock:
             self._buffer.clear()
         try:

@@ -317,15 +317,16 @@ class PlasmaEffect(BaseEffect):
         # Interpolation bilinéaire rapide OpenCV
         frame = cv2.resize(rgb_array, (width, height), interpolation=cv2.INTER_LINEAR)
         
-        # Vignette vectorisée NumPy
-        cx, cy = width // 2, height // 2
-        Y_indices, X_indices = np.indices((height, width))
-        dists = np.sqrt((X_indices - cx)**2 + (Y_indices - cy)**2)
-        max_dist = math.sqrt(cx**2 + cy**2)
-        vignette_factors = 1.0 - (dists / max_dist) * 0.4
-        vignette_factors = np.clip(vignette_factors, 0.0, 1.0)[:, :, np.newaxis]
-        
-        frame = (frame * vignette_factors).astype(np.uint8)
+        # Vignette mise en cache et optimisée
+        if not hasattr(self, '_vignette_factors') or self._vignette_factors.shape != (height, width, 3):
+            cx, cy = width // 2, height // 2
+            Y_indices, X_indices = np.indices((height, width))
+            dists = np.sqrt((X_indices - cx)**2 + (Y_indices - cy)**2)
+            max_dist = math.sqrt(cx**2 + cy**2)
+            v = np.clip(1.0 - (dists / max_dist) * 0.4, 0.0, 1.0)
+            self._vignette_factors = np.stack([v, v, v], axis=-1).astype(np.float32)
+            
+        cv2.multiply(frame, self._vignette_factors, dst=frame, scale=1.0, dtype=cv2.CV_8U)
         
         self._draw_additional_patterns_cv2(frame)
         return frame
@@ -341,10 +342,7 @@ class PlasmaEffect(BaseEffect):
             radius = int(50 + i * 80 + self.pulse * 50)
             alpha = 0.3 * (1 - i / 3)
             color = self.colors[int(self.time * 2 + i) % len(self.colors)]
-            
-            overlay = frame.copy()
-            cv2.circle(overlay, (center_x, center_y), radius, color, 2)
-            frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+            self._draw_alpha_circle(frame, cv2, (center_x, center_y), radius, color, alpha, thickness=2)
         
         # Dessiner des lignes radiales
         num_lines = 16

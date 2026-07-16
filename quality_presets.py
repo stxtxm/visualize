@@ -49,7 +49,7 @@ QUALITY_PRESETS = {
         'name': '4K Cinématique',
         'resolution': '4K',
         'fps': 30,
-        'ffmpeg_preset': 'slow',
+        'ffmpeg_preset': 'medium',
         'crf': '18',
         'bitrate': '40M',
         'description': 'Qualité maximale pour archives',
@@ -82,6 +82,15 @@ def get_preset_names():
 
 
 _HAS_OPENH264 = None
+_HAS_HW_ENCODER = None
+_HW_ENCODER_TYPE = None  # 'h264_nvenc', 'h264_vaapi', 'h264_videotoolbox', or None
+
+HW_ENCODERS = {
+    'h264_nvenc': 'NVIDIA NVENC',
+    'h264_vaapi': 'Intel/AMD VAAPI',
+    'h264_videotoolbox': 'Apple VideoToolbox',
+}
+
 
 def _check_openh264(ffmpeg_path):
     """Check if libopenh264 is available in ffmpeg."""
@@ -93,14 +102,66 @@ def _check_openh264(ffmpeg_path):
         return False
 
 
-def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal'):
-    """Build FFmpeg command based on preset. Probes for libopenh264; falls back to libx264."""
+def _check_hardware_encoder(ffmpeg_path):
+    """Check for hardware-accelerated H.264 encoders.
+
+    Probes each candidate encoder by attempting a real encode of a
+    single 2x2 frame. This catches cases where the encoder is listed
+    in ffmpeg output but the required runtime (e.g. libcuda.so) is not
+    actually usable.
+
+    Returns encoder name (e.g. 'h264_nvenc') or None if none found.
+    Priority: h264_nvenc > h264_vaapi > h264_videotoolbox
+    """
+    import subprocess, tempfile, os
+
+    candidates = ('h264_nvenc', 'h264_vaapi', 'h264_videotoolbox')
+    for encoder in candidates:
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+                out_path = f.name
+            cmd = [
+                ffmpeg_path, '-y',
+                '-f', 'rawvideo', '-s', '2x2', '-pix_fmt', 'bgr24', '-r', '1',
+                '-i', 'pipe:0',
+                '-c:v', encoder,
+                '-frames:v', '1',
+                '-an', '-loglevel', 'quiet',
+                out_path,
+            ]
+            proc = subprocess.run(cmd, input=b'\x00' * 12,
+                                  capture_output=True, timeout=10)
+            os.unlink(out_path)
+            if proc.returncode == 0:
+                return encoder
+        except Exception:
+            try:
+                os.unlink(out_path)
+            except Exception:
+                pass
+    return None
+
+
+def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal',
+                     render_width=None, render_height=None):
+    """Build FFmpeg command based on preset.
+
+    Probes for hardware encoders (NVENC > VAAPI > VideoToolbox),
+    then libopenh264, then falls back to libx264.
+
+    When render_width/render_height differ from width/height,
+    a lanczos scale filter is added (render scaling).
+    """
     import os
-    global _HAS_OPENH264
+    global _HAS_OPENH264, _HAS_HW_ENCODER, _HW_ENCODER_TYPE
     ffmpeg_path = os.environ.get('FFMPEG_PATH') or 'ffmpeg'
     preset_config = get_preset(preset)
-    resolution = f"{width}x{height}"
-    
+
+    if render_width is None:
+        render_width = width
+    if render_height is None:
+        render_height = height
+
     bitrate = preset_config['bitrate']
     if width >= 3840:
         bitrate = "50M"
@@ -110,23 +171,62 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         bitrate = "20M" if bitrate == "5M" else bitrate
     elif width >= 1280:
         bitrate = "10M" if bitrate == "5M" else bitrate
-    
+
     if _HAS_OPENH264 is None:
         _HAS_OPENH264 = _check_openh264(ffmpeg_path)
-    
+
+    if _HAS_HW_ENCODER is None:
+        hw_encoder = _check_hardware_encoder(ffmpeg_path)
+        if hw_encoder:
+            _HAS_HW_ENCODER = True
+            _HW_ENCODER_TYPE = hw_encoder
+        else:
+            _HAS_HW_ENCODER = False
+            _HW_ENCODER_TYPE = None
+
     cmd = [
         ffmpeg_path,
         '-y',
         '-f', 'rawvideo',
         '-vcodec', 'rawvideo',
-        '-s', resolution,
+        '-s', f"{render_width}x{render_height}",
         '-pix_fmt', 'bgr24',
         '-r', str(fps),
         '-i', 'pipe:0',
         '-i', audio_file,
     ]
-    
-    if _HAS_OPENH264:
+
+    needs_scale = (render_width != width or render_height != height)
+    if needs_scale:
+        cmd += ['-vf', f'scale={width}:{height}:flags=lanczos']
+
+    if _HAS_HW_ENCODER and _HW_ENCODER_TYPE:
+        encoder = _HW_ENCODER_TYPE
+        if encoder == 'h264_nvenc':
+            cmd += [
+                '-c:v', 'h264_nvenc',
+                '-preset', 'p7',
+                '-rc', 'vbr',
+                '-cq', '18',
+                '-profile:v', 'high',
+                '-g', str(max(1, int(fps * 2))),
+                '-bf', '2',
+            ]
+        elif encoder == 'h264_vaapi':
+            cmd += [
+                '-c:v', 'h264_vaapi',
+                '-global_quality', '18',
+                '-profile:v', 'high',
+                '-g', str(max(1, int(fps * 2))),
+                '-bf', '2',
+            ]
+        elif encoder == 'h264_videotoolbox':
+            cmd += [
+                '-c:v', 'h264_videotoolbox',
+                '-q:v', '18',
+                '-profile:v', 'high',
+            ]
+    elif _HAS_OPENH264:
         cmd += ['-c:v', 'libopenh264', '-coder', 'cavlc']
     else:
         cmd += [
@@ -138,7 +238,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-g', str(max(1, int(fps * 2))),
             '-bf', '2',
         ]
-    
+
     cmd += [
         '-b:v', bitrate,
         '-maxrate', bitrate,

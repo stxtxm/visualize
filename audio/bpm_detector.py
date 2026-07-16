@@ -282,11 +282,16 @@ class BPMDetector:
         if len(signal) <= window_size:
             return signal
         
+        # Somme cumulative pour calculer la moyenne mobile en O(N)
+        cumsum = np.cumsum(np.insert(signal, 0, 0))
+        moving_avg = (cumsum[window_size:-1] - cumsum[:-window_size-1]) / window_size
+        
         filtered = signal.copy()
-        for i in range(window_size, len(signal)):
-            # Calculer la moyenne sur la fenêtre
-            avg = np.mean(signal[i-window_size:i])
-            filtered[i] = signal[i] - avg
+        filtered[window_size:] -= moving_avg
+        
+        # Pour les premiers window_size éléments, on soustrait la moyenne progressive
+        first_avg = np.mean(signal[:window_size])
+        filtered[:window_size] -= first_avg
         
         return filtered
     

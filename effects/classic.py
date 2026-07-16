@@ -347,11 +347,8 @@ class ClassicEffect(BaseEffect):
                 if len(pts) >= 3:
                     col = self.colors[(ring_idx + int(self.time * 1.5)) % len(self.colors)]
                     pts_arr = np.array(pts, dtype=np.int32)
-                    # Remplissage semi-transparent
-                    overlay = frame.copy()
-                    cv2.fillPoly(overlay, [pts_arr], col)
                     alpha = 0.08 + ring_idx * 0.04
-                    frame[:] = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+                    self._draw_alpha_poly(frame, cv2, pts_arr, col, alpha)
                     # Glow externe épais
                     dim = tuple(max(0, c // 3) for c in col)
                     cv2.polylines(frame, [pts_arr], True, dim, max(1, int(6 * s)), cv2.LINE_AA)
@@ -363,9 +360,7 @@ class ClassicEffect(BaseEffect):
             col = self.colors[int(self.time * 3) % len(self.colors)]
             alpha = min(0.25, self.flash * 0.25)
             radius = int((100 + self.flash * 180) * s)
-            overlay = frame.copy()
-            cv2.circle(overlay, (cx, cy), radius, col, -1)
-            frame[:] = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+            self._draw_alpha_circle(frame, cv2, (cx, cy), radius, col, alpha)
 
         # ── Equalizer LED fusionné via blending additif avec fondu vertical ──
         eq_layer = np.zeros_like(frame)
@@ -431,7 +426,7 @@ class ClassicEffect(BaseEffect):
         if self._vignette is None or self._vignette.shape[:2] != (H, W):
             self._vignette = self._make_vignette(W, H)
         # Appliquer la vignette (assombrit les bords)
-        frame[:] = (frame.astype(np.float32) * self._vignette).clip(0, 255).astype(np.uint8)
+        cv2.multiply(frame, self._vignette, dst=frame, scale=1.0, dtype=cv2.CV_8U)
 
         return frame
 

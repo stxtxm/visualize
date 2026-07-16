@@ -132,6 +132,101 @@ class BaseEffect:
                 )
                 frame[:] = np.clip(blended, 0, 255).astype(np.uint8)
         return frame
+
+    def _draw_alpha_poly(self, frame, cv2, polygon, color, alpha):
+        """Draw a transparent polygon optimized with ROI bounding box."""
+        if alpha <= 0:
+            return
+        if alpha >= 1.0:
+            cv2.fillPoly(frame, [polygon], color)
+            return
+            
+        x, y, w, h = cv2.boundingRect(polygon)
+        H, W = frame.shape[:2]
+        
+        x1, y1 = max(0, x), max(0, y)
+        x2, y2 = min(W, x + w), min(H, y + h)
+        
+        if x2 <= x1 or y2 <= y1:
+            return
+            
+        roi = frame[y1:y2, x1:x2]
+        overlay = roi.copy()
+        
+        polygon_shifted = polygon - [x1, y1]
+        cv2.fillPoly(overlay, [polygon_shifted], color)
+        cv2.addWeighted(overlay, alpha, roi, 1.0 - alpha, 0, dst=roi)
+
+    def _draw_alpha_circle(self, frame, cv2, center, radius, color, alpha, thickness=-1):
+        """Draw a transparent circle optimized with ROI bounding box."""
+        if alpha <= 0 or radius <= 0:
+            return
+        cx, cy = center
+        if alpha >= 1.0:
+            cv2.circle(frame, (cx, cy), radius, color, thickness, cv2.LINE_AA)
+            return
+            
+        H, W = frame.shape[:2]
+        x1 = max(0, cx - radius - 2)
+        y1 = max(0, cy - radius - 2)
+        x2 = min(W, cx + radius + 2)
+        y2 = min(H, cy + radius + 2)
+        
+        if x2 <= x1 or y2 <= y1:
+            return
+            
+        roi = frame[y1:y2, x1:x2]
+        overlay = roi.copy()
+        
+        cv2.circle(overlay, (cx - x1, cy - y1), radius, color, thickness, cv2.LINE_AA)
+        cv2.addWeighted(overlay, alpha, roi, 1.0 - alpha, 0, dst=roi)
+
+    def _draw_alpha_line(self, frame, cv2, pt1, pt2, color, alpha, thickness=1):
+        """Draw a transparent line optimized with ROI bounding box."""
+        if alpha <= 0:
+            return
+        if alpha >= 1.0:
+            cv2.line(frame, pt1, pt2, color, thickness, cv2.LINE_AA)
+            return
+            
+        H, W = frame.shape[:2]
+        x1, y1 = pt1
+        x2, y2 = pt2
+        
+        bx1 = max(0, min(x1, x2) - thickness - 2)
+        by1 = max(0, min(y1, y2) - thickness - 2)
+        bx2 = min(W, max(x1, x2) + thickness + 2)
+        by2 = min(H, max(y1, y2) + thickness + 2)
+        
+        if bx2 <= bx1 or by2 <= by1:
+            return
+            
+        roi = frame[by1:by2, bx1:bx2]
+        overlay = roi.copy()
+        
+        cv2.line(overlay, (x1 - bx1, y1 - by1), (x2 - bx1, y2 - by1), color, thickness, cv2.LINE_AA)
+        cv2.addWeighted(overlay, alpha, roi, 1.0 - alpha, 0, dst=roi)
+
+    def _draw_additive_circle(self, frame, cv2, center, radius, color, alpha, thickness=-1):
+        """Draw an additive blended transparent circle optimized with ROI."""
+        if alpha <= 0 or radius <= 0:
+            return
+        cx, cy = center
+        H, W = frame.shape[:2]
+        
+        x1 = max(0, cx - radius - 2)
+        y1 = max(0, cy - radius - 2)
+        x2 = min(W, cx + radius + 2)
+        y2 = min(H, cy + radius + 2)
+        
+        if x2 <= x1 or y2 <= y1:
+            return
+            
+        roi = frame[y1:y2, x1:x2]
+        overlay = roi.copy()
+        
+        cv2.circle(overlay, (cx - x1, cy - y1), radius, color, thickness, cv2.LINE_AA)
+        cv2.addWeighted(overlay, alpha, roi, 1.0, 0, dst=roi)
     
     def render_to_array(self):
         """

@@ -107,16 +107,23 @@ Définies dans `BaseEffect._get_color_palette()` :
 
 ### quality_presets.py
 
-- **Codecs H.264 détectés automatiquement** : `libopenh264` si disponible, sinon `libx264` avec `-preset`
+- **Codecs H.264 détectés automatiquement** : auto-détection par ordre de priorité :
+  1. **Hardware** : `h264_nvenc` (NVIDIA), `h264_vaapi` (Intel/AMD), `h264_videotoolbox` (Apple)
+     - Chaque encodeur est vérifié par un encodage test réel (2x2 frame) avant d'être sélectionné
+     - NVENC : `-preset p7 -rc vbr -cq 18 -profile:v high`
+     - VAAPI : `-global_quality 18 -profile:v high`
+     - VideoToolbox : `-q:v 18 -profile:v high`
+  2. **`libopenh264`** si disponible (pas de `-preset`)
+  3. **`libx264`** avec `-preset`, `-crf`, `-tune animation`
 - Présélections : `dev` (720p15), `fast` (720p20), `normal` (1080p30), `high` (1080p60), `4k` (4K30)
 - `build_ffmpeg_cmd()` construit la commande ffmpeg complète
-- Le flag `-preset` n'est ajouté QUE pour `libx264` (pas supporté par `libopenh264`)
+- Supporte `render_width`/`render_height` : quand différent de la sortie, ajoute `-vf scale=W:H:flags=lanczos`
 
 ### Pipelines de rendu pour l'export
 
 ```
-main.py → AudioAnalyzer → EffectManager → render_to_array() → cv2.cvtColor(RGB2BGR)
-  → process.stdin.write() → ffmpeg (rawvideo pipe) → output.mp4
+main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB→BGR → tobytes()
+  → [queue.Queue maxsize=8] → writer thread → ffmpeg (rawvideo pipe) → output.mp4
 ```
 
 ### Progress de l'export
@@ -241,6 +248,7 @@ Déclenché sur push de tag `v*`.
 
 1. **`render_to_array()` et `render()` sont DUPLIQUÉS** dans chaque effet. Les deux méthodes doivent produire le même rendu. Ne JAMAIS modifier l'une sans l'autre.
 2. **OpenH264 ne supporte PAS `-preset`**. Le code détecte le codec disponible (`_check_openh264()`) et n'ajoute `-preset` que pour `libx264`.
+3. **ALSA underrun protégé** : `_start_sounddevice()` pré-remplit la queue avec 8 chunks silencieux AVANT de démarrer le stream, et le callback rejoue `_last_chunk_f32` sur underrun au lieu du silence. `blocksize = chunk_size * 8`, `queue.maxsize = 256`, `latency='high'`.
 3. **Pygame doit être initialisé APRÈS Tkinter** dans le thread principal pour la GUI. L'order est : `pygame.display.init()` → `pygame.font.init()` → Tkinter → boucle d'aperçu. Note: `pygame.time.init()` n'existe plus dans pygame 2.x.
 4. **`pygame.time.init()` n'existe plus dans pygame 2.x**. Utiliser `pygame.display.init()` + `pygame.font.init()` pour l'initialisation partielle, ou `pygame.init()` pour l'initialisation complète.
 5. **`LD_LIBRARY_PATH` est nettoyé** avant de lancer ffmpeg dans `AudioStreamReader` pour éviter les conflits avec les libs de l'AppImage.
@@ -259,19 +267,26 @@ Déclenché sur push de tag `v*`.
 12. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
 13. **Références GUI stockées en instance** — Tout widget Tkinter qui doit être testé ou modifié depuis l'extérieur doit être stocké comme `self._nom_du_widget`. Actuellement : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`, `self._export_progress_bar`, `self._status_bar_inner`.
 
+### 🔵 Optimisations export (ajoutées v0.X)
+
+19. **Encodage matériel auto-détecté** — `quality_presets._check_hardware_encoder()` vérifie chaque encodeur par un test réel (2x2 frame). Priorité : NVENC > VAAPI > VideoToolbox > libx264 > libopenh264. Le test réel évite les faux positifs (encodeur listé mais libcuda.so.1 manquant).
+20. **Thread writer asynchrone** — `VideoRecorder.record()` utilise un thread + `queue.Queue(maxsize=8)` pour superposer le rendu des frames et l'écriture du pipe ffmpeg. Le thread principal pousse les bytes dans la queue, le writer thread écrit sur stdin. Le sentinel `_SENTINEL` signale l'arrêt.
+21. **`--render-scale`** (CLI uniquement) — Rendu à résolution réduite, ffmpeg upscale avec lanczos. Ex: `--render-scale 0.5` sur export 4K → rendu 1080p, upscale 4K. Gain ~4x sur le rendu. Aucun impact quality pour du contenu abstrait.
+22. **RGB→BGR par vue numpy** — Dans `main.py`, utiliser `frame[:, :, ::-1]` au lieu de `cv2.cvtColor` évite une copie mémoire complète de la frame (25 Mo pour 4K). Économise ~750 Mo/s à 30fps 4K.
+
 ### 🔴 CI + Release — English release message obligatoire
 
-14. **`generate_release_notes: true`** dans `.github/workflows/release.yml` — La CI utilise `softprops/action-gh-release` avec l'option `generate_release_notes: true`. NE JAMAIS mettre de `body:` en dur dans la workflow : cela écrase le message de release à chaque push de tag.
-15. **Éditer la release après la CI** — Dès que la CI a créé la release (auto-generated notes), vous devez immédiatement la modifier avec un message de release en anglais décrivant les changements. Utilisez `gh release edit vX.Y.Z --notes "..."` ou éditez-la sur GitHub directement.
-16. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
-17. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
-18. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
+23. **`generate_release_notes: true`** dans `.github/workflows/release.yml` — La CI utilise `softprops/action-gh-release` avec l'option `generate_release_notes: true`. NE JAMAIS mettre de `body:` en dur dans la workflow : cela écrase le message de release à chaque push de tag.
+24. **Éditer la release après la CI** — Dès que la CI a créé la release (auto-generated notes), vous devez immédiatement la modifier avec un message de release en anglais décrivant les changements. Utilisez `gh release edit vX.Y.Z --notes "..."` ou éditez-la sur GitHub directement.
+25. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
+26. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
+27. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
 
 ### 🟢 Recommandations
 
-19. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
-20. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
-21. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
+28. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
+29. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
+30. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
 
 ---
 
@@ -319,6 +334,10 @@ bash build_standalone.sh
 
 # CI/CD (après commit)
 git tag v0.X.Y && git push origin v0.X.Y
+
+# Exporter avec --render-scale (0.25-1.0, défaut 1.0) pour rendu accéléré
+# ex: rendu à 1080p → upscale 4K avec lanczos
+python3 main.py audio.mp3 -o video.mp4 --render-scale 0.5
 
 # Ajouter les release notes en anglais après la CI
 gh release edit v0.X.Y --notes "## What's new in v0.X.Y ..."

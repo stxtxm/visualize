@@ -280,6 +280,7 @@ class MainWindow:
                       self.selected_preset, self.selected_effect, self.selected_color,
                       self.background_image,
                       export_callback=self._on_export_request,
+                      cancel_callback=self._on_export_cancel,
                       status_callback=self._set_status)
         )
         self._logs_tab = self.tab_panel.add_tab(
@@ -803,8 +804,15 @@ class MainWindow:
                 ) / 1000.0
 
                 pw, ph = self.preview.get_display_size()
-                if (pw, ph) != self._preview_render_size:
-                    self._resize_effect(pw, ph)
+                # Plafonner la résolution de rendu interne pour les performances de l'aperçu GUI (max 960x540)
+                max_w = 960
+                max_h = 540
+                scale = min(1.0, max_w / pw, max_h / ph)
+                rw = int(pw * scale)
+                rh = int(ph * scale)
+
+                if (rw, rh) != self._preview_render_size:
+                    self._resize_effect(rw, rh)
 
                 if (not hasattr(self, 'audio_player')
                         or self.audio_player is None
@@ -819,6 +827,10 @@ class MainWindow:
                 self.effect_manager.current_effect.update(audio_data, delta_time)
 
                 arr = self.effect_manager.current_effect.render_to_array()
+                # Upscaler la frame dans le thread en arrière-plan à la taille réelle du widget via OpenCV
+                if arr is not None and (pw, ph) != (rw, rh):
+                    import cv2
+                    arr = cv2.resize(arr, (pw, ph), interpolation=cv2.INTER_LINEAR)
                 frame = self._capture_frame(arr)
 
                 if frame is not None:
@@ -890,7 +902,7 @@ class MainWindow:
             return
         pw, ph = self.preview.winfo_width(), self.preview.winfo_height()
         if pw > 10 and ph > 10 and (pw, ph) != pil_img.size:
-            pil_img = pil_img.resize((pw, ph), Image.LANCZOS)
+            pil_img = pil_img.resize((pw, ph), Image.BILINEAR)
         self.preview.update_image(ImageTk.PhotoImage(pil_img))
 
     def _capture_frame(self, arr):
@@ -982,6 +994,7 @@ class MainWindow:
 
         self._export_tab.set_export_button_state(False)
         self._export_tab.show_progress(0, 1)
+        self._export_tab.show_cancel_button()
         self._set_status(f"Export: {os.path.basename(filename)}")
         self._led_status.configure(fg=self._theme.neon_warn)
 
@@ -1009,15 +1022,36 @@ class MainWindow:
                 "Erreur", f"Échec de l'export:\n{em}"
             ))
 
+    def _on_export_cancel(self):
+        """Called when the user clicks the cancel button during export."""
+        if self.recorder:
+            self.recorder.cancel()
+
     def _export_finished(self, basename=None, error=None):
         self._export_in_progress = False
         self._export_tab.set_export_button_state(True)
+        self._export_tab.hide_cancel_button()
 
         if error:
-            self._led_status.configure(fg="#ff3b3b")
-            self._set_status(f"ÉCHEC: {error[:60]}")
-            self._export_tab.show_progress_error(error)
-            self.toast.show(f"Export échoué: {error[:40]}", 3.0, "error")
+            is_cancel = "annulé" in error.lower()
+            if is_cancel:
+                self._led_status.configure(fg=self._theme.neon_warn)
+                self._set_status("EXPORT ANNULÉ")
+                self._export_tab._progress_label.configure(
+                    text="EXPORT ANNULÉ", fg=self._theme.neon_warn
+                )
+                self._export_tab._progress_pct.configure(
+                    text="--", fg=self._theme.neon_warn
+                )
+                self._export_tab._draw_progress(0)
+                self._export_tab._progress_frame.pack(fill=tk.X, padx=12, pady=(0, 4))
+                self._export_tab._progress_frame.update_idletasks()
+                self.toast.show("Export annulé", 2.0, "warning")
+            else:
+                self._led_status.configure(fg="#ff3b3b")
+                self._set_status(f"ÉCHEC: {error[:60]}")
+                self._export_tab.show_progress_error(error)
+                self.toast.show(f"Export échoué: {error[:40]}", 3.0, "error")
             self.root.after(5000, lambda: (
                 self._export_tab.hide_progress(),
                 self._led_status.configure(fg=self._theme.neon_primary),

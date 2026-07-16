@@ -98,16 +98,19 @@ class TestQualityPresets(unittest.TestCase):
         # Check 60 FPS
         self.assertIn('60', cmd)
         
-        # Check that a video codec is specified
-        has_codec = any(c in cmd for c in ('libopenh264', 'libx264'))
-        self.assertTrue(has_codec, f"Expected libopenh264 or libx264 in cmd, got: {cmd}")
+        # Check that a video codec is specified (hw or software)
+        known_codecs = ('libopenh264', 'libx264', 'h264_nvenc', 'h264_vaapi', 'h264_videotoolbox')
+        has_codec = any(c in cmd for c in known_codecs)
+        self.assertTrue(has_codec, f"Expected a known codec in cmd, got: {cmd}")
 
     def test_libx264_uses_crf_animation_tuning(self):
         """libx264 exports should use quality-oriented animation settings."""
         import quality_presets
-        original = quality_presets._HAS_OPENH264
+        orig_openh264 = quality_presets._HAS_OPENH264
+        orig_hw = quality_presets._HAS_HW_ENCODER
         try:
             quality_presets._HAS_OPENH264 = False
+            quality_presets._HAS_HW_ENCODER = False
             cmd = build_ffmpeg_cmd(1280, 720, 30, '/tmp/audio.mp3', '/tmp/output.mp4', 'normal')
             self.assertIn('-crf', cmd)
             self.assertIn('18', cmd)
@@ -115,7 +118,8 @@ class TestQualityPresets(unittest.TestCase):
             self.assertIn('animation', cmd)
             self.assertIn('-g', cmd)
         finally:
-            quality_presets._HAS_OPENH264 = original
+            quality_presets._HAS_OPENH264 = orig_openh264
+            quality_presets._HAS_HW_ENCODER = orig_hw
 
 
 class TestPresetSpeed(unittest.TestCase):
@@ -132,9 +136,9 @@ class TestPresetSpeed(unittest.TestCase):
         self.assertLess(dev['fps'], normal['fps'])
     
     def test_4k_preset_slowest(self):
-        """Test that 4k preset is configured for slowest encoding."""
+        """Test that 4k preset is configured for optimized medium encoding."""
         preset_4k = get_preset('4k')
-        self.assertEqual(preset_4k['ffmpeg_preset'], 'slow')
+        self.assertEqual(preset_4k['ffmpeg_preset'], 'medium')
     
     def test_normal_preset_balanced(self):
         """Test that normal preset has balanced settings."""

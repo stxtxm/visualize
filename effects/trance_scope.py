@@ -139,7 +139,11 @@ class TranceScopeEffect(BaseEffect):
         base_radius = min(W, H) * (0.155 + self.bass * 0.045)
         phase = self._tempo_phase()
 
-        glow = np.zeros_like(frame)
+        if not hasattr(self, '_glow_buf') or self._glow_buf.shape != frame.shape:
+            self._glow_buf = np.zeros_like(frame)
+        self._glow_buf.fill(0)
+        glow = self._glow_buf
+
         self._draw_interference_threads(cv2, glow, cx, cy, base_radius, s, phase)
         self._draw_spectral_bloom(cv2, glow, cx, cy, base_radius, s, phase)
         self._draw_orbital_glyphs(cv2, glow, cx, cy, base_radius, s, phase)
@@ -148,13 +152,11 @@ class TranceScopeEffect(BaseEffect):
         self._draw_center_lens(cv2, frame, cx, cy, base_radius, s, phase)
         self._apply_flash(cv2, frame, cx, cy, s)
 
-        if self._vignette is None or self._vignette.shape != (H, W, 3):
-            self._vignette = self._make_vignette(W, H)
-        frame[:] = np.clip(frame.astype(np.float32) * self._vignette, 0, 255).astype(np.uint8)
-
-        if self._scanlines is None or self._scanlines.shape != (H, W, 3):
-            self._scanlines = self._make_scanlines(W, H)
-        frame[:] = np.clip(frame.astype(np.float32) * self._scanlines, 0, 255).astype(np.uint8)
+        if not hasattr(self, '_combined_filter') or self._combined_filter.shape != (H, W, 3):
+            vig = self._make_vignette(W, H)
+            scan = self._make_scanlines(W, H)
+            self._combined_filter = (vig * scan).astype(np.float32)
+        cv2.multiply(frame, self._combined_filter, dst=frame, scale=1.0, dtype=cv2.CV_8U)
         return frame
 
     def _render_numpy(self):
@@ -307,11 +309,9 @@ class TranceScopeEffect(BaseEffect):
             cv2.circle(layer, (x, y), size, color, -1, cv2.LINE_AA)
 
     def _draw_center_lens(self, cv2, frame, cx, cy, base_radius, s, phase):
-        overlay = frame.copy()
         color = self._palette_color(0.60 + self.beat_phase * 0.4)
         radius = int(base_radius * (0.34 + self.beat_strength * 0.10))
-        cv2.circle(overlay, (cx, cy), max(2, radius), color, -1, cv2.LINE_AA)
-        cv2.addWeighted(overlay, 0.10 + self.energy * 0.10, frame, 0.90, 0, dst=frame)
+        self._draw_alpha_circle(frame, cv2, (cx, cy), max(2, radius), color, 0.10 + self.energy * 0.10)
         cv2.circle(frame, (cx, cy), max(2, radius), (245, 255, 255), max(1, int(1.4 * s)), cv2.LINE_AA)
         needle_angle = self.rotation * 1.7 + phase * 2 * math.pi
         x = int(cx + math.cos(needle_angle) * base_radius * 1.65)
@@ -321,11 +321,9 @@ class TranceScopeEffect(BaseEffect):
     def _apply_flash(self, cv2, frame, cx, cy, s):
         if self.flash <= 0.03:
             return
-        overlay = frame.copy()
         color = self._palette_color(self.time * 0.1)
         radius = int((120 + self.flash * 260) * s)
-        cv2.circle(overlay, (cx, cy), radius, color, -1, cv2.LINE_AA)
-        cv2.addWeighted(overlay, min(0.18, self.flash * 0.16), frame, 1.0, 0, dst=frame)
+        self._draw_additive_circle(frame, cv2, (cx, cy), radius, color, min(0.18, self.flash * 0.16))
 
     def _make_grid(self, cv2, W, H):
         grid = np.zeros((H, W, 3), dtype=np.uint8)
