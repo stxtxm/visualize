@@ -40,12 +40,17 @@ class TabPanel(tk.Frame):
         self._tabs = []          # list of (label_text, content_frame)
         self._tab_buttons = []   # list of tk.Button widgets
         self._active_index = tk.IntVar(value=-1)
-        self._glow_lines = []    # list of Frame widgets (active tab indicators)
+        self._tab_slots = []     # grid cells used to keep the tab bar readable
+        self._glow_lines = []    # list of active tab indicators
 
         # Tab bar at the top
-        self._tab_bar = tk.Frame(self, bg=self.BG_PANEL, height=34)
+        self._tab_bar = tk.Frame(self, bg=self.BG_PANEL, height=62)
         self._tab_bar.pack(fill=tk.X, side=tk.TOP)
         self._tab_bar.pack_propagate(False)
+        for column in range(3):
+            self._tab_bar.grid_columnconfigure(column, weight=1, uniform="tab")
+        self._tab_bar.grid_rowconfigure(0, weight=1)
+        self._tab_bar.grid_rowconfigure(1, weight=1)
 
         # Thin neon divider below tab bar
         self._divider = tk.Frame(self, bg="#1c1c30", height=1)
@@ -69,8 +74,13 @@ class TabPanel(tk.Frame):
         content_frame.configure(bg=self.BG_PANEL)
 
         # Create tab button
+        slot = tk.Frame(self._tab_bar, bg=self.TAB_INACTIVE_BG)
+        slot.grid(row=index // 3, column=index % 3, sticky="nsew",
+                  padx=(0, 2), pady=(0, 2))
+        self._tab_slots.append(slot)
+
         btn = tk.Button(
-            self._tab_bar,
+            slot,
             text=label.upper(),
             command=lambda i=index: self.select(i),
             bg=self.TAB_INACTIVE_BG,
@@ -78,17 +88,17 @@ class TabPanel(tk.Frame):
             activebackground=self.TAB_HOVER_BG,
             activeforeground=self.FG_LIGHT,
             bd=0,
-            padx=12,
-            pady=5,
+            padx=4,
+            pady=3,
             font=('Helvetica', 7, 'bold'),
             cursor="hand2",
             relief="flat",
         )
-        btn.pack(side=tk.LEFT, padx=(0, 1), pady=4)
+        btn.pack(fill=tk.BOTH, expand=True)
         self._tab_buttons.append(btn)
 
-        # Glow line (active indicator) — hidden by default
-        glow = tk.Frame(self._tab_bar, bg=self.TAB_ACTIVE_GLOW, height=2)
+        # Glow line (active indicator) — hidden by default.
+        glow = tk.Frame(slot, bg=self.TAB_ACTIVE_GLOW, height=2)
         self._glow_lines.append(glow)
 
         # Hover effects
@@ -128,16 +138,14 @@ class TabPanel(tk.Frame):
                     bg=self.TAB_ACTIVE_BG,
                     fg=self.NEON_CYAN,
                 )
-                # Position glow line below the button
-                glow.place(in_=self._tab_bar, relx=0, rely=1.0,
-                           width=btn.winfo_width(), height=2)
+                glow.pack(side=tk.BOTTOM, fill=tk.X)
                 glow.lift()
             else:
                 btn.configure(
                     bg=self.TAB_INACTIVE_BG,
                     fg=self.FG_MUTED,
                 )
-                glow.place_forget()
+                glow.pack_forget()
 
     def _add_hover(self, widget):
         widget.bind("<Enter>", lambda e: self._on_tab_enter(widget))

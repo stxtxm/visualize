@@ -161,7 +161,7 @@ def _run_pygame_fallback():
                 audio_data = analyzer.analyze_chunk(chunk)
                 audio_player.play_chunk(chunk)
                 effect_manager.current_effect.update(audio_data, clock.get_time() / 1000.0)
-                effect_manager.current_effect.render(screen)
+                effect_manager.render(screen)
         
         # Infos à l'écran
         if font and small_font:
@@ -206,6 +206,22 @@ def run_cli():
                         help='Optional image file used as the visualizer background')
     parser.add_argument('--background-opacity', type=float, default=0.72,
                         help='Background image opacity (0.0-1.0), default 0.72')
+    parser.add_argument('--logo', default=None,
+                        help='Optional logo image drawn above the visualizer')
+    parser.add_argument('--logo-position', default='top-right',
+                        choices=['top-left', 'top-center', 'top-right',
+                                 'center-left', 'center', 'center-right',
+                                 'bottom-left', 'bottom-center', 'bottom-right',
+                                 'custom'],
+                        help='Logo placement preset, or custom with --logo-x/--logo-y')
+    parser.add_argument('--logo-x', type=float, default=50.0,
+                        help='Custom logo horizontal position in percent (0-100)')
+    parser.add_argument('--logo-y', type=float, default=50.0,
+                        help='Custom logo vertical position in percent (0-100)')
+    parser.add_argument('--logo-scale', type=float, default=18.0,
+                        help='Logo width as a percentage of the video width (1-100)')
+    parser.add_argument('--logo-opacity', type=float, default=100.0,
+                        help='Logo opacity in percent (0-100)')
     parser.add_argument('--audio-device', '-d', type=str, default=None,
                         help='Audio output device index or name substring (use "list" to show available devices)')
     parser.add_argument('--resolution', '-r', default=None,
@@ -256,6 +272,10 @@ def run_cli():
     if args.background and not os.path.exists(args.background):
         print(f"Error: {args.background} not found")
         sys.exit(1)
+
+    if args.logo and not os.path.exists(args.logo):
+        print(f"Error: {args.logo} not found")
+        sys.exit(1)
     
     if args.export:
         run_export(args)
@@ -295,7 +315,13 @@ def run_export(args):
         effect_type=args.effect,
         color_palette=args.color,
         background_image=args.background,
-        background_opacity=args.background_opacity
+        background_opacity=args.background_opacity,
+        logo_image=args.logo,
+        logo_position=args.logo_position,
+        logo_x=args.logo_x / 100.0,
+        logo_y=args.logo_y / 100.0,
+        logo_scale=args.logo_scale / 100.0,
+        logo_opacity=args.logo_opacity / 100.0,
     )
     effect_manager.init()
     
@@ -335,7 +361,7 @@ def run_export(args):
                 
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.current_effect.update(audio_data, 1.0/fps)
-            frame = effect_manager.current_effect.render_to_array()
+            frame = effect_manager.render_to_array()
             frame = frame[:, :, ::-1]  # RGB → BGR view (no copy)
             
             if process.poll() is not None:
@@ -455,7 +481,17 @@ def run_playback(args):
         renderer = ArrayRenderer(width, height, fps)
     
     renderer.init()
-    effect_manager = EffectManager(analyzer, renderer, args.effect, args.color, background_image=args.background, background_opacity=args.background_opacity)
+    effect_manager = EffectManager(
+        analyzer, renderer, args.effect, args.color,
+        background_image=args.background,
+        background_opacity=args.background_opacity,
+        logo_image=args.logo,
+        logo_position=args.logo_position,
+        logo_x=args.logo_x / 100.0,
+        logo_y=args.logo_y / 100.0,
+        logo_scale=args.logo_scale / 100.0,
+        logo_opacity=args.logo_opacity / 100.0,
+    )
     effect_manager.init()
     
     # Create audio player with resolved device
@@ -475,9 +511,9 @@ def run_playback(args):
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.current_effect.update(audio_data, 1.0/fps)
             if _has_pygame:
-                effect_manager.current_effect.render(renderer.get_surface())
+                effect_manager.render(renderer.get_surface())
             else:
-                arr = effect_manager.current_effect.render_to_array()
+                arr = effect_manager.render_to_array()
                 if arr is not None:
                     frame = renderer.get_surface()
                     h, w = min(arr.shape[0], frame.shape[0]), min(arr.shape[1], frame.shape[1])

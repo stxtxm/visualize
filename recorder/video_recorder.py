@@ -18,7 +18,9 @@ class VideoRecorder:
     def __init__(self, audio_file, output_file, width=1920, height=1080,
                  fps=60, effect_type='random', color_palette='psychedelic',
                  background_image=None, background_opacity=0.72,
-                 render_scale=1.0):
+                 render_scale=1.0, logo_image=None,
+                 logo_position='top-right', logo_x=0.5, logo_y=0.5,
+                 logo_scale=0.18, logo_opacity=1.0):
         """
         Initialize the video recorder.
 
@@ -32,6 +34,11 @@ class VideoRecorder:
             color_palette: Color palette to use
             background_image: Path to optional background image
             background_opacity: Blend opacity for background image (0.0-1.0)
+            logo_image: Path to an optional foreground logo image
+            logo_position: Preset placement or ``custom``
+            logo_x/logo_y: Custom placement in normalized coordinates
+            logo_scale: Logo width as a fraction of the frame width
+            logo_opacity: Logo opacity (0.0-1.0)
             render_scale: Scale factor for rendering (0.25-1.0).
                           Lower values render at reduced resolution for
                           faster export; ffmpeg upscales to target resolution.
@@ -46,12 +53,28 @@ class VideoRecorder:
         self.color_palette = color_palette
         self.background_image = background_image
         self.background_opacity = background_opacity
+        self.logo_image = logo_image
+        self.logo_position = logo_position
+        self.logo_x = max(0.0, min(1.0, float(logo_x)))
+        self.logo_y = max(0.0, min(1.0, float(logo_y)))
+        self.logo_scale = max(0.01, min(1.0, float(logo_scale)))
+        self.logo_opacity = max(0.0, min(1.0, float(logo_opacity)))
         self.render_scale = min(1.0, max(0.1, render_scale))
         self._render_width = max(1, int(width * self.render_scale))
         self._render_height = max(1, int(height * self.render_scale))
         self._ffmpeg_cmd = self._build_ffmpeg_command()
         self._process = None
         self._cancelled = False
+        from effects.logo_overlay import LogoOverlay
+        self._logo_overlay = LogoOverlay(
+            self._render_width, self._render_height,
+            image_path=self.logo_image,
+            position=self.logo_position,
+            x=self.logo_x,
+            y=self.logo_y,
+            scale=self.logo_scale,
+            opacity=self.logo_opacity,
+        )
 
     def _build_ffmpeg_command(self):
         """Build the FFmpeg command for encoding."""
@@ -199,6 +222,8 @@ class VideoRecorder:
         print(f"  Colors: {self.color_palette}")
         if self.background_image:
             print(f"  Background: {self.background_image}")
+        if self.logo_image:
+            print(f"  Logo: {self.logo_image} ({self.logo_position})")
         print()
 
         # Start FFmpeg process
@@ -275,6 +300,12 @@ class VideoRecorder:
                 if isinstance(frame, np.ndarray):
                     if frame.dtype != np.uint8:
                         frame = frame.astype(np.uint8)
+
+                    # Custom generators are supported too: the recorder owns
+                    # the final logo layer for every exported frame.
+                    if self.logo_image:
+                        self._logo_overlay.set_frame_size(frame.shape[1], frame.shape[0])
+                        frame = self._logo_overlay.apply(frame)
 
                     # Convert RGB to BGR (FFmpeg expects bgr24 pixel format)
                     if frame.shape[2] == 3:

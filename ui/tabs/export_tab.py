@@ -48,6 +48,14 @@ class ExportTab(tk.Frame):
                          fg=self.NEON_CYAN, bg=self.BG_PANEL)
         title.pack(anchor=tk.W, pady=(10, 12), padx=12)
 
+        intro = tk.Label(
+            self,
+            text="La vidéo reprend exactement l'effet, le fond et le logo visibles dans la preview.",
+            font=('Helvetica', 7), fg=self.FG_MUTED, bg=self.BG_PANEL,
+            justify=tk.LEFT, wraplength=250,
+        )
+        intro.pack(anchor=tk.W, padx=12, pady=(0, 8))
+
         # Resolution
         self._create_dropdown("RÉSOLUTION", self._resolution,
                               ['1080p', '1440p', '4K'])
@@ -96,7 +104,7 @@ class ExportTab(tk.Frame):
 
         # Progress bar (canvas)
         self._progress_canvas = tk.Canvas(
-            self._progress_frame, height=12,
+            self._progress_frame, height=8,
             bg=self.BG_PANEL, bd=0, highlightthickness=0,
         )
         self._progress_canvas.pack(fill=tk.X)

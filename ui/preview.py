@@ -22,10 +22,42 @@ class PreviewFrame(tk.Canvas):
         self._has_image = False
         self._on_click_empty = on_click_empty
         self.bg_color = "#05050a"
+        self._empty_title_id = None
+        self._empty_hint_id = None
         self.configure(bg=self.bg_color, highlightthickness=0)
 
         self.bind("<Configure>", self._on_resize)
         self.bind("<Button-1>", self._on_click)
+        self.configure(cursor="hand2")
+        self._create_empty_state()
+
+    def _create_empty_state(self):
+        """Show a useful call-to-action before the first frame is rendered."""
+        self._empty_title_id = self.create_text(
+            self.winfo_width() // 2, self.winfo_height() // 2 - 18,
+            text="AUCUN APERÇU", fill="#e2e2ee",
+            font=("Helvetica", 16, "bold"), anchor=tk.CENTER,
+        )
+        self._empty_hint_id = self.create_text(
+            self.winfo_width() // 2, self.winfo_height() // 2 + 15,
+            text="Cliquez ici pour choisir un fichier audio",
+            fill="#85859e", font=("Helvetica", 9), anchor=tk.CENTER,
+        )
+
+    def _set_empty_state_visible(self, visible):
+        state = tk.NORMAL if visible else tk.HIDDEN
+        for item_id in (self._empty_title_id, self._empty_hint_id):
+            if item_id is not None:
+                self.itemconfigure(item_id, state=state)
+
+    def apply_theme(self, theme):
+        """Apply theme colours to the canvas and its empty-state copy."""
+        self.bg_color = theme.preview_bg
+        self.configure(bg=self.bg_color)
+        if self._empty_title_id is not None:
+            self.itemconfigure(self._empty_title_id, fill=theme.fg_light)
+        if self._empty_hint_id is not None:
+            self.itemconfigure(self._empty_hint_id, fill=theme.fg_muted)
 
     def _on_resize(self, event):
         """Recenter image when canvas is resized."""
@@ -35,6 +67,15 @@ class PreviewFrame(tk.Canvas):
                 self.winfo_width() // 2,
                 self.winfo_height() // 2,
             )
+        for item_id, offset in (
+            (self._empty_title_id, -18), (self._empty_hint_id, 15)
+        ):
+            if item_id is not None:
+                self.coords(
+                    item_id,
+                    self.winfo_width() // 2,
+                    self.winfo_height() // 2 + offset,
+                )
 
     def _on_click(self, event):
         """Handle click: if empty, trigger the callback to open file dialog."""
@@ -48,6 +89,7 @@ class PreviewFrame(tk.Canvas):
             image: PIL ImageTk.PhotoImage to display
         """
         self._has_image = True
+        self._set_empty_state_visible(False)
         self._image_ref = image
         if self._current_img_id is None:
             self._current_img_id = self.create_image(
@@ -66,6 +108,7 @@ class PreviewFrame(tk.Canvas):
             self._current_img_id = None
         self._image_ref = None
         self._has_image = False
+        self._set_empty_state_visible(True)
         self.configure(bg=self.bg_color)
 
     def get_display_size(self):

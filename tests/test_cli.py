@@ -65,6 +65,10 @@ class TestCLIArgumentParsing(unittest.TestCase):
         self.assertIn('trance_scope', proc.stdout)
         self.assertIn('--background', proc.stdout)
         self.assertIn('--background-opacity', proc.stdout)
+        self.assertIn('--logo', proc.stdout)
+        self.assertIn('--logo-position', proc.stdout)
+        self.assertIn('--logo-x', proc.stdout)
+        self.assertIn('--logo-y', proc.stdout)
 
     def test_background_opacity_accepted_by_argparse(self):
         proc = self._run_main(['nonexistent.wav', '--background-opacity', '0.5'])

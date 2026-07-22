@@ -6,6 +6,8 @@ Manages the selection and instantiation of visual effects.
 import random
 import importlib
 
+from effects.logo_overlay import LogoOverlay
+
 
 # Map effect type names to module names
 EFFECT_MAP = {
@@ -33,7 +35,9 @@ class EffectManager:
 
     def __init__(self, analyzer=None, renderer=None, effect_type='random',
                  color_palette='psychedelic', background_image=None,
-                 background_opacity=0.72):
+                 background_opacity=0.72, logo_image=None,
+                 logo_position='top-right', logo_x=0.5, logo_y=0.5,
+                 logo_scale=0.18, logo_opacity=1.0):
         """
         Initialize the effect manager.
         
@@ -44,6 +48,11 @@ class EffectManager:
             color_palette: Color palette to use
             background_image: Path to optional background image
             background_opacity: Blend opacity for background image (0.0-1.0)
+            logo_image: Path to an optional foreground logo image
+            logo_position: Preset placement or ``custom``
+            logo_x/logo_y: Custom placement in normalized coordinates
+            logo_scale: Logo width as a fraction of the frame width
+            logo_opacity: Logo opacity (0.0-1.0)
         """
         self.analyzer = analyzer
         self.renderer = renderer
@@ -51,12 +60,27 @@ class EffectManager:
         self.color_palette = color_palette
         self.background_image = background_image
         self.background_opacity = max(0.0, min(1.0, background_opacity))
+        self.logo_image = logo_image
+        self.logo_position = logo_position
+        self.logo_x = max(0.0, min(1.0, float(logo_x)))
+        self.logo_y = max(0.0, min(1.0, float(logo_y)))
+        self.logo_scale = max(0.01, min(1.0, float(logo_scale)))
+        self.logo_opacity = max(0.0, min(1.0, float(logo_opacity)))
         self.current_effect = None
         self._initialized = False
         
         # Store width and height from renderer
         self.width = renderer.width if renderer else 1920
         self.height = renderer.height if renderer else 1080
+        self.logo_overlay = LogoOverlay(
+            self.width, self.height,
+            image_path=self.logo_image,
+            position=self.logo_position,
+            x=self.logo_x,
+            y=self.logo_y,
+            scale=self.logo_scale,
+            opacity=self.logo_opacity,
+        )
 
     def init(self):
         """Initialize the effect manager."""
@@ -129,6 +153,38 @@ class EffectManager:
         if self.current_effect and hasattr(self.current_effect, 'set_background_opacity'):
             self.current_effect.set_background_opacity(opacity)
 
+    def set_logo_image(self, image_path):
+        """Apply a foreground logo to preview, playback and future renders."""
+        self.logo_image = image_path or None
+        self.logo_overlay.set_image(self.logo_image)
+
+    def set_logo_position(self, position):
+        """Set a named logo position or ``custom``."""
+        self.logo_position = position
+        self.logo_overlay.set_position(position)
+
+    def set_logo_coordinates(self, x=None, y=None):
+        """Set custom logo coordinates in normalized 0.0-1.0 units."""
+        if x is not None:
+            self.logo_x = max(0.0, min(1.0, float(x)))
+        if y is not None:
+            self.logo_y = max(0.0, min(1.0, float(y)))
+        self.logo_overlay.set_coordinates(x, y)
+
+    def set_logo_scale(self, scale):
+        self.logo_scale = max(0.01, min(1.0, float(scale)))
+        self.logo_overlay.set_scale(self.logo_scale)
+
+    def set_logo_opacity(self, opacity):
+        self.logo_opacity = max(0.0, min(1.0, float(opacity)))
+        self.logo_overlay.set_opacity(self.logo_opacity)
+
+    def resize(self, width, height):
+        """Update manager and logo dimensions when the preview is resized."""
+        self.width = max(1, int(width))
+        self.height = max(1, int(height))
+        self.logo_overlay.set_frame_size(self.width, self.height)
+
     def update(self, audio_data, delta_time):
         """
         Update the current effect with audio data.
@@ -149,6 +205,7 @@ class EffectManager:
         """
         if self.current_effect and surface:
             self.current_effect.render(surface)
+            self.logo_overlay.render_pygame(surface)
 
     def render_to_array(self):
         """
@@ -158,7 +215,8 @@ class EffectManager:
             numpy.ndarray: Rendered frame as RGB array
         """
         if self.current_effect:
-            return self.current_effect.render_to_array()
+            frame = self.current_effect.render_to_array()
+            return self.logo_overlay.apply(frame)
         else:
             # Return a black frame
             import numpy as np

@@ -51,10 +51,10 @@ class BackgroundTab(tk.Frame):
         self.entry_bg.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
 
         btn_bg = tk.Button(
-            bg_row, text="+", command=self._open_background,
+            bg_row, text="CHOISIR", command=self._open_background,
             bg="#252538", fg=self.FG_LIGHT, activebackground="#35354e",
-            activeforeground=self.FG_LIGHT, bd=0, padx=10,
-            font=('Helvetica', 10, 'bold'), cursor="hand2"
+            activeforeground=self.FG_LIGHT, bd=0, padx=8,
+            font=('Helvetica', 7, 'bold'), cursor="hand2"
         )
         btn_bg.pack(side=tk.RIGHT)
         self._add_hover(btn_bg, "#35354e", "#252538")

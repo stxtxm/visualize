@@ -11,11 +11,15 @@ class Theme:
         'name', 'bg_dark', 'bg_panel', 'bg_card', 'fg_light', 'fg_muted',
         'neon_primary', 'neon_secondary', 'neon_accent', 'neon_warn',
         'status_bg', 'border', 'footer_bg', 'footer_fg', 'progress_track',
+        'input_bg', 'button_bg', 'button_hover', 'preview_bg',
+        'danger_bg', 'danger_fg',
     )
 
     def __init__(self, name, bg_dark, bg_panel, bg_card, fg_light, fg_muted,
                  neon_primary, neon_secondary, neon_accent, neon_warn,
-                 status_bg, border, footer_bg, footer_fg, progress_track):
+                 status_bg, border, footer_bg, footer_fg, progress_track,
+                 input_bg=None, button_bg=None, button_hover=None,
+                 preview_bg=None, danger_bg=None, danger_fg=None):
         self.name = name
         self.bg_dark = bg_dark
         self.bg_panel = bg_panel
@@ -31,6 +35,12 @@ class Theme:
         self.footer_bg = footer_bg
         self.footer_fg = footer_fg
         self.progress_track = progress_track
+        self.input_bg = input_bg or bg_card
+        self.button_bg = button_bg or bg_card
+        self.button_hover = button_hover or border
+        self.preview_bg = preview_bg or bg_dark
+        self.danger_bg = danger_bg or bg_panel
+        self.danger_fg = danger_fg or "#ff5b6e"
 
     def as_dict(self):
         return {s: getattr(self, s) for s in self.__slots__}
@@ -47,6 +57,8 @@ CYBERPUNK = Theme(
     status_bg="#0d0d18", border="#1c1c30",
     footer_bg="#0a0a12", footer_fg="#6a6a8a",
     progress_track="#14233b",
+    input_bg="#0f1624", button_bg="#1b263b", button_hover="#263853",
+    preview_bg="#05070d", danger_bg="#29151f", danger_fg="#ff5b6e",
 )
 
 SYNTHWAVE = Theme(
@@ -58,6 +70,8 @@ SYNTHWAVE = Theme(
     status_bg="#0f0520", border="#3a1a6a",
     footer_bg="#0d041a", footer_fg="#8050a0",
     progress_track="#2a1050",
+    input_bg="#200d3a", button_bg="#32165b", button_hover="#48217d",
+    preview_bg="#080311", danger_bg="#3a122d", danger_fg="#ff74bd",
 )
 
 MATRIX = Theme(
@@ -69,6 +83,8 @@ MATRIX = Theme(
     status_bg="#000d00", border="#004400",
     footer_bg="#000a00", footer_fg="#306030",
     progress_track="#002a00",
+    input_bg="#001500", button_bg="#003000", button_hover="#004d00",
+    preview_bg="#000500", danger_bg="#1d1200", danger_fg="#ffaa00",
 )
 
 TOKYO_NIGHT = Theme(
@@ -80,6 +96,8 @@ TOKYO_NIGHT = Theme(
     status_bg="#131520", border="#2f354a",
     footer_bg="#0f111a", footer_fg="#464b66",
     progress_track="#24283b",
+    input_bg="#161a29", button_bg="#202640", button_hover="#303958",
+    preview_bg="#0b0d14", danger_bg="#2b1d2f", danger_fg="#f7768e",
 )
 
 THEMES = {

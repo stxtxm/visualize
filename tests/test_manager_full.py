@@ -63,6 +63,34 @@ class TestEffectManagerFull(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_logo_configuration_is_kept_by_manager(self):
+        from effects.manager import EffectManager
+
+        mgr = EffectManager(
+            analyzer=None,
+            renderer=MockRenderer(),
+            effect_type='bars',
+            logo_position='custom',
+            logo_x=0.25,
+            logo_y=0.75,
+            logo_scale=0.3,
+            logo_opacity=0.5,
+        )
+        assert mgr.logo_position == 'custom'
+        assert mgr.logo_x == 0.25
+        assert mgr.logo_y == 0.75
+        assert mgr.logo_scale == 0.3
+        assert mgr.logo_opacity == 0.5
+        mgr.set_logo_position('center')
+        mgr.set_logo_coordinates(0.1, 0.2)
+        mgr.set_logo_scale(0.4)
+        mgr.set_logo_opacity(0.8)
+        assert mgr.logo_overlay.position == 'center'
+        assert mgr.logo_overlay.x == 0.1
+        assert mgr.logo_overlay.y == 0.2
+        assert mgr.logo_overlay.scale == 0.4
+        assert mgr.logo_overlay.opacity == 0.8
+
     def test_change_effect(self):
         mgr = self._make_manager(effect_type='bars')
         mgr.change_effect('plasma')

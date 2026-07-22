@@ -25,6 +25,7 @@ from ui.tab_panel import TabPanel
 from ui.tabs.file_tab import FileTab
 from ui.tabs.effects_tab import EffectsTab
 from ui.tabs.background_tab import BackgroundTab
+from ui.tabs.logo_tab import LogoTab
 from ui.tabs.export_tab import ExportTab
 from ui.tabs.logs_tab import LogsTab, set_global_logs_tab
 from ui.preview import PreviewFrame
@@ -46,9 +47,16 @@ class MainWindow:
         self.is_playing = tk.BooleanVar(value=False)
         self._is_playing_event = threading.Event()
         self.audio_file = tk.StringVar(value="")
+        self.audio_file.trace_add("write", self._audio_file_changed)
         self.selected_effect = tk.StringVar(value="Trance Scope")
         self.selected_color = tk.StringVar(value="psychedelic")
         self.background_image = tk.StringVar(value="")
+        self.logo_image = tk.StringVar(value="")
+        self.logo_position = tk.StringVar(value="top-right")
+        self.logo_x = tk.DoubleVar(value=100)
+        self.logo_y = tk.DoubleVar(value=0)
+        self.logo_scale = tk.DoubleVar(value=18)
+        self.logo_opacity = tk.DoubleVar(value=100)
         self.resolution = tk.StringVar(value="1080p")
         self.fps = tk.IntVar(value=60)
         self.selected_preset = tk.StringVar(value="normal")
@@ -126,16 +134,17 @@ class MainWindow:
 
     # ── Theme application ──────────────────────────────────────────────
     def _apply_theme(self, theme_name="cyberpunk"):
-        """Apply a theme to known UI surfaces. Only affects backgrounds,
-        not foregrounds of functional widgets (buttons, labels)."""
+        """Apply a theme consistently to the whole interface."""
+        previous_theme = getattr(self, "_theme", None)
         theme = get_theme(theme_name)
         self._theme = theme
         self._theme_name.set(theme_name)
 
-        # Root only — foregrounds are managed per-widget
         self.root.configure(bg=theme.bg_dark)
+        self._configure_ttk_styles(theme)
+        if hasattr(self, "_main_frame"):
+            self._recolor_widgets(self._main_frame, theme, previous_theme)
 
-        # Footer surfaces
         if hasattr(self, '_footer'):
             self._footer.configure(bg=theme.footer_bg)
         if hasattr(self, '_footer_copyright'):
@@ -148,6 +157,22 @@ class MainWindow:
         # Preview border
         if hasattr(self, '_preview_border'):
             self._preview_border.configure(bg=theme.border)
+        if hasattr(self, 'preview'):
+            self.preview.apply_theme(theme)
+        if hasattr(self, '_preview_effect_label'):
+            self._preview_effect_label.configure(fg=theme.fg_light)
+        if hasattr(self, '_preview_palette_label'):
+            self._preview_palette_label.configure(fg=theme.fg_muted)
+        if hasattr(self, 'btn_play') and hasattr(self, 'btn_stop'):
+            if self.is_playing.get():
+                self.btn_play.configure(bg=theme.button_bg, fg=theme.fg_muted)
+                self.btn_stop.configure(bg=theme.neon_secondary,
+                                        activebackground=theme.button_hover)
+            else:
+                self.btn_play.configure(bg=theme.neon_accent, fg="#05050a",
+                                        activebackground=theme.button_hover)
+                self.btn_stop.configure(bg=theme.button_bg,
+                                        activebackground=theme.button_hover)
 
         # Save preference
         self._save_theme_pref(theme_name)
@@ -155,6 +180,91 @@ class MainWindow:
         # Toast notification
         if hasattr(self, 'toast'):
             self.toast.show(f"Theme: {theme.name}", 1.5, "info")
+
+    def _configure_ttk_styles(self, theme):
+        """Give native ttk controls the same visual language as Tk widgets."""
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(
+            "TCombobox", fieldbackground=theme.input_bg,
+            background=theme.input_bg, foreground=theme.fg_light,
+            bordercolor=theme.border, lightcolor=theme.border,
+            darkcolor=theme.border, arrowcolor=theme.neon_primary,
+            padding=(8, 5), relief="flat",
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", theme.input_bg)],
+            foreground=[("readonly", theme.fg_light)],
+            selectbackground=[("readonly", theme.button_hover)],
+            selectforeground=[("readonly", theme.fg_light)],
+        )
+
+    def _recolor_widgets(self, widget, theme, previous_theme=None):
+        """Recolor legacy Tk widgets while preserving semantic accents."""
+        old_to_new_bg = {
+            "#09090d": theme.bg_dark, "#12121d": theme.bg_panel,
+            "#1b1b2a": theme.bg_card, "#1a1a2e": theme.button_bg,
+            "#252538": theme.button_bg, "#252540": theme.button_hover,
+            "#35354e": theme.button_hover, "#2a1a2e": theme.button_bg,
+            "#3a2a3e": theme.button_hover, "#1a3a1a": theme.button_bg,
+            "#05050a": theme.preview_bg, "#0a0a12": theme.footer_bg,
+            "#0d0d18": theme.status_bg, "#1c1c30": theme.border,
+            "#2a2a3e": theme.border, "#3a1a2a": theme.danger_bg,
+            "#14233b": theme.progress_track,
+        }
+        old_to_new_fg = {
+            "#e2e2ee": theme.fg_light, "#85859e": theme.fg_muted,
+            "#00e5ff": theme.neon_primary, "#ff007f": theme.neon_secondary,
+            "#ff52a2": theme.neon_secondary, "#a2ff8e": theme.neon_accent,
+            "#39ff14": theme.neon_accent, "#ffaa00": theme.neon_warn,
+            "#ff3b3b": theme.danger_fg, "#ff5b5b": theme.danger_fg,
+        }
+        if previous_theme:
+            old_to_new_bg.update({
+                previous_theme.bg_dark: theme.bg_dark,
+                previous_theme.bg_panel: theme.bg_panel,
+                previous_theme.bg_card: theme.bg_card,
+                previous_theme.input_bg: theme.input_bg,
+                previous_theme.button_bg: theme.button_bg,
+                previous_theme.button_hover: theme.button_hover,
+                previous_theme.preview_bg: theme.preview_bg,
+                previous_theme.status_bg: theme.status_bg,
+                previous_theme.border: theme.border,
+                previous_theme.footer_bg: theme.footer_bg,
+                previous_theme.danger_bg: theme.danger_bg,
+            })
+            old_to_new_fg.update({
+                previous_theme.fg_light: theme.fg_light,
+                previous_theme.fg_muted: theme.fg_muted,
+                previous_theme.neon_primary: theme.neon_primary,
+                previous_theme.neon_secondary: theme.neon_secondary,
+                previous_theme.neon_accent: theme.neon_accent,
+                previous_theme.neon_warn: theme.neon_warn,
+                previous_theme.danger_fg: theme.danger_fg,
+            })
+
+        try:
+            for option in ("bg", "background", "highlightbackground", "troughcolor"):
+                value = widget.cget(option)
+                if value in old_to_new_bg:
+                    widget.configure(**{option: old_to_new_bg[value]})
+            for option in ("fg", "foreground", "activeforeground", "insertbackground"):
+                value = widget.cget(option)
+                if value in old_to_new_fg:
+                    widget.configure(**{option: old_to_new_fg[value]})
+            for option in ("activebackground",):
+                value = widget.cget(option)
+                if value in old_to_new_bg:
+                    widget.configure(**{option: old_to_new_bg[value]})
+        except (tk.TclError, TypeError):
+            pass
+
+        for child in widget.winfo_children():
+            self._recolor_widgets(child, theme, previous_theme)
 
     def _find_status_frame(self):
         """Find the status bar frame."""
@@ -202,16 +312,17 @@ class MainWindow:
         T = theme  # shorthand
 
         self.root.title(f"Visualisateur Psychédélique {__version__}")
-        self.root.geometry("1200x740")
-        self.root.minsize(1024, 680)
+        self.root.geometry("1360x820")
+        self.root.minsize(1120, 720)
         self.root.configure(bg=T.bg_dark)
 
         # ── Main container ──
-        main_frame = tk.Frame(self.root, bg=T.bg_dark, padx=12, pady=12)
+        self._main_frame = tk.Frame(self.root, bg=T.bg_dark, padx=18, pady=16)
+        main_frame = self._main_frame
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # ── LEFT: Tabbed sidebar ──
-        left_panel = tk.Frame(main_frame, bg=T.bg_panel, width=280,
+        left_panel = tk.Frame(main_frame, bg=T.bg_panel, width=320,
                               padx=0, pady=0, bd=1, relief="solid",
                               highlightbackground=T.border,
                               highlightcolor=T.border)
@@ -223,12 +334,12 @@ class MainWindow:
         header.pack(fill=tk.X, padx=14, pady=(14, 4))
 
         title_label = tk.Label(header, text="PSYCHEDELIC",
-                               font=('Helvetica', 15, 'bold'),
+                               font=('Helvetica', 18, 'bold'),
                                fg=T.neon_primary, bg=T.bg_panel)
         title_label.pack(anchor=tk.W)
 
-        sub_label = tk.Label(header, text=f"VISUALIZER  v{__version__}",
-                             font=('Helvetica', 7, 'bold'),
+        sub_label = tk.Label(header, text=f"AUDIO VISUALIZER  •  v{__version__}",
+                             font=('Helvetica', 8, 'bold'),
                              fg=T.neon_secondary, bg=T.bg_panel)
         sub_label.pack(anchor=tk.W, pady=(0, 0))
 
@@ -236,8 +347,8 @@ class MainWindow:
         theme_frame = tk.Frame(header, bg=T.bg_panel)
         theme_frame.pack(fill=tk.X, pady=(6, 0))
 
-        theme_lbl = tk.Label(theme_frame, text="Theme",
-                             font=('Helvetica', 6, 'bold'),
+        theme_lbl = tk.Label(theme_frame, text="APPARENCE",
+                             font=('Helvetica', 7, 'bold'),
                              fg=T.fg_muted, bg=T.bg_panel)
         theme_lbl.pack(side=tk.LEFT, padx=(0, 4))
 
@@ -274,6 +385,15 @@ class MainWindow:
             BackgroundTab(self.tab_panel, self.background_image, self.opacity_var,
                           status_callback=self._set_status)
         )
+        self._logo_tab = self.tab_panel.add_tab(
+            "◇ LOGO",
+            LogoTab(
+                self.tab_panel, self.logo_image, self.logo_position,
+                self.logo_x, self.logo_y, self.logo_scale, self.logo_opacity,
+                change_callback=self._logo_changed,
+                status_callback=self._set_status,
+            )
+        )
         self._export_tab = self.tab_panel.add_tab(
             "📤 EXPORT",
             ExportTab(self.tab_panel, self.audio_file, self.resolution, self.fps,
@@ -289,30 +409,33 @@ class MainWindow:
         )
         set_global_logs_tab(self._logs_tab)
 
-        # ── Play / Stop / Volume ──
+        # ── Transport controls ──
         btn_container = tk.Frame(left_panel, bg=T.bg_panel)
         btn_container.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(4, 12))
 
+        transport_row = tk.Frame(btn_container, bg=T.bg_panel)
+        transport_row.pack(fill=tk.X, pady=(0, 6))
+
         self.btn_play = tk.Button(
-            btn_container, text="▶  LECTURE",
+            transport_row, text="▶  LECTURE",
             command=self._toggle_playback,
             bg=T.neon_accent, fg="#05050a",
             activebackground="#a2ff8e", activeforeground="#05050a",
-            bd=0, pady=7, font=('Helvetica', 10, 'bold'), cursor="hand2",
+            bd=0, pady=8, font=('Helvetica', 9, 'bold'), cursor="hand2",
             relief="flat",
         )
-        self.btn_play.pack(fill=tk.X, pady=(0, 5))
+        self.btn_play.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self._add_hover(self.btn_play, "#a2ff8e", T.neon_accent)
 
         self.btn_stop = tk.Button(
-            btn_container, text="⏹  ARRÊTER",
+            transport_row, text="■  ARRÊTER",
             command=self._stop_playback,
             bg="#2a1a2e", fg=T.fg_muted,
             activebackground="#3a2a3e", activeforeground=T.fg_light,
-            bd=0, pady=7, font=('Helvetica', 10, 'bold'), cursor="hand2",
+            bd=0, pady=8, font=('Helvetica', 9, 'bold'), cursor="hand2",
             relief="flat",
         )
-        self.btn_stop.pack(fill=tk.X)
+        self.btn_stop.pack(side=tk.RIGHT, fill=tk.X, expand=True)
         self._add_hover(self.btn_stop, "#3a2a3e", "#2a1a2e")
 
         # Volume slider
@@ -338,6 +461,12 @@ class MainWindow:
                                       width=3, anchor=tk.E)
         self._volume_label.pack(side=tk.RIGHT, padx=(4, 0))
 
+        shortcut_hint = tk.Label(
+            btn_container, text="Espace lecture  •  Ctrl+E export  •  Échap arrêt",
+            font=('Helvetica', 7), fg=T.fg_muted, bg=T.bg_panel,
+        )
+        shortcut_hint.pack(anchor=tk.W, pady=(6, 0))
+
         # ── RIGHT: Preview + Status ──
         right_panel = tk.Frame(main_frame, bg=T.bg_dark)
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -346,10 +475,29 @@ class MainWindow:
         preview_header = tk.Frame(right_panel, bg=T.bg_dark)
         preview_header.pack(fill=tk.X, pady=(0, 8))
 
-        preview_title = tk.Label(preview_header, text="APERÇU",
-                                 font=('Helvetica', 9, 'bold'),
+        preview_title = tk.Label(preview_header, text="APERÇU EN DIRECT",
+                                 font=('Helvetica', 10, 'bold'),
                                  fg=T.neon_primary, bg=T.bg_dark)
         preview_title.pack(side=tk.LEFT)
+
+        self._preview_state_label = tk.Label(
+            preview_header, text="● PRÊT", font=('Helvetica', 7, 'bold'),
+            fg=T.fg_muted, bg=T.bg_dark, padx=10,
+        )
+        self._preview_state_label.pack(side=tk.LEFT, padx=(12, 0))
+
+        preview_meta = tk.Frame(preview_header, bg=T.bg_dark)
+        preview_meta.pack(side=tk.RIGHT)
+        self._preview_effect_label = tk.Label(
+            preview_meta, textvariable=self.selected_effect,
+            font=('Helvetica', 8, 'bold'), fg=T.fg_light, bg=T.bg_dark,
+        )
+        self._preview_effect_label.pack(side=tk.LEFT, padx=(0, 10))
+        self._preview_palette_label = tk.Label(
+            preview_meta, textvariable=self.selected_color,
+            font=('Helvetica', 8), fg=T.fg_muted, bg=T.bg_dark,
+        )
+        self._preview_palette_label.pack(side=tk.LEFT, padx=(0, 10))
 
         timecode_label = tk.Label(preview_header, textvariable=self._timecode_str,
                                   font=('Courier', 9, 'bold'),
@@ -377,7 +525,10 @@ class MainWindow:
 
         # ── Status bar ──
         self.status_var = tk.StringVar(value="PRÊT")
-        status_frame = tk.Frame(right_panel, bg=T.status_bg, height=26, bd=0)
+        status_frame = tk.Frame(right_panel, bg=T.status_bg, height=30, bd=0,
+                                highlightthickness=1,
+                                highlightbackground=T.border)
+        self._status_frame = status_frame
         status_frame.pack(fill=tk.X, pady=(10, 0))
 
         self._led_status = tk.Label(status_frame, text="●",
@@ -386,24 +537,35 @@ class MainWindow:
         self._led_status.pack(side=tk.LEFT)
 
         def update_led(*args):
+            theme = self._theme
             if self.is_playing.get():
-                self._led_status.configure(fg=T.neon_accent)
-                self.btn_play.configure(bg="#1a3a1a", fg=T.fg_muted,
+                self._led_status.configure(fg=theme.neon_accent)
+                if hasattr(self, '_preview_state_label'):
+                    self._preview_state_label.configure(
+                        text="● EN LECTURE", fg=theme.neon_accent
+                    )
+                self.btn_play.configure(bg=theme.button_bg, fg=theme.fg_muted,
                                         text="▶  EN COURS")
-                self.btn_stop.configure(bg=T.neon_secondary, fg="#ffffff",
-                                        activebackground="#ff52a2")
+                self.btn_stop.configure(bg=theme.neon_secondary, fg="#ffffff",
+                                        activebackground=theme.button_hover)
             else:
-                self._led_status.configure(fg=T.neon_primary)
-                self.btn_play.configure(bg=T.neon_accent, fg="#05050a",
+                self._led_status.configure(fg=theme.neon_primary)
+                if hasattr(self, '_preview_state_label'):
+                    self._preview_state_label.configure(
+                        text="● PRÊT", fg=theme.fg_muted
+                    )
+                self.btn_play.configure(bg=theme.neon_accent, fg="#05050a",
                                         text="▶  LECTURE")
-                self.btn_stop.configure(bg="#2a1a2e", fg=T.fg_muted,
-                                        activebackground="#3a2a3e")
+                self.btn_stop.configure(bg=theme.button_bg, fg=theme.fg_muted,
+                                        activebackground=theme.button_hover)
+            self._update_action_states()
         self.is_playing.trace_add("write", update_led)
 
         status_label = tk.Label(status_frame, textvariable=self.status_var,
-                                font=('Courier', 8, 'bold'),
+                                font=('Helvetica', 8, 'bold'),
                                 fg=T.neon_primary, bg=T.status_bg,
                                 anchor=tk.W)
+        self._status_label = status_label
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
 
         # ── Footer ──
@@ -448,10 +610,11 @@ class MainWindow:
             lbl.pack(side=tk.LEFT)
             lbl.bind("<Button-1>", lambda e: webbrowser.open(url))
             lbl.bind("<Enter>", lambda e: (
-                lbl.configure(image=icon_hover), lbl.configure(bg="#14142a")
+                lbl.configure(image=icon_hover),
+                lbl.configure(bg=self._theme.button_hover)
             ))
             lbl.bind("<Leave>", lambda e: (
-                lbl.configure(image=icon), lbl.configure(bg=T.footer_bg)
+                lbl.configure(image=icon), lbl.configure(bg=self._theme.footer_bg)
             ))
             return lbl
 
@@ -466,6 +629,7 @@ class MainWindow:
 
         # Apply saved theme
         self._apply_theme(saved_theme)
+        self._update_action_states()
 
     # ── Keyboard shortcuts ─────────────────────────────────────────────
     def _bind_shortcuts(self):
@@ -480,6 +644,25 @@ class MainWindow:
         pct = int(float(val))
         self._volume_label.configure(text=f"{pct}%")
         # AudioPlayer may not support set_volume — silently ignore
+
+    def _audio_file_changed(self, *args):
+        """Keep primary actions honest: no audio means nothing to play/export."""
+        self._update_action_states()
+
+    def _update_action_states(self):
+        """Enable only actions that are meaningful in the current state."""
+        has_audio = bool(
+            self.audio_file.get() and os.path.isfile(self.audio_file.get())
+        )
+        is_playing = bool(self.is_playing.get())
+        if hasattr(self, 'btn_play'):
+            self.btn_play.configure(
+                state=tk.NORMAL if has_audio or is_playing else tk.DISABLED
+            )
+        if hasattr(self, 'btn_stop'):
+            self.btn_stop.configure(state=tk.NORMAL if is_playing else tk.DISABLED)
+        if hasattr(self, '_export_tab') and not self._export_in_progress:
+            self._export_tab.set_export_button_state(has_audio)
 
     # ── Preview border glow animation ──────────────────────────────────
     def _animate_border(self):
@@ -657,6 +840,19 @@ class MainWindow:
             self.effect_manager.change_palette(self.selected_color.get())
             self._set_status(f"Palette: {self.selected_color.get()}")
 
+    def _logo_changed(self):
+        """Apply logo controls immediately when playback is running."""
+        if not self.effect_manager:
+            return
+        self.effect_manager.set_logo_image(self.logo_image.get() or None)
+        self.effect_manager.set_logo_position(self.logo_position.get())
+        self.effect_manager.set_logo_coordinates(
+            self.logo_x.get() / 100.0,
+            self.logo_y.get() / 100.0,
+        )
+        self.effect_manager.set_logo_scale(self.logo_scale.get() / 100.0)
+        self.effect_manager.set_logo_opacity(self.logo_opacity.get() / 100.0)
+
     # ── Preview interaction ────────────────────────────────────────────
     def _on_preview_click(self):
         """Open the file selection dialog when preview is clicked while empty."""
@@ -763,6 +959,12 @@ class MainWindow:
                 color_palette=self.selected_color.get(),
                 background_image=self.background_image.get() or None,
                 background_opacity=self.opacity_var.get() / 100.0,
+                logo_image=self.logo_image.get() or None,
+                logo_position=self.logo_position.get(),
+                logo_x=self.logo_x.get() / 100.0,
+                logo_y=self.logo_y.get() / 100.0,
+                logo_scale=self.logo_scale.get() / 100.0,
+                logo_opacity=self.logo_opacity.get() / 100.0,
             )
             self.effect_manager.init()
         except Exception as e:
@@ -826,7 +1028,7 @@ class MainWindow:
                 audio_data = self.analyzer.analyze_chunk(chunk)
                 self.effect_manager.current_effect.update(audio_data, delta_time)
 
-                arr = self.effect_manager.current_effect.render_to_array()
+                arr = self.effect_manager.render_to_array()
                 # Upscaler la frame dans le thread en arrière-plan à la taille réelle du widget via OpenCV
                 if arr is not None and (pw, ph) != (rw, rh):
                     import cv2
@@ -889,6 +1091,8 @@ class MainWindow:
             if hasattr(self.effect_manager, 'current_effect'):
                 self.effect_manager.current_effect.width = new_w
                 self.effect_manager.current_effect.height = new_h
+            if hasattr(self.effect_manager, 'resize'):
+                self.effect_manager.resize(new_w, new_h)
             self._preview_render_size = (new_w, new_h)
         except Exception:
             pass
@@ -982,6 +1186,13 @@ class MainWindow:
                 effect_type=self._get_effect_key(),
                 color_palette=self.selected_color.get(),
                 background_image=self.background_image.get() or None,
+                background_opacity=self.opacity_var.get() / 100.0,
+                logo_image=self.logo_image.get() or None,
+                logo_position=self.logo_position.get(),
+                logo_x=self.logo_x.get() / 100.0,
+                logo_y=self.logo_y.get() / 100.0,
+                logo_scale=self.logo_scale.get() / 100.0,
+                logo_opacity=self.logo_opacity.get() / 100.0,
             )
             self.recorder._ffmpeg_cmd = build_ffmpeg_cmd(
                 width, height, self.fps.get(),

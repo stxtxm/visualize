@@ -70,7 +70,7 @@ class LogsTab(tk.Frame):
         btn_frame = tk.Frame(self, bg=self.BG_PANEL)
         btn_frame.pack(fill=tk.X, padx=12, pady=(0, 10))
 
-        btn_clear = tk.Button(
+        self.btn_clear = tk.Button(
             btn_frame, text="🗑 EFFACER",
             command=self._clear_logs,
             bg="#252538", fg=self.FG_LIGHT,
@@ -78,10 +78,10 @@ class LogsTab(tk.Frame):
             bd=0, padx=8, pady=3, font=('Helvetica', 8, 'bold'),
             cursor="hand2",
         )
-        btn_clear.pack(side=tk.LEFT, padx=(0, 6))
-        self._add_hover(btn_clear, "#35354e", "#252538")
+        self.btn_clear.pack(side=tk.LEFT, padx=(0, 6))
+        self._add_hover(self.btn_clear, "#35354e", "#252538")
 
-        btn_copy = tk.Button(
+        self.btn_copy = tk.Button(
             btn_frame, text="📋 COPIER",
             command=self._copy_logs,
             bg="#252538", fg=self.FG_LIGHT,
@@ -89,8 +89,8 @@ class LogsTab(tk.Frame):
             bd=0, padx=8, pady=3, font=('Helvetica', 8, 'bold'),
             cursor="hand2",
         )
-        btn_copy.pack(side=tk.LEFT, padx=(0, 6))
-        self._add_hover(btn_copy, "#35354e", "#252538")
+        self.btn_copy.pack(side=tk.LEFT, padx=(0, 6))
+        self._add_hover(self.btn_copy, "#35354e", "#252538")
 
     def add_message(self, message, level="INFO"):
         """Add a message to the log queue from external threads."""
@@ -141,7 +141,7 @@ class LogsTab(tk.Frame):
             self._log_text.insert(tk.END, text + '\n', tag)
             self._log_text.see(tk.END)
             # Limit log size to prevent memory issues
-            if self._log_text.index('end-1c').split('.')[0] > '500':
+            if int(self._log_text.index('end-1c').split('.')[0]) > 500:
                 self._log_text.delete(1.0, '100.0')
             self._log_text.config(state=tk.DISABLED)
         except Exception:

@@ -82,6 +82,14 @@ Définies dans `BaseEffect._get_color_palette()` :
 - Le chemin `background_image` est propagé par `EffectManager`, le CLI (`--background`) et `VideoRecorder`.
 - `TranceScopeEffect` utilise l'image comme matière graphique beat-synced (gradation, dérive chromatique, glow) et elle est donc visible dans la preview comme dans l'export MP4.
 
+### Logo superposé
+
+- `effects/logo_overlay.py` fournit une couche RGBA commune aux tableaux numpy et aux surfaces Pygame.
+- `EffectManager` applique le logo après le rendu de l'effet dans `render_to_array()` et `render()`, afin de garantir sa présence dans la preview et le mode plein écran.
+- Le logo est propagé par le CLI (`--logo`, `--logo-position`, `--logo-x`, `--logo-y`, `--logo-scale`, `--logo-opacity`) et par `VideoRecorder`.
+- Les positions nommées utilisent les neuf ancres écran; `custom` utilise X/Y en pourcentage de l'espace disponible après prise en compte de la taille du logo.
+- L'onglet **Logo** de l'interface permet de choisir le fichier, l'ancre, les coordonnées, la taille et l'opacité. Les coordonnées sont normalisées dans le manager pour rester indépendantes de la résolution.
+
 ---
 
 ## Analyse audio
@@ -142,6 +150,7 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB→BGR 
   - **Onglet Fichier** (`FileTab`) : sélection fichier audio (parcours), infos fichier (taille, durée)
   - **Onglet Effets** (`EffectsTab`) : effet + palette avec description dynamique
   - **Onglet Fond** (`BackgroundTab`) : image de fond + curseur opacité temps réel
+  - **Onglet Logo** (`LogoTab`) : image superposée + position, coordonnées, taille et opacité
   - **Onglet Export** (`ExportTab`) : résolution, FPS, présélection, bouton export + barre progression intégrée
   - **Onglet Logs** (`LogsTab`) : logs colorés intégrés
 - Boutons Lecture/Stop + curseur volume sous les onglets
@@ -150,7 +159,11 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB→BGR 
 - **HUD preview** : compteur FPS, timecode `00:00.000`, bordure néon animée
 - **LED pulsante** dans la status bar pendant la lecture
 - **Raccourcis** : Space/Ctrl+P (play), Ctrl+S/Esc (stop), Ctrl+E (export)
+- **Navigation onglets** : `TabPanel` affiche les six onglets en grille 3×2 dans la sidebar pour éviter la compression horizontale.
+- **États d'action** : Lecture et Export sont désactivés tant qu'aucun fichier audio valide n'est sélectionné; Stop est désactivé hors lecture.
 - **Clic sur preview vide** → ouvre le dialog de sélection de fichier
+- **Preview vide** : affiche une invitation explicite à sélectionner un fichier et utilise un curseur d'action.
+- **Thèmes** : `MainWindow._apply_theme()` met à jour les widgets Tk, les contrôles ttk, le preview et les couleurs des boutons; les couleurs complémentaires sont définies dans `ui/theme.py`.
 - Footer : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`
 - La boucle de lecture utilise `render_to_array()` via `HeadlessRenderer` (ou `ArrayRenderer` fallback)
 - L'aperçu est redimensionné avec `LANCZOS` quand la fenêtre change de taille
@@ -224,6 +237,7 @@ Déclenché sur push de tag `v*`.
  | `test_paths.py` | PathManager : conteneur/hôte, chemins, fichiers |
  | `test_quality_presets.py` | Présélections, build_ffmpeg_cmd, résolutions |
  | `test_ui.py` | Footer labels existence, copyright text, social link badges |
+ | `test_logo.py` | Logo RGBA, position personnalisée et application par le manager |
  
  ### Tests intégration
  
@@ -260,12 +274,13 @@ Déclenché sur push de tag `v*`.
 8. **Le scaling** utilise `s = height / 450.0`. Tous les dessins doivent être multipliés par `s`. La hauteur de référence 450px vient de la résolution historique 800×450.
 9. **`HeadlessRenderer` n'a plus de cap** de résolution. L'effet est créé à la taille exacte de la fenêtre ou de l'export.
 10. **L'aperçu GUI utilise `render_to_array()`** (comme l'export), pas `render()`. Changé pour garantir la correspondance visuelle.
+11. **Le logo est une couche finale** — l'aperçu et les exports directs passent par `EffectManager`; `VideoRecorder` applique également la couche aux générateurs de frames personnalisés.
 
 ### 🟡 Importantes
 
-11. **Les tags GitHub déclenchent la CI** via `on: push: tags: ['v*']`. Re-tagger avec `git tag -d vX.Y.Z && git push --delete origin vX.Y.Z && git tag vX.Y.Z && git push origin vX.Y.Z`.
-12. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
-13. **Références GUI stockées en instance** — Tout widget Tkinter qui doit être testé ou modifié depuis l'extérieur doit être stocké comme `self._nom_du_widget`. Actuellement : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`, `self._export_progress_bar`, `self._status_bar_inner`.
+12. **Les tags GitHub déclenchent la CI** via `on: push: tags: ['v*']`. Re-tagger avec `git tag -d vX.Y.Z && git push --delete origin vX.Y.Z && git tag vX.Y.Z && git push origin vX.Y.Z`.
+13. **Permissions de build Docker (CI)** : Docker sur la CI tourne en root, rendant les fichiers de `output/` inaccessibles au user runner. `build_standalone.sh` applique donc un `chown -R $(id -u):$(id -g)` sur le dossier de sortie si Docker est détecté.
+14. **Références GUI stockées en instance** — Tout widget Tkinter qui doit être testé ou modifié depuis l'extérieur doit être stocké comme `self._nom_du_widget`. Actuellement : `self._footer_copyright`, `self._footer_linkedin`, `self._footer_website`, `self._export_progress_bar`, `self._status_bar_inner`.
 
 ### 🔵 Optimisations export (ajoutées v0.X)
 
@@ -324,6 +339,9 @@ Déclenché sur push de tag `v*`.
 python3 main.py                          # GUI
 python3 main.py audio.mp3 -o video.mp4   # Export
 python3 main.py audio.mp3 -o video.mp4 --background cover.png --effect trance_scope
+
+# Ajouter un logo et le placer précisément (pourcentages)
+python3 main.py audio.mp4 -o video.mp4 --logo logo.png --logo-position custom --logo-x 50 --logo-y 8
 
 # Tests
 python3 -m pytest tests/ -v

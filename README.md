@@ -10,10 +10,12 @@
 
 - **Trance Scope visualizer** with a BPM-synced spectral bloom, interference threads, orbital glyphs, glow, and beat strobe
 - **Optional image background** visible instantly in the preview and embedded in MP4 exports
+- **Logo overlay** with nine anchor presets or fully custom X/Y placement, size, and opacity
 - **Additional effects**: Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel, Particles, Wave, Spectrum
 - **5 color palettes**: Psychedelic, Retro, Winamp Classic, Dark, Rainbow
 - **Tkinter GUI** with real-time preview, effect/palette controls, background image selection, and export settings
-- **Tabbed sidebar interface** : File, Effects, Background, Export, and Logs tabs for an organized, ergonomic workflow
+- **Modern responsive controls** with a two-row navigation grid, clear empty-preview call-to-action, live state indicators, and theme-aware widgets
+- **Tabbed sidebar interface** : File, Effects, Background, Logo, Export, and Logs tabs for an organized, ergonomic workflow
 - **4 selectable themes** : Cyberpunk, Synthwave, Matrix, Tokyo Night (persisted between sessions)
 - **Live preview HUD** : FPS counter, playback timecode, and animated neon border
 - **Toast notifications** for playback, export, and theme changes
@@ -39,7 +41,7 @@ chmod +x Visualisateur_Psychedelic.AppImage
 
 The GUI offers a streamlined interface :
 1. Select an audio file
-2. Choose an effect, palette, optional background image, export resolution, and quality preset
+2. Choose an effect, palette, optional background image, logo placement, export resolution, and quality preset
 3. Press play to preview the visualizer in real time
 4. Export the same visual stack to MP4
 
@@ -51,6 +53,7 @@ The GUI offers a streamlined interface :
 ./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --preset normal
 ./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect spectrum --color rainbow --preset 4k
 ./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect trance_scope --background cover.png
+./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --logo logo.png --logo-position custom --logo-x 50 --logo-y 8 --logo-scale 18
 ```
 
 | Option | Values |
@@ -58,6 +61,11 @@ The GUI offers a streamlined interface :
 | `--effect` / `-e` | `trance_scope`, `pro_trance`, `neon_equalizer`, `classic`, `psychedelic_plasma`, `3d_cyber_tunnel`, `bars`, `circles`, `particles`, `wave`, `spectrum`, `random` |
 | `--color` / `-c` | `psychedelic`, `retro`, `winamp_classic`, `dark`, `rainbow` |
 | `--background` / `-b` | Optional image path (`.png`, `.jpg`, `.webp`, `.bmp`, etc.) |
+| `--logo` | Optional foreground logo image |
+| `--logo-position` | `top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`, `bottom-left`, `bottom-center`, `bottom-right`, or `custom` |
+| `--logo-x`, `--logo-y` | Custom logo position as percentages of the available frame area |
+| `--logo-scale` | Logo width as a percentage of video width (default `18`) |
+| `--logo-opacity` | Logo opacity percentage (default `100`) |
 | `--preset` / `-p` | `dev`, `fast`, `normal`, `high`, `4k` |
 | `--resolution` / `-r` | `720p`, `1080p`, `1440p`, `4K` |
 | `--fps` | `15`, `20`, `24`, `30`, `60`, `120` |

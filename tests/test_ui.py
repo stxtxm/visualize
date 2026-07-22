@@ -460,7 +460,7 @@ class TestMainWindowIntegration(unittest.TestCase):
     def test_tab_panel_exists(self):
         app = self._create_app()
         self.assertTrue(hasattr(app, 'tab_panel'))
-        self.assertEqual(len(app.tab_panel._tabs), 5)
+        self.assertEqual(len(app.tab_panel._tabs), 6)
 
     def test_tab_labels(self):
         app = self._create_app()
@@ -468,8 +468,9 @@ class TestMainWindowIntegration(unittest.TestCase):
         self.assertIn("FICHIER", labels[0])
         self.assertIn("EFFETS", labels[1])
         self.assertIn("FOND", labels[2])
-        self.assertIn("EXPORT", labels[3])
-        self.assertIn("LOGS", labels[4])
+        self.assertIn("LOGO", labels[3])
+        self.assertIn("EXPORT", labels[4])
+        self.assertIn("LOGS", labels[5])
 
     def test_preview_exists(self):
         app = self._create_app()

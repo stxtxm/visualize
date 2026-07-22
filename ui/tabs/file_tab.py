@@ -53,16 +53,16 @@ class FileTab(tk.Frame):
         self.entry_file.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
 
         btn_browse = tk.Button(
-            file_row, text="…", command=self._open_file,
+            file_row, text="PARCOURIR", command=self._open_file,
             bg="#252538", fg=self.FG_LIGHT, activebackground="#35354e",
-            activeforeground=self.FG_LIGHT, bd=0, padx=10,
-            font=('Helvetica', 10, 'bold'), cursor="hand2"
+            activeforeground=self.FG_LIGHT, bd=0, padx=8,
+            font=('Helvetica', 7, 'bold'), cursor="hand2"
         )
         btn_browse.pack(side=tk.RIGHT)
         self._add_hover(btn_browse, "#35354e", "#252538")
 
-        # Drag & drop hint
-        hint = tk.Label(self, text="Glissez-déposez un fichier audio ici",
+        # Clear action hint (native Tk drag-and-drop is not available everywhere).
+        hint = tk.Label(self, text="Formats : MP3, WAV, FLAC, OGG, AAC",
                         font=('Helvetica', 7), fg=self.FG_MUTED, bg=self.BG_PANEL)
         hint.pack(anchor=tk.W, padx=16, pady=(0, 14))
 
