@@ -333,27 +333,27 @@ class ClassicEffect(BaseEffect):
 
         # Oscilloscope circulaire (3 anneaux géants)
         if self.freq_bands and len(self.freq_bands) >= 3:
+            p_indices = np.linspace(0, 2 * np.pi, 100, endpoint=False, dtype=np.float32)
+            band_indices = np.clip((np.linspace(0, len(self.freq_bands) - 1, 100)).astype(int), 0, len(self.freq_bands) - 1)
+            freq_arr = np.array(self.freq_bands, dtype=np.float32)
+            vals = freq_arr[band_indices]
+
             for ring_idx in range(3):
                 base_r = (45 + ring_idx * 32 + self.pulse * 25) * s
-                pts = []
-                for p in range(num_pts := 100):
-                    angle = p * (2 * math.pi / num_pts) - self.rotation * (0.6 + ring_idx * 0.2)
-                    band_i = min(int(p * len(self.freq_bands) / num_pts), len(self.freq_bands) - 1)
-                    val = float(self.freq_bands[band_i])
-                    r = base_r + val * 60 * s
-                    pts.append([int(cx + math.cos(angle) * r),
-                                int(cy + math.sin(angle) * r)])
+                angles = p_indices - self.rotation * (0.6 + ring_idx * 0.2)
+                r = base_r + vals * (60.0 * s)
+                xs = (cx + np.cos(angles) * r).astype(np.int32)
+                ys = (cy + np.sin(angles) * r).astype(np.int32)
+                pts_arr = np.column_stack((xs, ys))
 
-                if len(pts) >= 3:
-                    col = self.colors[(ring_idx + int(self.time * 1.5)) % len(self.colors)]
-                    pts_arr = np.array(pts, dtype=np.int32)
-                    alpha = 0.08 + ring_idx * 0.04
-                    self._draw_alpha_poly(frame, cv2, pts_arr, col, alpha)
-                    # Glow externe épais
-                    dim = tuple(max(0, c // 3) for c in col)
-                    cv2.polylines(frame, [pts_arr], True, dim, max(1, int(6 * s)), cv2.LINE_AA)
-                    # Core mince lumineux
-                    cv2.polylines(frame, [pts_arr], True, col, max(1, int(2 * s)), cv2.LINE_AA)
+                col = self.colors[(ring_idx + int(self.time * 1.5)) % len(self.colors)]
+                alpha = 0.08 + ring_idx * 0.04
+                self._draw_alpha_poly(frame, cv2, pts_arr, col, alpha)
+                # Glow externe épais
+                dim = tuple(max(0, c // 3) for c in col)
+                cv2.polylines(frame, [pts_arr], True, dim, max(1, int(6 * s)), cv2.LINE_AA)
+                # Core mince lumineux
+                cv2.polylines(frame, [pts_arr], True, col, max(1, int(2 * s)), cv2.LINE_AA)
 
         # Flash de beat (halo géant couvrant tout)
         if self.flash > 0.05:

@@ -94,6 +94,12 @@ class WaveEffect(BaseEffect):
         
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         
+        num_points = 200
+        angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False, dtype=np.float32)
+        cos_angles = np.cos(angles)
+        sin_angles = np.sin(angles)
+        radius = self.center_x * 0.8
+
         # Dessiner des vagues concentriques
         for i in range(self.num_waves):
             amplitude = self.amplitudes[i]
@@ -103,28 +109,14 @@ class WaveEffect(BaseEffect):
             color_idx = (i + int(self.time * 3)) % len(self.colors)
             color = self.colors[color_idx]
             
-            num_points = 200
-            points = []
-            for j in range(num_points):
-                angle = j * (2 * math.pi / num_points)
-                radius = self.center_x * 0.8
-                
-                wave_displacement = amplitude * math.sin(
-                    angle * frequency * 10 + phase * math.pi
-                )
-                
-                r = radius + wave_displacement
-                x = self.center_x + math.cos(angle) * r
-                y = self.center_y + math.sin(angle) * r
-                points.append([int(x), int(y)])
+            wave_displacement = amplitude * np.sin(angles * (frequency * 10.0) + phase * np.pi)
+            r = radius + wave_displacement
             
-            # Fermer le polygone
-            if points:
-                points.append(points[0])
+            xs = (self.center_x + cos_angles * r).astype(np.int32)
+            ys = (self.center_y + sin_angles * r).astype(np.int32)
+            polygon = np.column_stack((xs, ys))
+            polygon = np.vstack((polygon, polygon[0]))
             
-            # Dessiner le polygone avec transparence
-            if len(points) > 2:
-                polygon = np.array(points, dtype=np.int32)
-                self._draw_alpha_poly(frame, cv2, polygon, color, 0.25)
+            self._draw_alpha_poly(frame, cv2, polygon, color, 0.25)
         
         return frame

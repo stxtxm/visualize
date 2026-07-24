@@ -32,6 +32,12 @@ from ui.preview import PreviewFrame
 from ui.toast import ToastManager
 from ui.theme import get_theme, THEME_NAMES
 
+try:
+    import cv2
+    _HAS_CV2 = True
+except ImportError:
+    _HAS_CV2 = False
+
 
 class MainWindow:
     """
@@ -71,6 +77,9 @@ class MainWindow:
         saved_device = self._load_audio_device_pref()
         self.audio_device = tk.StringVar(value=saved_device)
         self.audio_device.trace_add("write", self._audio_device_changed)
+
+        self._cleanup_lock = threading.Lock()
+        self._cleaned_up = False
 
         # Playback / export state
         self.playback_thread = None
@@ -643,7 +652,11 @@ class MainWindow:
     def _on_volume_change(self, val):
         pct = int(float(val))
         self._volume_label.configure(text=f"{pct}%")
-        # AudioPlayer may not support set_volume — silently ignore
+        if hasattr(self, 'audio_player') and self.audio_player:
+            try:
+                self.audio_player.set_volume(pct / 100.0)
+            except Exception:
+                pass
 
     def _audio_file_changed(self, *args):
         """Keep primary actions honest: no audio means nothing to play/export."""
@@ -977,6 +990,7 @@ class MainWindow:
         self._fps_counter = 0
         self._fps_last_time = time.time()
         self._playback_start_time = time.time()
+        self._cleaned_up = False
 
         self.playback_thread = threading.Thread(
             target=self._playback_loop, daemon=True
@@ -1026,12 +1040,10 @@ class MainWindow:
                     break
 
                 audio_data = self.analyzer.analyze_chunk(chunk)
-                self.effect_manager.current_effect.update(audio_data, delta_time)
+                self.effect_manager.update(audio_data, delta_time)
 
                 arr = self.effect_manager.render_to_array()
-                # Upscaler la frame dans le thread en arrière-plan à la taille réelle du widget via OpenCV
-                if arr is not None and (pw, ph) != (rw, rh):
-                    import cv2
+                if arr is not None and (pw, ph) != (rw, rh) and _HAS_CV2:
                     arr = cv2.resize(arr, (pw, ph), interpolation=cv2.INTER_LINEAR)
                 frame = self._capture_frame(arr)
 
@@ -1098,7 +1110,6 @@ class MainWindow:
             pass
 
     def _update_preview_from_pending(self):
-        from PIL import Image, ImageTk
         with self._frame_lock:
             pil_img = self._pending_frame
             self._pending_frame = None
@@ -1110,7 +1121,6 @@ class MainWindow:
         self.preview.update_image(ImageTk.PhotoImage(pil_img))
 
     def _capture_frame(self, arr):
-        from PIL import Image
         if (arr is not None and len(arr.shape) == 3
                 and arr.shape[0] > 0 and arr.shape[1] > 0):
             return Image.fromarray(arr)
@@ -1152,6 +1162,10 @@ class MainWindow:
         self._set_status("Lecture arrêtée")
 
     def _cleanup_playback(self):
+        with self._cleanup_lock:
+            if self._cleaned_up:
+                return
+            self._cleaned_up = True
         if hasattr(self, 'audio_player') and self.audio_player:
             try:
                 self.audio_player.cleanup()
@@ -1203,7 +1217,7 @@ class MainWindow:
             self._export_in_progress = False
             return
 
-        self._export_tab.set_export_button_state(False)
+        self._export_tab.set_export_button_state(False, export_in_progress=True)
         self._export_tab.show_progress(0, 1)
         self._export_tab.show_cancel_button()
         self._set_status(f"Export: {os.path.basename(filename)}")

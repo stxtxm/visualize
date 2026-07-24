@@ -20,12 +20,8 @@ except Exception:
     _HAS_NUMPY = False
 from shutil import which
 
-print("[AudioPlayer] module chargé, numpy=", _HAS_NUMPY, file=sys.stderr, flush=True)
-
-
 def _log(msg):
     """Log a message safely."""
-    print(f"[AudioPlayer] {msg}", file=sys.stderr, flush=True)
     try:
         from ui.log_display import log_message
         log_message(f"AudioPlayer: {msg}")
@@ -54,6 +50,7 @@ class AudioPlayer:
         self.chunk_size = chunk_size
         self.channels = channels
         self.device_id = device_id
+        self.volume = 0.8  # Default volume 80% (0.0 to 1.0)
         self.is_playing = False
         self._thread = None
         self._buffer = []
@@ -65,6 +62,9 @@ class AudioPlayer:
         self._subproc = None  # persistent subprocess for pw-play/ffplay streaming
         self._is_from_data = False
         
+        # Saved stderr fd for suppressing ALSA underrun noise
+        self._saved_stderr = None
+
         # Audio queue for streaming backends (larger = more underrun protection)
         self._audio_queue = queue.Queue(maxsize=256)
         
@@ -80,8 +80,13 @@ class AudioPlayer:
         # Detect available backends
         self._detect_backend()
 
+    def set_volume(self, gain):
+        """Set playback volume (0.0 = silent, 1.0 = original, >1.0 = boosted)."""
+        self.volume = max(0.0, float(gain))
+
     def _ensure_appimage_audio_paths(self):
         """Ensure AppImage embedded audio libraries are available to the runtime."""
+        os.environ['ALSA_NO_ERROR_REPORT'] = '1'
         appdir = os.environ.get('APPDIR') or os.environ.get('SNAP') or None
         if appdir is None:
             here = os.path.dirname(os.path.abspath(__file__))
@@ -209,6 +214,33 @@ class AudioPlayer:
         """
         self.device_id = device_id
         _log(f"device set to: {device_id}")
+
+    def set_volume(self, volume):
+        """
+        Set the playback volume.
+        Args:
+            volume: Volume level from 0.0 (silent) to 1.0 (full volume)
+        """
+        self.volume = max(0.0, min(1.0, float(volume)))
+
+    def _apply_volume(self, chunk):
+        """Apply the current volume scaling to an audio chunk."""
+        if chunk is None:
+            return None
+        vol = float(self.volume)
+        if vol >= 0.99:
+            return chunk
+        if vol <= 0.01:
+            if _HAS_NUMPY and isinstance(chunk, np.ndarray):
+                return np.zeros_like(chunk)
+            elif isinstance(chunk, (list, tuple)):
+                return [0] * len(chunk)
+            return chunk
+        if _HAS_NUMPY and isinstance(chunk, np.ndarray):
+            return np.clip(chunk.astype(np.float32) * vol, -32768, 32767).astype(np.int16)
+        elif isinstance(chunk, (list, tuple)):
+            return [int(max(-32768, min(32767, s * vol))) for s in chunk]
+        return chunk
 
     def get_elapsed_seconds(self):
         """Return elapsed playback time in seconds (for A/V sync)."""
@@ -421,13 +453,14 @@ class AudioPlayer:
             idx += 1
             
             # 1. Feed backend
+            out_samples = samples if self._backend_name == 'sounddevice' else self._apply_volume(samples)
             if self._backend_name in ('sounddevice', 'pyaudio'):
                 # Send stereo samples to queue
-                self._audio_queue.put(samples)
+                self._audio_queue.put(out_samples)
             elif self._backend_name in ('pw-play', 'ffplay', 'aplay'):
                 if self._subproc and self._subproc.stdin:
                     try:
-                        data = samples.tobytes()
+                        data = out_samples.tobytes() if hasattr(out_samples, 'tobytes') else bytes(out_samples)
                         self._subproc.stdin.write(data)
                         self._subproc.stdin.flush()
                     except (BrokenPipeError, ValueError, OSError):
@@ -455,23 +488,19 @@ class AudioPlayer:
         """Start sounddevice streaming backend."""
         import sounddevice as sd
 
-        # Tell ALSA to stfu about harmless underrun recovery messages
-        os.environ.setdefault('ALSA_NO_ERROR_REPORT', '1')
-
         # Pre-fill queue with several silent chunks before starting
         # to absorb initial scheduling jitter
         silent_chunk = np.zeros(self.chunk_size * self.channels, dtype=np.int16)
-        for _ in range(8):
+        for _ in range(16):
             try:
                 self._audio_queue.put_nowait(silent_chunk.copy())
             except queue.Full:
                 break
 
         def callback(outdata, frames, time_info, status):
-            if status:
-                print(f"sounddevice status: {status}", file=sys.stderr)
             pos = 0
             last_consumed = None
+            vol = float(self.volume)
             while pos < frames:
                 try:
                     chunk = self._audio_queue.get_nowait()
@@ -491,10 +520,10 @@ class AudioPlayer:
                     chunk_f32 = np.column_stack((chunk_f32, chunk_f32))
                 elif chunk_f32.ndim == 1:
                     chunk_f32 = chunk_f32.reshape(-1, 1)
-                # Copy into output buffer
+                # Copy into output buffer with volume scaling
                 remaining = frames - pos
                 take = min(len(chunk_f32), remaining)
-                outdata[pos:pos + take] = chunk_f32[:take]
+                outdata[pos:pos + take] = chunk_f32[:take] * vol
                 pos += take
                 last_consumed = chunk_f32[:take].copy()
 
@@ -510,15 +539,20 @@ class AudioPlayer:
                         outdata[pos:] = np.column_stack(
                             (self._last_chunk_f32[:take],
                              self._last_chunk_f32[:take])
-                        )
+                        ) * vol
                     else:
-                        outdata[pos:pos + take] = self._last_chunk_f32[:take]
+                        outdata[pos:pos + take] = self._last_chunk_f32[:take] * vol
                     if pos + take < frames:
                         outdata[pos + take:] = 0
                 else:
                     outdata[pos:] = 0
 
         try:
+            self._saved_stderr = os.dup(2)
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, 2)
+            os.close(devnull)
+
             blocksize = max(self.chunk_size * 4, 4096)
             kwargs = dict(
                 samplerate=self.sample_rate,
@@ -534,6 +568,7 @@ class AudioPlayer:
             self._stream.start()
             _log("sounddevice stream started successfully")
         except Exception as e:
+            self._restore_stderr()
             _log(f"sounddevice error: {e}")
             self._try_fallback()
 
@@ -779,6 +814,13 @@ class AudioPlayer:
             self._backend_name = None
             self.is_playing = False
 
+    def _restore_stderr(self):
+        """Restore stderr after ALSA underrun suppression."""
+        if self._saved_stderr is not None:
+            os.dup2(self._saved_stderr, 2)
+            os.close(self._saved_stderr)
+            self._saved_stderr = None
+
     def _play_accumulated(self, chunks):
         """Play accumulated audio chunks via subprocess with temp file."""
         import numpy as np
@@ -914,6 +956,8 @@ class AudioPlayer:
                 except Exception:
                     pass
             self._subproc = None
+
+        self._restore_stderr()
 
         # Clear queues
         self._last_chunk_f32 = None

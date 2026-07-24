@@ -246,6 +246,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
+        '-af', 'dynaudnorm=peak=0.95',
         '-movflags', '+faststart',
         '-shortest',
         '-threads', '0',

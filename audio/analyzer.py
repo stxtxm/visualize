@@ -253,9 +253,34 @@ class AudioAnalyzer:
         # Configuration de l'analyse
         if HAS_NUMPY:
             self.fft_window = np.hanning(chunk_size)
+            self._freqs = np.fft.rfftfreq(chunk_size, 1.0 / sample_rate)
+            
+            # Pré-calcul des masques de bandes visuelles (32 bandes logarithmiques)
+            low_hz = 30.0
+            high_hz = min(18000.0, sample_rate / 2.0)
+            edges = np.geomspace(low_hz, high_hz, 32 + 1)
+            self._visual_band_masks = []
+            self._visual_band_weights = []
+            for i, (low, high) in enumerate(zip(edges[:-1], edges[1:])):
+                mask = (self._freqs >= low) & (self._freqs < high)
+                self._visual_band_masks.append(mask)
+                weight = 1.0 + (1.0 - i / max(31, 1)) * 0.45
+                self._visual_band_weights.append(weight)
+
+            # Pré-calcul des tranches d'indices pour les 5 bandes de sortie
+            self._freq_band_slices = []
+            fft_len = chunk_size // 2 + 1
+            for low, high in self.freq_bands:
+                low_idx = int(low * chunk_size / sample_rate)
+                high_idx = min(int(high * chunk_size / sample_rate), fft_len)
+                self._freq_band_slices.append((low_idx, high_idx))
         else:
             # Alternative sans numpy pour la fenêtre de Hann
             self.fft_window = [0.5 * (1 - math.cos(2 * math.pi * i / (chunk_size - 1))) for i in range(chunk_size)]
+            self._freqs = None
+            self._visual_band_masks = None
+            self._visual_band_weights = None
+            self._freq_band_slices = None
         
         # Indices des bandes pour bass, mids, treble
         self.bass_band_indices = [0, 1]  # 20-500 Hz
@@ -415,10 +440,9 @@ class AudioAnalyzer:
         self.volume_history.append(volume)
         smoothed_volume = np.mean(self.volume_history) if self.volume_history else volume
         
-        # Calculer le spectre FFT
-        fft_result = np.fft.rfft(windowed * self.fft_window[:len(windowed)])
+        fft_result = np.fft.rfft(windowed)
         fft_magnitude = np.abs(fft_result)
-        freqs = np.fft.rfftfreq(len(windowed), 1.0 / self.sample_rate)
+        freqs = self._freqs if self._freqs is not None else np.fft.rfftfreq(len(windowed), 1.0 / self.sample_rate)
         
         # Normaliser le spectre
         if len(fft_magnitude) > 0:
@@ -434,10 +458,11 @@ class AudioAnalyzer:
         
         # Calculer les bandes de fréquence (5 bandes de sortie)
         frequency_bands = []
-        for low, high in self.freq_bands:
-            low_idx = int(low * self.chunk_size / self.sample_rate)
-            high_idx = min(int(high * self.chunk_size / self.sample_rate), len(fft_magnitude))
-            
+        slices = self._freq_band_slices or [
+            (int(low * self.chunk_size / self.sample_rate), min(int(high * self.chunk_size / self.sample_rate), len(fft_magnitude)))
+            for low, high in self.freq_bands
+        ]
+        for low_idx, high_idx in slices:
             if low_idx >= high_idx:
                 frequency_bands.append(0.0)
                 continue
@@ -497,7 +522,7 @@ class AudioAnalyzer:
             'volume_smooth': float(smoothed_volume),
             'frequency_bands': [float(x) for x in smoothed_bands],
             'visual_bands': [float(x) for x in smoothed_visual_bands],
-            'spectrum': [float(x) for x in fft_magnitude],
+            'spectrum': fft_magnitude.tolist(),
             'beat': bpm_result['is_beat'],
             'beat_strength': bpm_result['beat_strength'],
             'beat_phase': float(self.beat_phase),
@@ -516,6 +541,16 @@ class AudioAnalyzer:
         """Return log-spaced normalized bands for visualizers."""
         if not HAS_NUMPY or len(fft_magnitude) == 0:
             return [0.0] * band_count
+
+        if self._visual_band_masks is not None and len(self._visual_band_masks) == band_count:
+            bands = []
+            for mask, weight in zip(self._visual_band_masks, self._visual_band_weights):
+                if not np.any(mask):
+                    bands.append(0.0)
+                    continue
+                magnitude = np.mean(fft_magnitude[mask])
+                bands.append(float(min(1.0, magnitude * 9.5 * weight)))
+            return bands
 
         low_hz = 30.0
         high_hz = min(18000.0, self.sample_rate / 2.0)
@@ -668,5 +703,19 @@ class AudioAnalyzer:
             return len(self.audio) / 1000.0
         elif self.audio_data is not None:
             return len(self.audio_data) / self.sample_rate
+        elif self.audio_file and os.path.exists(self.audio_file):
+            import subprocess
+            ffprobe_path = os.environ.get('FFPROBE_PATH') or 'ffprobe'
+            try:
+                cmd = [ffprobe_path, '-v', 'error', '-show_entries', 'format=duration',
+                       '-of', 'default=noprint_wrappers=1:nokey=1', self.audio_file]
+                env = os.environ.copy()
+                env.pop('LD_LIBRARY_PATH', None)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, env=env)
+                if result.returncode == 0 and result.stdout.strip():
+                    return float(result.stdout.strip())
+            except Exception:
+                pass
+            return 10.0
         else:
-            return 10.0  # Durée par défaut
+            return 10.0

@@ -231,59 +231,56 @@ class TranceScopeEffect(BaseEffect):
         return np.clip(graded, 0, 255).astype(np.uint8)
 
     def _draw_interference_threads(self, cv2, layer, cx, cy, base_radius, s, phase):
-        ribbon_a = []
-        ribbon_b = []
-        ribbon_c = []
         count = self.num_radial
-        for i in range(count):
-            value = float(self.radial_values[i])
-            t = i / count
-            angle = self.rotation * 0.9 + t * math.tau
-            phase_wave = phase * math.tau
-            amp = (42 + value * 150 + self.onset * 65) * s
-            lobe = math.sin(angle * 3.0 + phase_wave) * amp
-            twist = math.cos(angle * 5.0 - self.rotation * 1.8) * amp * 0.45
-            radius = base_radius * (1.00 + self.bass * 0.35) + lobe
-            x = cx + math.cos(angle) * radius + math.cos(angle * 2.0) * twist
-            y = cy + math.sin(angle * 1.36) * radius * 0.78 + math.sin(angle * 2.7) * twist
-            ribbon_a.append((int(x), int(y)))
+        i_arr = np.arange(count, dtype=np.float32)
+        t_arr = i_arr / count
+        angles = self.rotation * 0.9 + t_arr * (2.0 * np.pi)
+        phase_wave = phase * (2.0 * np.pi)
 
-            radius_b = base_radius * (1.48 + self.mids * 0.28) + math.cos(angle * 4.0 + phase_wave) * amp * 0.72
-            ribbon_b.append((
-                int(cx + math.cos(-angle * 1.12) * radius_b),
-                int(cy + math.sin(-angle * 0.92) * radius_b * 0.82)
-            ))
+        vals = self.radial_values.astype(np.float32)
+        amps = (42.0 + vals * 150.0 + self.onset * 65.0) * s
+        lobes = np.sin(angles * 3.0 + phase_wave) * amps
+        twists = np.cos(angles * 5.0 - self.rotation * 1.8) * amps * 0.45
 
-            radius_c = base_radius * (0.56 + self.treble * 0.24) + value * 52 * s
-            ribbon_c.append((
-                int(cx + math.cos(angle * 2.4 + self.rotation) * radius_c),
-                int(cy + math.sin(angle * 1.8 - self.rotation) * radius_c)
-            ))
+        r_a = base_radius * (1.00 + self.bass * 0.35) + lobes
+        xa = (cx + np.cos(angles) * r_a + np.cos(angles * 2.0) * twists).astype(np.int32)
+        ya = (cy + np.sin(angles * 1.36) * r_a * 0.78 + np.sin(angles * 2.7) * twists).astype(np.int32)
+        pts_a = np.column_stack((xa, ya))
 
-        for idx, ribbon in enumerate((ribbon_a, ribbon_b, ribbon_c)):
+        r_b = base_radius * (1.48 + self.mids * 0.28) + np.cos(angles * 4.0 + phase_wave) * amps * 0.72
+        xb = (cx + np.cos(-angles * 1.12) * r_b).astype(np.int32)
+        yb = (cy + np.sin(-angles * 0.92) * r_b * 0.82).astype(np.int32)
+        pts_b = np.column_stack((xb, yb))
+
+        r_c = base_radius * (0.56 + self.treble * 0.24) + vals * (52.0 * s)
+        xc = (cx + np.cos(angles * 2.4 + self.rotation) * r_c).astype(np.int32)
+        yc = (cy + np.sin(angles * 1.8 - self.rotation) * r_c).astype(np.int32)
+        pts_c = np.column_stack((xc, yc))
+
+        for idx, pts in enumerate((pts_a, pts_b, pts_c)):
             color = self._palette_color(0.18 + idx * 0.22 + self.time * 0.025)
-            pts = np.array(ribbon, dtype=np.int32)
             cv2.polylines(layer, [pts], True, tuple(int(c * 0.30) for c in color), max(1, int((7 - idx * 1.6) * s)), cv2.LINE_AA)
             cv2.polylines(layer, [pts], True, color, max(1, int((1.4 + idx * 0.3) * s)), cv2.LINE_AA)
 
     def _draw_spectral_bloom(self, cv2, layer, cx, cy, base_radius, s, phase):
         lobes = 9
+        steps = np.linspace(0.0, 1.0, 42, dtype=np.float32)
+        spreads = (steps - 0.5) * 0.72
+        env = np.sin(steps * np.pi)
+
         for petal in range(lobes):
             color = self._palette_color(petal / lobes + self.time * 0.028)
-            pts = []
-            for step in range(42):
-                t = step / 41.0
-                spread = (t - 0.5) * 0.72
-                angle = self.rotation * -0.82 + petal * math.tau / lobes + spread
-                band_idx = min(int((petal / lobes) * len(self.radial_values)), len(self.radial_values) - 1)
-                value = float(self.radial_values[band_idx])
-                envelope = math.sin(t * math.pi)
-                radius = base_radius * (0.52 + envelope * (1.45 + self.bass * 0.35))
-                radius += (value * 82 + math.sin(phase * math.tau + petal) * 18) * s * envelope
-                x = int(cx + math.cos(angle + math.sin(t * math.pi) * 0.28) * radius)
-                y = int(cy + math.sin(angle * 1.18) * radius * (0.72 + self.mids * 0.10))
-                pts.append((x, y))
-            arr = np.array(pts, dtype=np.int32)
+            angles = self.rotation * -0.82 + (petal * (2.0 * np.pi) / lobes) + spreads
+            band_idx = min(int((petal / lobes) * len(self.radial_values)), len(self.radial_values) - 1)
+            val = float(self.radial_values[band_idx])
+
+            r = base_radius * (0.52 + env * (1.45 + self.bass * 0.35))
+            r += (val * 82.0 + math.sin(phase * 2.0 * math.pi + petal) * 18.0) * s * env
+
+            xs = (cx + np.cos(angles + np.sin(steps * np.pi) * 0.28) * r).astype(np.int32)
+            ys = (cy + np.sin(angles * 1.18) * r * (0.72 + self.mids * 0.10)).astype(np.int32)
+            arr = np.column_stack((xs, ys))
+
             cv2.polylines(layer, [arr], False, tuple(int(c * 0.42) for c in color), max(1, int(8 * s)), cv2.LINE_AA)
             cv2.polylines(layer, [arr], False, color, max(1, int(1.5 * s)), cv2.LINE_AA)
 

@@ -209,11 +209,13 @@ class ExportTab(tk.Frame):
         if self._cancel_callback:
             self._cancel_callback()
 
-    def set_export_button_state(self, enabled=True):
+    def set_export_button_state(self, enabled=True, export_in_progress=False):
         """Enable or disable the export button."""
         state = tk.NORMAL if enabled else tk.DISABLED
-        text = "🎥 EXPORTER LA VIDÉO" if enabled else "⏳ EXPORT EN COURS..."
-        self.btn_export.config(state=state, text=text)
+        if not enabled and export_in_progress:
+            self.btn_export.config(state=state, text="⏳ EXPORT EN COURS...")
+        else:
+            self.btn_export.config(state=state, text="🎥 EXPORTER LA VIDÉO")
 
     def _draw_progress(self, pct, success_color=False, error_color=False):
         """Draw the progress bar on the canvas."""

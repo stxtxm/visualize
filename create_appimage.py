@@ -28,6 +28,17 @@ def create_appimage(runtime_path: str, appdir_path: str, output_path: str):
         print(f"Squashfs size: {squashfs_size} bytes")
         print(f"Payload offset (runtime size): {runtime_size} (0x{runtime_size:x})")
 
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except OSError as e:
+                if getattr(e, 'errno', None) == 26 or "busy" in str(e).lower():
+                    raise RuntimeError(
+                        f"Cannot overwrite '{output_path}': The file is currently being executed. "
+                        f"Please close any running instances of the AppImage and retry."
+                    ) from e
+                # Attempt to overwrite anyway if unlink fails for another reason
+
         with open(output_path, 'wb') as f:
             with open(runtime_path, 'rb') as rt:
                 f.write(rt.read())

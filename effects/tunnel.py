@@ -247,26 +247,20 @@ class TunnelEffect(BaseEffect):
             color = self._get_color(i, intensity=0.5 + intensity * 0.5)
             
             num_points = 60
-            points = []
+            angles_base = np.linspace(0, 2 * np.pi, num_points, endpoint=False, dtype=np.float32)
+            angles = self.rotation + angles_base + self.twist * (i / self.num_rings)
             
-            for j in range(num_points):
-                angle = self.rotation + j * (2 * math.pi / num_points) + self.twist * (i / self.num_rings)
-                
-                distortion_1 = math.sin(angle * 3 + self.time * 2) * self.distortion * radius * 0.3
-                distortion_2 = math.cos(angle * 5 + self.time * 1.5) * self.distortion * radius * 0.2
-                distortion_3 = math.sin(angle * 7 + self.time * 2.5) * self.distortion * radius * 0.1
-                
-                total_distortion = distortion_1 + distortion_2 + distortion_3
-                
-                r = radius + total_distortion
-                x = self.center_x + math.cos(angle) * r
-                y = self.center_y + math.sin(angle) * r
-                points.append([int(x), int(y)])
+            d1 = np.sin(angles * 3.0 + self.time * 2.0) * (self.distortion * radius * 0.3)
+            d2 = np.cos(angles * 5.0 + self.time * 1.5) * (self.distortion * radius * 0.2)
+            d3 = np.sin(angles * 7.0 + self.time * 2.5) * (self.distortion * radius * 0.1)
+            r = radius + d1 + d2 + d3
             
-            if len(points) > 2:
-                polygon = np.array(points, dtype=np.int32)
-                alpha = 0.8 * (1 - i / self.num_rings)
-                self._draw_alpha_poly(frame, cv2, polygon, color, alpha)
+            xs = (self.center_x + np.cos(angles) * r).astype(np.int32)
+            ys = (self.center_y + np.sin(angles) * r).astype(np.int32)
+            polygon = np.column_stack((xs, ys))
+            
+            alpha = 0.8 * (1 - i / self.num_rings)
+            self._draw_alpha_poly(frame, cv2, polygon, color, alpha)
         
         # Dessiner les particules
         for p in self.particles:

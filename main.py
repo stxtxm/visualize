@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Visualisateur Audio Psychédélique - Point d'entrée principal"""
 
+import os
+os.environ['ALSA_NO_ERROR_REPORT'] = '1'
+os.environ['SDL_AUDIODRIVER'] = 'dummy'
+
 import argparse
 import sys
-import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -12,7 +15,7 @@ def has_gui():
     try:
         import tkinter as tk
         return True
-    except:
+    except ImportError:
         return False
 
 
@@ -20,7 +23,7 @@ def has_pygame():
     try:
         import pygame
         return True
-    except:
+    except ImportError:
         return False
 
 
@@ -343,6 +346,8 @@ def run_export(args):
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
     
+    import threading, queue, cv2
+    
     process = subprocess.Popen(
         ffmpeg_cmd, 
         stdin=subprocess.PIPE, 
@@ -352,40 +357,81 @@ def run_export(args):
     
     frames_written = 0
     ffmpeg_error = None
+    frame_queue = queue.Queue(maxsize=8)
+    _SENTINEL = object()
+    writer_error = None
+
+    def _pipe_writer():
+        nonlocal writer_error, frames_written
+        try:
+            while True:
+                item = frame_queue.get()
+                if item is _SENTINEL:
+                    frame_queue.task_done()
+                    break
+                if process.poll() is not None:
+                    writer_error = "FFmpeg process exited early"
+                    frame_queue.task_done()
+                    break
+                try:
+                    process.stdin.write(item)
+                    frames_written += 1
+                except (BrokenPipeError, ConnectionResetError, ValueError, OSError) as e:
+                    writer_error = f"Pipe error: {e}"
+                    frame_queue.task_done()
+                    break
+                frame_queue.task_done()
+        except Exception as e:
+            writer_error = str(e)
+
+    writer_thread = threading.Thread(target=_pipe_writer, daemon=True)
+    writer_thread.start()
     
     try:
         for frame_count in range(total_frames):
+            if writer_error or process.poll() is not None:
+                break
+                
             chunk = analyzer.get_next_chunk()
             if chunk is None:
                 break
                 
             audio_data = analyzer.analyze_chunk(chunk)
-            effect_manager.current_effect.update(audio_data, 1.0/fps)
+            effect_manager.update(audio_data, 1.0/fps)
             frame = effect_manager.render_to_array()
-            frame = frame[:, :, ::-1]  # RGB → BGR view (no copy)
             
-            if process.poll() is not None:
-                break
+            if frame.shape[2] == 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR, dst=frame)
             
-            try:
-                process.stdin.write(frame.tobytes())
-                frames_written += 1
-            except (BrokenPipeError, ConnectionResetError, ValueError, OSError):
-                break
+            buf = memoryview(frame)
+            queued = False
+            while not queued and not writer_error:
+                try:
+                    frame_queue.put(buf, timeout=1.0)
+                    queued = True
+                except queue.Full:
+                    if process.poll() is not None:
+                        writer_error = "FFmpeg process exited unexpectedly"
+                        break
             
             if frame_count % 10 == 0:
-                if process.poll() is not None:
-                    break
                 pct = (frame_count / total_frames) * 100 if total_frames > 0 else 0
                 print(f"\r  Export: {frame_count}/{total_frames} ({pct:.0f}%)", end="", flush=True)
-        
+
         try:
-            process.stdin.close()
+            frame_queue.put(_SENTINEL, timeout=5)
+        except queue.Full:
+            pass
+        writer_thread.join(timeout=10)
+
+        try:
+            if process.stdin and not process.stdin.closed:
+                process.stdin.close()
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
         
         try:
-            stdout, stderr = process.communicate()
+            stdout, stderr = process.communicate(timeout=30)
         except subprocess.TimeoutExpired:
             process.kill()
             stdout, stderr = process.communicate()
@@ -509,7 +555,7 @@ def run_playback(args):
             if chunk is not None:
                 audio_player.play_chunk(chunk)
             audio_data = analyzer.analyze_chunk(chunk)
-            effect_manager.current_effect.update(audio_data, 1.0/fps)
+            effect_manager.update(audio_data, 1.0/fps)
             if _has_pygame:
                 effect_manager.render(renderer.get_surface())
             else:

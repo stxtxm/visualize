@@ -161,7 +161,7 @@ class BarEffect(BaseEffect):
                 pygame.draw.rect(surface, peak_color, (x, peak_by, w, 2))
     
     def render_to_array(self):
-        """Rendu vers un tableau numpy pour l'export vidéo (style Winamp)."""
+        """Rendu vers un tableau numpy pour l'export vidéo (style Winamp) hautement optimisé."""
         import cv2
         
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
@@ -177,37 +177,58 @@ class BarEffect(BaseEffect):
         block_total = block_h + block_gap
         max_blocks = self.height // block_total
         
+        b_yellow_thresh = int(max_blocks * 0.6)
+        b_red_thresh = int(max_blocks * 0.85)
+
+        green_color = np.array([100, 235, 0], dtype=np.uint8)
+        yellow_color = np.array([0, 235, 235], dtype=np.uint8)
+        red_color = np.array([50, 0, 255], dtype=np.uint8)
+        peak_color = np.array([255, 240, 0], dtype=np.uint8)
+        bg_color = np.array([15, 10, 10], dtype=np.uint8)
+
         for i in range(self.num_bars):
             norm_height = self.bar_heights[i] / self.height
             norm_height = max(0.0, min(1.0, norm_height * (1.0 + self.pulse * 0.2)))
             num_blocks = int(norm_height * max_blocks)
             
             x = i * self.bar_width
-            w = self.bar_width - 2
-            if w < 1:
-                w = 1
-                
-            for b in range(num_blocks):
-                by = self.height - (b + 1) * block_total
-                
-                height_ratio = b / max_blocks
-                if height_ratio < 0.6:
-                    color = (100, 235, 0) # BGR Vert
-                elif height_ratio < 0.85:
-                    color = (0, 235, 235) # BGR Jaune
-                else:
-                    color = (50, 0, 255) # BGR Rouge
-                    
-                cv2.rectangle(frame, (x, by), (x + w, by + block_h), color, -1)
-                
+            w = max(1, self.bar_width - 2)
+            x_end = x + w
+            
+            if num_blocks > 0:
+                # 1. Vert (b = 0 .. b_yellow_thresh)
+                n_green = min(num_blocks, b_yellow_thresh)
+                if n_green > 0:
+                    y_top = self.height - n_green * block_total
+                    frame[y_top:self.height, x:x_end] = green_color
+
+                # 2. Jaune (b = b_yellow_thresh .. b_red_thresh)
+                if num_blocks > b_yellow_thresh:
+                    n_yellow = min(num_blocks, b_red_thresh)
+                    y_top_y = self.height - n_yellow * block_total
+                    y_bot_y = self.height - b_yellow_thresh * block_total
+                    frame[y_top_y:y_bot_y, x:x_end] = yellow_color
+
+                # 3. Rouge (b = b_red_thresh .. num_blocks)
+                if num_blocks > b_red_thresh:
+                    y_top_r = self.height - num_blocks * block_total
+                    y_bot_r = self.height - b_red_thresh * block_total
+                    frame[y_top_r:y_bot_r, x:x_end] = red_color
+
+                # Carve out block gaps for all filled blocks
+                y_filled_top = self.height - num_blocks * block_total
+                # Block gap coordinates
+                gap_offsets = np.arange(self.height - block_gap, y_filled_top - 1, -block_total)
+                for go in gap_offsets:
+                    frame[go:go + block_gap, x:x_end] = bg_color
+
+            # Pic flottant (peak hold)
             peak_ratio = self.peak_values[i] / self.height
             if peak_ratio > 0.02:
                 peak_block = int(peak_ratio * max_blocks)
                 peak_by = self.height - (peak_block + 1) * block_total
                 peak_by = max(0, min(self.height - block_total, peak_by))
-                
-                peak_color = (255, 240, 0) # BGR Cyan
-                cv2.rectangle(frame, (x, peak_by), (x + w, peak_by + 2), peak_color, -1)
+                frame[peak_by:peak_by + 2, x:x_end] = peak_color
                 
         return frame
     

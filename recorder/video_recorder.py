@@ -309,13 +309,15 @@ class VideoRecorder:
 
                     # Convert RGB to BGR (FFmpeg expects bgr24 pixel format)
                     if frame.shape[2] == 3:
-                        frame = frame[:, :, ::-1]
+                        import cv2
+                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR, dst=frame)
 
                 # Queue the frame bytes for the writer thread, blocking with a short timeout to check for errors/cancellation
                 queued = False
+                buf = memoryview(frame)
                 while not queued and not self._cancelled and not writer_error:
                     try:
-                        frame_queue.put(frame.tobytes(), timeout=1.0)
+                        frame_queue.put(buf, timeout=1.0)
                         queued = True
                     except queue.Full:
                         if self._process.poll() is not None:
