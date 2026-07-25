@@ -5,6 +5,7 @@ Tests for quality presets module.
 import unittest
 import sys
 import os
+import tempfile
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -64,7 +65,11 @@ class TestQualityPresets(unittest.TestCase):
     
     def test_build_ffmpeg_cmd(self):
         """Test FFmpeg command building."""
-        cmd = build_ffmpeg_cmd(1280, 720, 15, '/tmp/audio.mp3', '/tmp/output.mp4', 'dev')
+        cmd = build_ffmpeg_cmd(1280, 720, 15, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), 'dev')
+
+        # Use temp dir for assertions
+        _audio = os.path.join(tempfile.gettempdir(), 'audio.mp3')
+        _output = os.path.join(tempfile.gettempdir(), 'output.mp4')
         
         # Check that FFmpeg is in the command
         self.assertIn('ffmpeg', cmd)
@@ -76,11 +81,11 @@ class TestQualityPresets(unittest.TestCase):
         self.assertIn('15', cmd)
         
         # Check output file
-        self.assertIn('/tmp/output.mp4', cmd)
+        self.assertIn(_output, cmd)
     
     def test_build_ffmpeg_cmd_4k(self):
         """Test FFmpeg command building for 4K."""
-        cmd = build_ffmpeg_cmd(3840, 2160, 30, '/tmp/audio.mp3', '/tmp/output.mp4', '4k')
+        cmd = build_ffmpeg_cmd(3840, 2160, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), '4k')
         
         # Check 4K resolution
         self.assertIn('3840x2160', cmd)
@@ -90,7 +95,7 @@ class TestQualityPresets(unittest.TestCase):
     
     def test_build_ffmpeg_cmd_high_quality(self):
         """Test FFmpeg command building for high quality preset."""
-        cmd = build_ffmpeg_cmd(1920, 1080, 60, '/tmp/audio.mp3', '/tmp/output.mp4', 'high')
+        cmd = build_ffmpeg_cmd(1920, 1080, 60, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), 'high')
         
         # Check 1080p resolution
         self.assertIn('1920x1080', cmd)
@@ -111,7 +116,7 @@ class TestQualityPresets(unittest.TestCase):
         try:
             quality_presets._HAS_OPENH264 = False
             quality_presets._HAS_HW_ENCODER = False
-            cmd = build_ffmpeg_cmd(1280, 720, 30, '/tmp/audio.mp3', '/tmp/output.mp4', 'normal')
+            cmd = build_ffmpeg_cmd(1280, 720, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), 'normal')
             self.assertIn('-crf', cmd)
             self.assertIn('18', cmd)
             self.assertIn('-tune', cmd)

@@ -5,6 +5,7 @@ import unittest
 import sys
 import os
 import subprocess
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,7 +37,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
         # /tmp/bg.png does not exist → argparse accepts the value, then main.py
         # errors on "file not found" rather than "invalid choice". This confirms
         # the argparse choices are valid.
-        proc = self._run_main(['nonexistent.wav', '--effect', 'trance_scope', '--background', '/tmp/bg.png'])
+        proc = self._run_main(['nonexistent.wav', '--effect', 'trance_scope', '--background', os.path.join(tempfile.gettempdir(), 'bg.png')])
         output = (proc.stdout + proc.stderr).lower()
         self.assertNotIn('invalid choice', output)
 
@@ -45,7 +46,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
 
     def test_missing_audio_file_errors(self):
-        proc = self._run_main(['/no/such/file.mp3', '--export', '/tmp/out.mp4'])
+        proc = self._run_main(['/no/such/file.mp3', '--export', os.path.join(tempfile.gettempdir(), 'out.mp4')])
         self.assertNotEqual(proc.returncode, 0)
         # Error message goes to stdout, not stderr
         self.assertTrue('not found' in proc.stdout.lower() or 'not found' in proc.stderr.lower())
@@ -86,7 +87,7 @@ class TestCLIExportInvocation(unittest.TestCase):
         if not os.path.exists(wav):
             subprocess.run([sys.executable, 'scripts/gen_test_audio.py'],
                            check=True, cwd=PROJECT_ROOT)
-        out = '/tmp/test_cli_export.mp4'
+        out = os.path.join(tempfile.gettempdir(), 'test_cli_export.mp4')
         if os.path.exists(out):
             os.remove(out)
         proc = subprocess.run(

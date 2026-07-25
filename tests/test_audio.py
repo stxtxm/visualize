@@ -66,8 +66,8 @@ class TestAudioLoading(unittest.TestCase):
         """Test analyzer initialization with a real audio file."""
         # This test requires a real audio file
         test_audio_files = [
-            '/app/tests/test_audio.mp3',
-            '/tmp/test_audio.mp3',
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_audio.mp3'),
+            os.path.join(tempfile.gettempdir(), 'test_audio.mp3'),
             '/audio/gruffius.mp3'  # From user's context
         ]
         
@@ -97,7 +97,7 @@ class TestAudioAnalysis(unittest.TestCase):
         """Test that richer audio metrics are returned for better visual sync."""
         from audio.analyzer import AudioAnalyzer
 
-        analyzer = AudioAnalyzer('/tmp/placeholder.wav', chunk_size=1024, sample_rate=44100, loop=False)
+        analyzer = AudioAnalyzer(os.path.join(tempfile.gettempdir(), 'placeholder.wav'), chunk_size=1024, sample_rate=44100, loop=False)
         chunk = np.zeros(1024, dtype=np.int16)
         chunk[0:64] = 1000
 

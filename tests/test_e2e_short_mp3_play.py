@@ -16,6 +16,7 @@ import time
 import threading
 import queue
 import logging
+import tempfile
 
 # Configuration
 AUDIO_FILE = 'input/gruffius_short.mp3'  # Fichier MP3 court
@@ -23,7 +24,7 @@ TEST_DURATION = 5  # Durée du test en secondes
 DEBUG_MODE = True  # Mode debug activé
 
 # Fichier de log
-LOG_FILE = '/tmp/visualize_short_mp3_debug.log'
+LOG_FILE = os.path.join(tempfile.gettempdir(), 'visualize_short_mp3_debug.log')
 
 # Setup paths
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

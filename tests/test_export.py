@@ -1,5 +1,5 @@
 """Test: export a short video and verify with ffprobe."""
-import subprocess, sys, os
+import subprocess, sys, os, tempfile
 
 
 def test_export():
@@ -7,7 +7,7 @@ def test_export():
     if not os.path.exists(audio):
         subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
 
-    output = '/tmp/test_ci_export.mp4'
+    output = os.path.join(tempfile.gettempdir(), 'test_ci_export.mp4')
 
     result = subprocess.run([
         sys.executable, 'main.py', audio,
@@ -35,7 +35,7 @@ def test_cli_progress_output():
     if not os.path.exists(audio):
         subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
 
-    output = '/tmp/test_cli_progress.mp4'
+    output = os.path.join(tempfile.gettempdir(), 'test_cli_progress.mp4')
 
     result = subprocess.run([
         sys.executable, 'main.py', audio,
@@ -69,7 +69,7 @@ def test_progress_callback_invoked():
     if not os.path.exists(audio):
         subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
 
-    output = '/tmp/test_progress_cb.mp4'
+    output = os.path.join(tempfile.gettempdir(), 'test_progress_cb.mp4')
     width, height, fps = 128, 72, 5
 
     def dummy_gen():
@@ -101,8 +101,6 @@ def test_progress_callback_invoked():
 def test_export_with_background():
     """Export a short video with a real background image."""
     from PIL import Image
-    import tempfile
-
     bg_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
@@ -113,7 +111,7 @@ def test_export_with_background():
         if not os.path.exists(audio):
             subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
 
-        output = '/tmp/test_ci_export_bg.mp4'
+        output = os.path.join(tempfile.gettempdir(), 'test_ci_export_bg.mp4')
         result = subprocess.run([
             sys.executable, 'main.py', audio,
             '--effect', 'trance_scope',
@@ -140,8 +138,6 @@ def test_export_with_background():
 def test_export_with_background_opacity():
     """Export with --background-opacity flag."""
     from PIL import Image
-    import tempfile
-
     bg_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
@@ -152,7 +148,7 @@ def test_export_with_background_opacity():
         if not os.path.exists(audio):
             subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
 
-        output = '/tmp/test_ci_export_opacity.mp4'
+        output = os.path.join(tempfile.gettempdir(), 'test_ci_export_opacity.mp4')
         result = subprocess.run([
             sys.executable, 'main.py', audio,
             '--effect', 'trance_scope',
