@@ -10,7 +10,7 @@ sine = (np.sin(2 * np.pi * 220 * t) + np.sin(2 * np.pi * 440 * t) + np.sin(2 * n
 sine = (sine / 3 * 32767).astype(np.int16)
 
 os.makedirs('input', exist_ok=True)
-with wave.open('input/test.wav', 'w') as wf:
+with wave.open('input/test.wav', 'wb') as wf:
     wf.setnchannels(2)
     wf.setsampwidth(2)
     wf.setframerate(sr)

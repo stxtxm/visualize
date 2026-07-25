@@ -2,11 +2,14 @@
 """Visualisateur Audio Psychédélique - Point d'entrée principal"""
 
 import os
-os.environ['ALSA_NO_ERROR_REPORT'] = '1'
-os.environ['SDL_AUDIODRIVER'] = 'dummy'
+import sys
+
+# Linux-specific: suppress ALSA/SDL noise without affecting Windows audio
+if sys.platform == 'linux':
+    os.environ['ALSA_NO_ERROR_REPORT'] = '1'
+    os.environ['SDL_AUDIODRIVER'] = 'dummy'
 
 import argparse
-import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -446,7 +449,7 @@ def run_export(args):
         if process.returncode != 0:
             error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ''
             if os.path.exists(args.export) and os.path.getsize(args.export) > 0:
-                print(f"✓ Export completed: {args.export}")
+                print(f"[OK] Export completed: {args.export}")
                 return
             else:
                 raise RuntimeError(f"FFmpeg error (code {process.returncode}):\n{error_msg}")
@@ -456,7 +459,7 @@ def run_export(args):
             raise RuntimeError(f"Export failed:\n{error_msg}")
                 
     except KeyboardInterrupt:
-        print("\n❌ Export cancelled by user")
+        print("\n[CANCELLED] Export cancelled by user")
         raise
     finally:
         analyzer.cleanup()
@@ -473,7 +476,7 @@ def run_export(args):
             if os.path.exists(args.export):
                 os.remove(args.export)
             raise RuntimeError(f"Output file too small ({file_size} bytes), export likely failed")
-        print(f"✓ Export complete: {args.export} ({file_size/1024/1024:.1f} MB)")
+        print(f"[OK] Export complete: {args.export} ({file_size/1024/1024:.1f} MB)")
     else:
         raise RuntimeError(f"Output file not created: {args.export}")
 

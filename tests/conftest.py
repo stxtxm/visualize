@@ -31,7 +31,6 @@ def sample_audio_path(project_root):
         os.path.join(project_root, 'input', 'gruffius.mp3'),
         os.path.join(project_root, 'tests', 'samples', 'test_440hz.wav'),
         os.path.join(project_root, 'audio', 'gruffius.mp3'),
-        '/app/input/gruffius.mp3',
     ]
     
     for path in possible_paths:

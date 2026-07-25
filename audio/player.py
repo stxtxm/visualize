@@ -85,7 +85,10 @@ class AudioPlayer:
         self.volume = max(0.0, float(gain))
 
     def _ensure_appimage_audio_paths(self):
-        """Ensure AppImage embedded audio libraries are available to the runtime."""
+        """Ensure AppImage embedded audio libraries are available to the runtime.
+        No-op on Windows — AppImage is Linux-only."""
+        if sys.platform == 'win32':
+            return
         os.environ['ALSA_NO_ERROR_REPORT'] = '1'
         appdir = os.environ.get('APPDIR') or os.environ.get('SNAP') or None
         if appdir is None:
@@ -547,11 +550,14 @@ class AudioPlayer:
                 else:
                     outdata[pos:] = 0
 
+        # Suppress stderr noise (ALSA on Linux, harmless no-op on Windows)
         try:
             self._saved_stderr = os.dup(2)
             devnull = os.open(os.devnull, os.O_WRONLY)
             os.dup2(devnull, 2)
             os.close(devnull)
+        except (OSError, AttributeError):
+            self._saved_stderr = None
 
             blocksize = max(self.chunk_size * 4, 4096)
             kwargs = dict(
@@ -800,14 +806,14 @@ class AudioPlayer:
             self._play_accumulated(accumulated)
 
     def _try_fallback(self):
-        """Fallback to pw-play or ffplay when sounddevice fails."""
-        if which('pw-play') is not None:
-            _log("falling back to pw-play stream")
-            self._backend_name = 'pw-play'
-            self._start_stdin_stream()
-        elif which('ffplay') is not None:
+        """Fallback to ffplay when sounddevice fails (cross-platform)."""
+        if which('ffplay') is not None:
             _log("falling back to ffplay stream")
             self._backend_name = 'ffplay'
+            self._start_stdin_stream()
+        elif which('pw-play') is not None and sys.platform != 'win32':
+            _log("falling back to pw-play stream")
+            self._backend_name = 'pw-play'
             self._start_stdin_stream()
         else:
             _log("no fallback available, audio disabled")
@@ -817,8 +823,11 @@ class AudioPlayer:
     def _restore_stderr(self):
         """Restore stderr after ALSA underrun suppression."""
         if self._saved_stderr is not None:
-            os.dup2(self._saved_stderr, 2)
-            os.close(self._saved_stderr)
+            try:
+                os.dup2(self._saved_stderr, 2)
+                os.close(self._saved_stderr)
+            except (OSError, AttributeError):
+                pass
             self._saved_stderr = None
 
     def _play_accumulated(self, chunks):
@@ -861,15 +870,11 @@ class AudioPlayer:
                         stderr = result.stderr.decode('utf-8', errors='ignore')[:200]
                         if stderr:
                             _log(f"ffplay error (rc={result.returncode}): {stderr}")
-                elif self._backend_name == 'aplay':
+                elif self._backend_name in ('aplay', 'paplay'):
                     subprocess.run(
-                        ['aplay', '-q', '-f', 'S16_LE', '-r', str(self.sample_rate),
-                         '-c', str(self.channels), path],
-                        capture_output=True, timeout=timeout
-                    )
-                elif self._backend_name == 'paplay':
-                    subprocess.run(
-                        ['paplay', path],
+                        [self._backend_name, path] if self._backend_name == 'paplay'
+                        else [self._backend_name, '-q', '-f', 'S16_LE', '-r', str(self.sample_rate),
+                              '-c', str(self.channels), path],
                         capture_output=True, timeout=timeout
                     )
             except subprocess.TimeoutExpired:

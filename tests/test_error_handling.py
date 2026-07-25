@@ -26,7 +26,7 @@ class TestNO_SOUNDMode(unittest.TestCase):
     def test_simulated_data_used(self):
         from audio.analyzer import AudioAnalyzer
         # Non-existent file; NO_SOUND forces simulated data
-        a = AudioAnalyzer('/tmp/does_not_exist_xyz.wav', loop=True)
+        a = AudioAnalyzer(os.path.join(tempfile.gettempdir(), 'does_not_exist_xyz.wav'), loop=True)
         self.assertTrue(a.use_simulated)
         self.assertIsNotNone(a.audio_data)
         self.assertGreater(len(a.audio_data), 0)
@@ -34,7 +34,7 @@ class TestNO_SOUNDMode(unittest.TestCase):
 
     def test_analyze_chunk_works_in_no_sound(self):
         from audio.analyzer import AudioAnalyzer
-        a = AudioAnalyzer('/tmp/does_not_exist_xyz.wav', loop=True)
+        a = AudioAnalyzer(os.path.join(tempfile.gettempdir(), 'does_not_exist_xyz.wav'), loop=True)
         a.start_stream()
         chunk = a.get_next_chunk()
         self.assertIsNotNone(chunk)
