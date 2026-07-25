@@ -10,14 +10,13 @@ or a one-file EXE.
 
 import os
 import sys
-import platform
-from pathlib import Path
 
 BLOCK_CIPHER_KEY = None
 
 # ── Paths ──────────────────────────────────────────────────────────
-ROOT = Path(__file__).parent.absolute()
-FFMPEG_DIR = ROOT / "ffmpeg_bin"
+# SPECPATH is defined by PyInstaller when loading the spec file
+ROOT = os.path.abspath(SPECPATH) if 'SPECPATH' in dir() else os.getcwd()
+FFMPEG_DIR = os.path.join(ROOT, "ffmpeg_bin")
 
 # ── Collect all effect plugins ─────────────────────────────────────
 HIDDEN_IMPORTS = [
@@ -65,11 +64,11 @@ HIDDEN_IMPORTS = [
 
 # Detect ffmpeg binaries for bundling
 ffmpeg_binaries = []
-if FFMPEG_DIR.exists():
+if os.path.isdir(FFMPEG_DIR):
     for exe in ("ffmpeg.exe", "ffprobe.exe", "ffplay.exe"):
-        p = FFMPEG_DIR / exe
-        if p.exists():
-            ffmpeg_binaries.append((str(p), "."))
+        p = os.path.join(FFMPEG_DIR, exe)
+        if os.path.exists(p):
+            ffmpeg_binaries.append((p, "."))
 else:
     print("WARNING: ffmpeg_bin directory not found. Build --onedir cannot bundle ffmpeg.", file=sys.stderr)
 
@@ -81,7 +80,7 @@ a = Analysis(
     ],
     datas=[
         # Include input directory if it exists
-        (str(ROOT / "input"), "input") if (ROOT / "input").exists() else None,
+        (os.path.join(ROOT, "input"), "input") if os.path.exists(os.path.join(ROOT, "input")) else None,
     ],
     hiddenimports=HIDDEN_IMPORTS,
     hookspath=[],
