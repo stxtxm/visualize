@@ -1,4 +1,5 @@
 ; Visualisateur Psychédélique - Windows Installer (NSIS)
+; Simplified — no Modern UI dependency, works with any NSIS install.
 ; Build: makensis installer.nsi
 
 Unicode True
@@ -14,54 +15,26 @@ RequestExecutionLevel admin
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "Visualisateur_Psychedelique_Setup_${PRODUCT_VERSION}.exe"
 InstallDir "${PRODUCT_DIR}"
-ShowInstDetails show
-ShowUnInstDetails show
 
-; Modern UI
-!include "MUI2.nsh"
-!include "FileFunc.nsh"
+Page directory
+Page instfiles
+UninstPage uninstConfirm
+UninstPage instfiles
 
-; Interface Settings
-!define MUI_ABORTWARNING
-;!define MUI_ICON "icon.ico"   ; Uncomment when icon.ico exists
-;!define MUI_UNICON "icon.ico"
-!define MUI_HEADERIMAGE
-!define MUI_HEADERIMAGE_BITMAP ""
-!define MUI_WELCOMEFINISHPAGE_BITMAP ""
-!define MUI_COMPONENTSPAGE_NODESC
-
-; Pages
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
-!insertmacro MUI_PAGE_INSTFILES
-!insertmacro MUI_PAGE_FINISH
-
-!insertmacro MUI_UNPAGE_CONFIRM
-!insertmacro MUI_UNPAGE_INSTFILES
-
-; Languages
-!insertmacro MUI_LANGUAGE "French"
-
-Section "Install" SecInstall
+Section "Install"
     SetOutPath "$INSTDIR"
 
-    ; Copy all portable files
     File /r "dist\Visualisateur_Psychedelique_portable\*.*"
-
-    ; Copy ffmpeg binaries alongside the exe
     File /nonfatal "ffmpeg_bin\ffmpeg.exe"
     File /nonfatal "ffmpeg_bin\ffprobe.exe"
     File /nonfatal "ffmpeg_bin\ffplay.exe"
 
-    ; Create shortcuts
     CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
-    CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\Visualisateur_Psychedelique.exe" "" "$INSTDIR\Visualisateur_Psychedelique.exe" 0
-    CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\Visualisateur_Psychedelique.exe" "" "$INSTDIR\Visualisateur_Psychedelique.exe" 0
+    CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\Visualisateur_Psychedelique.exe"
+    CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\Visualisateur_Psychedelique.exe"
 
-    ; Write uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-    ; Registry for Add/Remove Programs
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "DisplayName" "${PRODUCT_NAME}"
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
@@ -72,14 +45,9 @@ Section "Install" SecInstall
 SectionEnd
 
 Section "Uninstall"
-    ; Remove shortcuts
     Delete "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk"
     Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
     RmDir "$SMPROGRAMS\${PRODUCT_NAME}"
-
-    ; Remove app files
     RmDir /r "$INSTDIR"
-
-    ; Remove registry key
     DeleteRegKey HKLM "${PRODUCT_UNINST_KEY}"
 SectionEnd
