@@ -75,12 +75,10 @@ else:
 a = Analysis(
     ["main.py"],
     pathex=[str(ROOT)],
-    binaries=ffmpeg_binaries + [
-        # sounddevice ships with native libs
-    ],
+    binaries=ffmpeg_binaries,
     datas=[
         # Include input directory if it exists
-        (os.path.join(ROOT, "input"), "input") if os.path.exists(os.path.join(ROOT, "input")) else None,
+        *([(os.path.join(ROOT, "input"), "input")] if os.path.exists(os.path.join(ROOT, "input")) else []),
     ],
     hiddenimports=HIDDEN_IMPORTS,
     hookspath=[],
