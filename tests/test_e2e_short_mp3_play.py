@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Activer NO_SOUND pour éviter les dépendances audio
 os.environ['NO_SOUND'] = '1'
-os.environ['SDL_VIDEODRIVER'] = 'x11'
+os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['SDL_RENDER_DRIVER'] = 'software'
 os.environ['SDL_AUDIODRIVER'] = 'dummy'
 

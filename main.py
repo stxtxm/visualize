@@ -2,11 +2,14 @@
 """Visualisateur Audio Psychédélique - Point d'entrée principal"""
 
 import os
-os.environ['ALSA_NO_ERROR_REPORT'] = '1'
-os.environ['SDL_AUDIODRIVER'] = 'dummy'
+import sys
+
+# Linux-specific: suppress ALSA/SDL noise without affecting Windows audio
+if sys.platform == 'linux':
+    os.environ['ALSA_NO_ERROR_REPORT'] = '1'
+    os.environ['SDL_AUDIODRIVER'] = 'dummy'
 
 import argparse
-import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

@@ -1,0 +1,101 @@
+name: Windows Build
+
+on:
+  push:
+    branches:
+      - windows-build
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pytest
+          # Install SDL2 for pygame (available via pip)
+          pip install pygame
+
+      - name: Generate test audio
+        run: python scripts/gen_test_audio.py
+
+      - name: Run pytest
+        run: python -m pytest tests/ -v --tb=short
+        env:
+          NO_SOUND: "1"
+          SDL_VIDEODRIVER: "dummy"
+          SDL_AUDIODRIVER: "dummy"
+
+  build:
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/windows-build'
+    runs-on: windows-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pygame
+
+      - name: Download ffmpeg for bundling
+        run: python scripts/download_ffmpeg_windows.py ffmpeg_bin
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller build_windows.spec --clean
+        env:
+          NO_SOUND: "1"
+
+      - name: Build NSIS installer
+        run: |
+          # Install NSIS via chocolatey
+          choco install nsis -y --no-progress
+          # Build installer (uses portable build output)
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+        shell: powershell
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Visualisateur_Psychedelique_Portable
+          path: dist/Visualisateur_Psychedelique_portable/
+          compression-level: 0
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Visualisateur_Psychedelique_Installer
+          path: "*.exe"
+          compression-level: 0
+
+      - name: Upload to release (tagged builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Visualisateur_Psychedelique_*.exe
+            dist/Visualisateur_Psychedelique_portable/
+          generate_release_notes: false
+          fail_on_unmatched_files: false

@@ -124,7 +124,7 @@ class MainWindow:
         try:
             path = self._recent_files_path()
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self._recent_files = data.get("recent", [])[:10]
         except Exception:
@@ -136,7 +136,7 @@ class MainWindow:
         self._recent_files.insert(0, path)
         self._recent_files = self._recent_files[:10]
         try:
-            with open(self._recent_files_path(), "w") as f:
+            with open(self._recent_files_path(), "w", encoding="utf-8") as f:
                 json.dump({"recent": self._recent_files}, f)
         except Exception:
             pass
@@ -292,10 +292,10 @@ class MainWindow:
             path = os.path.join(os.path.expanduser("~"), ".visualize_config.json")
             config = {}
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     config = json.load(f)
             config["theme"] = theme_name
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
         except Exception:
             pass
@@ -304,7 +304,7 @@ class MainWindow:
         try:
             path = os.path.join(os.path.expanduser("~"), ".visualize_config.json")
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                     return config.get("theme", "cyberpunk")
         except Exception:
@@ -772,7 +772,7 @@ class MainWindow:
         try:
             path = self._config_path()
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                     return config.get("audio_device", "")
         except Exception:
@@ -784,10 +784,10 @@ class MainWindow:
             path = self._config_path()
             config = {}
             if os.path.exists(path):
-                with open(path, "r") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     config = json.load(f)
             config["audio_device"] = device_str
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
         except Exception:
             pass
