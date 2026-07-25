@@ -42,6 +42,7 @@ jobs:
           NO_SOUND: "1"
           SDL_VIDEODRIVER: "dummy"
           SDL_AUDIODRIVER: "dummy"
+          PYTHONIOENCODING: "utf-8"
 
   build:
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/windows-build'
