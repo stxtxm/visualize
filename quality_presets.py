@@ -284,15 +284,15 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
 
     if codec == 'vp9':
         # VP9: royalty-free codec, plays natively on all Linux distributions.
-        # -deadline realtime -cpu-used 8 + tile columns provides 4x-8x faster encoding
-        # while keeping visual CRF quality intact.
-        vp9_crf = '31' if width >= 3840 else '30'
+        # Keep a quality-oriented rate control setting for 4K.  CRF 31 with
+        # realtime mode is visibly soft after a 50% render is upscaled.
+        vp9_crf = '24' if width >= 3840 else '28'
         cmd += [
             '-c:v', 'libvpx-vp9',
             '-crf', vp9_crf,
             '-b:v', bitrate,
-            '-deadline', 'realtime',
-            '-cpu-used', '8',
+            '-deadline', 'good',
+            '-cpu-used', '4',
             '-row-mt', '1',
             '-tile-columns', '2',
             '-tile-rows', '1',
@@ -359,13 +359,13 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     else:
         # Host FFmpeg lacks H.264 software encoders (e.g. stock Fedora package).
         # Fall back to libvpx-vp9 which is universally shipped in all Linux FFmpeg packages.
-        vp9_crf = '31' if width >= 3840 else '30'
+        vp9_crf = '24' if width >= 3840 else '28'
         cmd += [
             '-c:v', 'libvpx-vp9',
             '-crf', vp9_crf,
             '-b:v', bitrate,
-            '-deadline', 'realtime',
-            '-cpu-used', '8',
+            '-deadline', 'good',
+            '-cpu-used', '4',
             '-row-mt', '1',
             '-tile-columns', '2',
             '-tile-rows', '1',

@@ -298,6 +298,7 @@ Déclenché sur push de tag `v*`.
 26. **Mémoire FFmpeg 4K** — Les workers limitent `-threads`, `-filter_threads` et `-filter_complex_threads`; le mode standalone choisit `superfast` avec CRF 18 pour éviter l'accumulation de buffers x264 qui peut dépasser 1 Go par encodeur sur les longs flux rawvideo.
 27. **Compatibilité AppImage** — `build_standalone.sh` sélectionne le FFmpeg embarqué, teste les encodeurs matériels disponibles et conserve `libx264` comme fallback universel; aucun GPU ni pilote propriétaire n'est requis. Le nombre de workers 4K est limité par `MemAvailable` et le nombre de CPU.
 28. **Gradation Trance Scope** — Sans image de fond, `_grade_background()` applique une version vectorisée équivalente par lignes et réutilise un buffer; le chemin doit rester pixel-identique au calcul float32 général.
+29. **VP9 4K continu** — Les exports VP9 ne passent pas par la concaténation de segments parallèles, car des segments indépendants peuvent produire des glitches de décodage aux frontières; ils utilisent le flux séquentiel. En 4K, le VP9 vise CRF 24 avec le mode `good` pour préserver les détails.
 
 ### 🔴 CI + Release — English release message obligatoire
 

@@ -224,7 +224,13 @@ class VideoRecorder:
         audio_duration = self._get_audio_duration(self.audio_file)
         total_frames = int(audio_duration * self.fps)
 
-        if generated_from_audio and self.render_workers > 1:
+        # VP9 segment concatenation is not reliable across all decoders;
+        # encode it as one continuous stream to avoid boundary flashes.
+        if (
+            generated_from_audio
+            and self.render_workers > 1
+            and self.video_codec != 'vp9'
+        ):
             from recorder.parallel_export import export_parallel
             from quality_presets import recommended_render_workers
             safe_workers = self.render_workers

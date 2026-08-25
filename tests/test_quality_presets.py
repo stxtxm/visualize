@@ -97,6 +97,8 @@ class TestQualityPresets(unittest.TestCase):
         self.assertIn('libvpx-vp9', cmd)
         self.assertIn('libopus', cmd)
         self.assertNotIn('-movflags', cmd)
+        self.assertEqual(cmd[cmd.index('-crf') + 1], '24')
+        self.assertEqual(cmd[cmd.index('-deadline') + 1], 'good')
 
     def test_build_ffmpeg_cmd_h265(self):
         """Test FFmpeg command building for H265 codec."""

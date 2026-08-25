@@ -78,6 +78,11 @@ class ExportTab(tk.Frame):
                 "ÉCHELLE DE RENDU (RAPIDITÉ)", self._render_scale,
                 ['100%', '75%', '50%']
             )
+            tk.Label(
+                self, text="50% = rendu 1080p puis upscale : plus rapide, moins détaillé.",
+                font=('Helvetica', 7), fg=self.FG_MUTED, bg=self.BG_PANEL,
+                justify=tk.LEFT, wraplength=250,
+            ).pack(anchor=tk.W, padx=12, pady=(0, 6))
 
         # FPS display
         fps_frame = tk.Frame(self, bg=self.BG_PANEL)

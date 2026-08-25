@@ -71,7 +71,7 @@ The GUI offers a streamlined interface :
 | `--preset` / `-p` | `dev`, `fast`, `normal`, `high`, `4k` |
 | `--resolution` / `-r` | `720p`, `1080p`, `1440p`, `4K` |
 | `--fps` | `15`, `20`, `24`, `30`, `60`, `120` |
-| `--render-scale` | Internal render scale from `0.1` to `1.0`; lower values speed up long exports |
+| `--render-scale` | Internal render scale from `0.1` to `1.0`; lower values speed up long exports but reduce detail (50% renders 1080p before 4K upscaling) |
 | `--render-workers` | Parallel process workers; `0` auto-selects a CPU/RAM-safe count for 4K, `1` disables segmentation |
 
 ---

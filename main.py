@@ -325,7 +325,9 @@ def run_export(args):
                 f"for available hardware resources"
             )
 
-    if render_workers > 1:
+    # Concatenating independently encoded VP9 segments can produce decoder
+    # glitches at segment boundaries. Use the sequential path for VP9.
+    if render_workers > 1 and args.codec != 'vp9':
         from recorder.parallel_export import export_parallel
 
         def _parallel_progress(current, total):
