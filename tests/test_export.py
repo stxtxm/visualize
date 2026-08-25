@@ -98,6 +98,60 @@ def test_progress_callback_invoked():
     print("Progress callback test PASSED")
 
 
+def test_audio_frame_reader_preserves_non_integer_samples_per_frame():
+    """24 FPS must not lose frames because 44100 / 24 is fractional."""
+    from audio.analyzer import AudioFrameReader
+
+    audio = 'input/test.wav'
+    if not os.path.exists(audio):
+        subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
+
+    reader = AudioFrameReader(audio, sample_rate=44100, fps=24)
+    frames = 0
+    try:
+        while reader.read_frame() is not None:
+            frames += 1
+    finally:
+        reader.close()
+
+    # input/test.wav is five seconds long.
+    assert frames == 120
+
+
+def test_parallel_recorder_keeps_native_output_duration():
+    """Parallel rendering keeps the requested video geometry and duration."""
+    from recorder.video_recorder import VideoRecorder
+
+    audio = 'input/test.wav'
+    if not os.path.exists(audio):
+        subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
+
+    output = os.path.join(tempfile.gettempdir(), 'test_parallel_export.mp4')
+    calls = []
+    recorder = VideoRecorder(
+        audio_file=audio,
+        output_file=output,
+        width=128,
+        height=72,
+        fps=5,
+        effect_type='bars',
+        render_workers=2,
+    )
+    try:
+        recorder.record(progress_callback=lambda c, t: calls.append((c, t)))
+        probe = subprocess.run([
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'stream=width,height,duration',
+            '-of', 'json', output,
+        ], capture_output=True, text=True, check=True)
+        assert '128' in probe.stdout
+        assert '72' in probe.stdout
+        assert calls[-1] == (25, 25)
+    finally:
+        if os.path.exists(output):
+            os.unlink(output)
+
+
 def test_export_with_background():
     """Export a short video with a real background image."""
     from PIL import Image
@@ -173,5 +227,36 @@ def test_export_with_background_opacity():
     print("Export with background opacity PASSED")
 
 
+def test_export_vp9():
+    """Export a short video using VP9 codec."""
+    audio = 'input/test.wav'
+    if not os.path.exists(audio):
+        subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
+
+    output = os.path.join(tempfile.gettempdir(), 'test_ci_export.webm')
+
+    result = subprocess.run([
+        sys.executable, 'main.py', audio,
+        '--effect', 'random',
+        '--color', 'psychedelic',
+        '--export', output,
+        '--preset', 'dev',
+        '--codec', 'vp9',
+    ], capture_output=True, text=True, timeout=120)
+
+    assert result.returncode == 0, f"VP9 Export failed:\n{result.stderr}"
+    assert os.path.exists(output), f"Output file does not exist: {output}"
+    assert os.path.getsize(output) > 50000, f"VP9 Export too small: {os.path.getsize(output)}"
+
+    result = subprocess.run(['ffprobe', output], capture_output=True, text=True)
+    stderr = result.stderr + result.stdout
+    assert 'vp9' in stderr.lower(), f"No VP9 video stream in output:\n{stderr}"
+    assert 'opus' in stderr.lower(), f"No Opus audio stream in output:\n{stderr}"
+
+    os.unlink(output)
+    print("VP9 Export test PASSED")
+
+
 if __name__ == '__main__':
     test_export()
+    test_export_vp9()

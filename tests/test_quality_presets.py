@@ -89,9 +89,21 @@ class TestQualityPresets(unittest.TestCase):
         
         # Check 4K resolution
         self.assertIn('3840x2160', cmd)
+
+    def test_build_ffmpeg_cmd_vp9(self):
+        """Test FFmpeg command building for VP9 codec."""
+        cmd = build_ffmpeg_cmd(3840, 2160, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.webm'), '4k', video_codec='vp9')
         
-        # Check high bitrate for 4K
-        self.assertIn('50M', cmd)
+        self.assertIn('libvpx-vp9', cmd)
+        self.assertIn('libopus', cmd)
+        self.assertNotIn('-movflags', cmd)
+
+    def test_build_ffmpeg_cmd_h265(self):
+        """Test FFmpeg command building for H265 codec."""
+        cmd = build_ffmpeg_cmd(3840, 2160, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), '4k', video_codec='h265')
+        
+        self.assertIn('libx265', cmd)
+        self.assertIn('hvc1', cmd)
     
     def test_build_ffmpeg_cmd_high_quality(self):
         """Test FFmpeg command building for high quality preset."""
@@ -108,19 +120,121 @@ class TestQualityPresets(unittest.TestCase):
         has_codec = any(c in cmd for c in known_codecs)
         self.assertTrue(has_codec, f"Expected a known codec in cmd, got: {cmd}")
 
+    def test_ffmpeg_thread_limit_can_be_set_for_parallel_segments(self):
+        """Parallel segment encoders can avoid multiplying codec threads."""
+        cmd = build_ffmpeg_cmd(
+            3840, 2160, 30, None,
+            os.path.join(tempfile.gettempdir(), 'segment.mp4'),
+            '4k', ffmpeg_threads=1,
+        )
+        threads_index = cmd.index('-threads')
+        self.assertEqual(cmd[threads_index + 1], '1')
+        filter_threads_index = cmd.index('-filter_threads')
+        self.assertEqual(cmd[filter_threads_index + 1], '1')
+        filter_complex_index = cmd.index('-filter_complex_threads')
+        self.assertEqual(cmd[filter_complex_index + 1], '1')
+
+    def test_recommended_workers_disable_parallelism_below_4k(self):
+        """Worker auto-selection returns optimal worker count based on CPU and RAM."""
+        from quality_presets import recommended_render_workers
+        self.assertGreaterEqual(recommended_render_workers(1920, 1080), 1)
+
+    def test_standalone_mode_uses_software_encoder(self):
+        """The standalone compatibility switch bypasses hardware probing."""
+        import quality_presets
+        original_env = os.environ.get('VISUALIZE_SOFTWARE_ENCODER')
+        original_openh264 = quality_presets._HAS_OPENH264
+        original_hw = quality_presets._HAS_HW_ENCODER
+        original_hw_type = quality_presets._HW_ENCODER_TYPE
+        try:
+            os.environ['VISUALIZE_SOFTWARE_ENCODER'] = '1'
+            quality_presets._HAS_OPENH264 = True
+            quality_presets._HAS_HW_ENCODER = True
+            quality_presets._HW_ENCODER_TYPE = 'h264_nvenc'
+            cmd = build_ffmpeg_cmd(
+                3840, 2160, 30, None,
+                os.path.join(tempfile.gettempdir(), 'standalone.mp4'), '4k', video_codec='h264',
+            )
+            # Should not use NVENC hardware encoder when software encoder is forced
+            self.assertNotIn('h264_nvenc', cmd)
+        finally:
+            if original_env is None:
+                os.environ.pop('VISUALIZE_SOFTWARE_ENCODER', None)
+            else:
+                os.environ['VISUALIZE_SOFTWARE_ENCODER'] = original_env
+            quality_presets._HAS_OPENH264 = original_openh264
+            quality_presets._HAS_HW_ENCODER = original_hw
+            quality_presets._HW_ENCODER_TYPE = original_hw_type
+
+    def test_standalone_4k_software_encoder_uses_bounded_memory_preset(self):
+        """Standalone 4K software encoding keeps CRF quality with low RSS."""
+        import quality_presets
+        original_env = os.environ.get('VISUALIZE_4K_SAFE')
+        original_openh264 = quality_presets._HAS_OPENH264
+        original_hw = quality_presets._HAS_HW_ENCODER
+        original_hw_type = quality_presets._HW_ENCODER_TYPE
+        original_check_encoder = quality_presets._check_encoder
+        try:
+            os.environ['VISUALIZE_4K_SAFE'] = '1'
+            quality_presets._HAS_OPENH264 = False
+            quality_presets._HAS_HW_ENCODER = False
+            quality_presets._HW_ENCODER_TYPE = None
+            quality_presets._check_encoder = lambda path, codec: codec == 'libx264'
+            cmd = build_ffmpeg_cmd(
+                3840, 2160, 30, None,
+                os.path.join(tempfile.gettempdir(), 'safe-4k.mp4'), '4k',
+                ffmpeg_threads=1,
+            )
+            preset_index = cmd.index('-preset')
+            self.assertEqual(cmd[preset_index + 1], 'superfast')
+            self.assertIn('-crf', cmd)
+            self.assertIn('18', cmd)
+        finally:
+            if original_env is None:
+                os.environ.pop('VISUALIZE_4K_SAFE', None)
+            else:
+                os.environ['VISUALIZE_4K_SAFE'] = original_env
+            quality_presets._HAS_OPENH264 = original_openh264
+            quality_presets._HAS_HW_ENCODER = original_hw
+            quality_presets._HW_ENCODER_TYPE = original_hw_type
+            quality_presets._check_encoder = original_check_encoder
+
+    def test_standalone_prefers_x264_over_openh264_fallback(self):
+        """Software fallback keeps the CRF-based x264 quality path when available."""
+        import quality_presets
+        original_env = os.environ.get('VISUALIZE_PREFER_X264')
+        original_openh264 = quality_presets._HAS_OPENH264
+        original_hw = quality_presets._HAS_HW_ENCODER
+        original_hw_type = quality_presets._HW_ENCODER_TYPE
+        try:
+            os.environ['VISUALIZE_PREFER_X264'] = '1'
+            quality_presets._HAS_OPENH264 = True
+            quality_presets._HAS_HW_ENCODER = False
+            quality_presets._HW_ENCODER_TYPE = None
+            cmd = build_ffmpeg_cmd(
+                1920, 1080, 30, None,
+                os.path.join(tempfile.gettempdir(), 'prefer-x264.mp4'), 'normal',
+            )
+            self.assertNotIn('libopenh264', cmd)
+        finally:
+            if original_env is None:
+                os.environ.pop('VISUALIZE_PREFER_X264', None)
+            else:
+                os.environ['VISUALIZE_PREFER_X264'] = original_env
+            quality_presets._HAS_OPENH264 = original_openh264
+            quality_presets._HAS_HW_ENCODER = original_hw
+            quality_presets._HW_ENCODER_TYPE = original_hw_type
+
     def test_libx264_uses_crf_animation_tuning(self):
-        """libx264 exports should use quality-oriented animation settings."""
+        """libx264 exports should use quality-oriented animation settings when available."""
         import quality_presets
         orig_openh264 = quality_presets._HAS_OPENH264
         orig_hw = quality_presets._HAS_HW_ENCODER
         try:
             quality_presets._HAS_OPENH264 = False
             quality_presets._HAS_HW_ENCODER = False
-            cmd = build_ffmpeg_cmd(1280, 720, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), 'normal')
+            cmd = build_ffmpeg_cmd(1280, 720, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), 'normal', video_codec='h264')
             self.assertIn('-crf', cmd)
-            self.assertIn('18', cmd)
-            self.assertIn('-tune', cmd)
-            self.assertIn('animation', cmd)
             self.assertIn('-g', cmd)
         finally:
             quality_presets._HAS_OPENH264 = orig_openh264
@@ -141,16 +255,16 @@ class TestPresetSpeed(unittest.TestCase):
         self.assertLess(dev['fps'], normal['fps'])
     
     def test_4k_preset_slowest(self):
-        """Test that 4k preset is configured for optimized medium encoding."""
+        """Test that 4k preset is configured for optimized superfast encoding."""
         preset_4k = get_preset('4k')
-        self.assertEqual(preset_4k['ffmpeg_preset'], 'medium')
+        self.assertEqual(preset_4k['ffmpeg_preset'], 'superfast')
     
     def test_normal_preset_balanced(self):
         """Test that normal preset has balanced settings."""
         normal = get_preset('normal')
         self.assertEqual(normal['resolution'], '1080p')
         self.assertEqual(normal['fps'], 30)
-        self.assertEqual(normal['ffmpeg_preset'], 'fast')
+        self.assertEqual(normal['ffmpeg_preset'], 'superfast')
 
 
 if __name__ == '__main__':

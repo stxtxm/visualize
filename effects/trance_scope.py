@@ -124,12 +124,15 @@ class TranceScopeEffect(BaseEffect):
     def _render_cv2(self, cv2):
         W, H = self.width, self.height
         s = H / 450.0
-        frame = self._background_frame(base_color=(3, 4, 10))
-        if frame is None:
-            frame = np.zeros((H, W, 3), dtype=np.uint8)
-            frame[:] = (3, 4, 10)
-
-        frame[:] = self._grade_background(frame)
+        # A solid background does not need the temporary base frame created
+        # by BaseEffect.  Reusing one uint8 buffer removes a full-frame
+        # allocation and copy on every 4K frame without changing any pixel.
+        if self.background_image is None:
+            frame = self._grade_background(None)
+        else:
+            frame = self._grade_background(
+                self._background_frame(base_color=(3, 4, 10))
+            )
 
         if self._grid_cache is None or self._grid_cache.shape != frame.shape:
             self._grid_cache = self._make_grid(cv2, W, H)
@@ -215,14 +218,32 @@ class TranceScopeEffect(BaseEffect):
 
     def _grade_background(self, frame):
         W, H = self.width, self.height
-        graded = frame.astype(np.float32)
         lift = 0.28 + self.energy * 0.12
+        tint_a = np.asarray(self._palette_color(self.beat_phase), dtype=np.float32)
+        tint_b = np.asarray(self._palette_color(0.35 + self.time * 0.03), dtype=np.float32)
+        tint_factor = 0.10 + self.energy * 0.10
+
+        # With a solid background, every pixel in a row has the same value.
+        # Build the Hx1 gradient once and broadcast it into the output instead
+        # of performing several full-frame float32 operations at 4K.  This is
+        # algebraically equivalent to the general path below and does not
+        # change the rendered colors.
+        if self.background_image is None:
+            base = np.asarray((3, 4, 10), dtype=np.float32) * lift * 0.70
+            y = np.linspace(0, 1, H, dtype=np.float32)[:, None]
+            rows = base + (
+                tint_a[None, :] * (1.0 - y) + tint_b[None, :] * y
+            ) * tint_factor
+            if self._frame is None or self._frame.shape != (H, W, 3):
+                self._frame = np.empty((H, W, 3), dtype=np.uint8)
+            self._frame[:] = np.clip(rows, 0, 255).astype(np.uint8)[:, None, :]
+            return self._frame
+
+        graded = frame.astype(np.float32)
         graded *= lift
-        tint_a = np.array(self._palette_color(self.beat_phase), dtype=np.float32)
-        tint_b = np.array(self._palette_color(0.35 + self.time * 0.03), dtype=np.float32)
         y = np.linspace(0, 1, H, dtype=np.float32)[:, None, None]
         tint = tint_a * (1 - y) + tint_b * y
-        graded = graded * 0.70 + tint * (0.10 + self.energy * 0.10)
+        graded = graded * 0.70 + tint * tint_factor
 
         if self.background_image is not None:
             shift = int(math.sin(self.time * 0.9) * (2 + self.beat_strength * 8))

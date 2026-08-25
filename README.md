@@ -41,7 +41,7 @@ chmod +x Visualisateur_Psychedelic.AppImage
 
 The GUI offers a streamlined interface :
 1. Select an audio file
-2. Choose an effect, palette, optional background image, logo placement, export resolution, and quality preset
+2. Choose an effect, palette, optional background image, logo placement, export resolution, quality preset, and internal render scale
 3. Press play to preview the visualizer in real time
 4. Export the same visual stack to MP4
 
@@ -54,6 +54,8 @@ The GUI offers a streamlined interface :
 ./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect spectrum --color rainbow --preset 4k
 ./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect trance_scope --background cover.png
 ./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --logo logo.png --logo-position custom --logo-x 50 --logo-y 8 --logo-scale 18
+# Faster 4K export: safe worker count is selected automatically; no GPU is required
+./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --preset 4k --render-workers 0
 ```
 
 | Option | Values |
@@ -69,6 +71,8 @@ The GUI offers a streamlined interface :
 | `--preset` / `-p` | `dev`, `fast`, `normal`, `high`, `4k` |
 | `--resolution` / `-r` | `720p`, `1080p`, `1440p`, `4K` |
 | `--fps` | `15`, `20`, `24`, `30`, `60`, `120` |
+| `--render-scale` | Internal render scale from `0.1` to `1.0`; lower values speed up long exports |
+| `--render-workers` | Parallel process workers; `0` auto-selects a CPU/RAM-safe count for 4K, `1` disables segmentation |
 
 ---
 
@@ -182,7 +186,7 @@ python3 tests/test_export.py            # Full export test (generates video)
 | `libopenh264` not found | Falls back to `libx264` automatically |
 | `tkinter` not found | `sudo apt install python3-tk` ; or use `--no-gui` |
 | AppImage won't run | `./Visualisateur_Psychedelic.AppImage --help` |
-| Slow export | Use `--preset dev` for tests, `--preset fast` for quick production |
+| Slow 4K export or a long mix | Use `--preset 4k --render-workers 0`; this keeps native 4K output, uses isolated renderer processes, bounds FFmpeg memory, and assembles segments without a final video re-encode |
 
 ---
 

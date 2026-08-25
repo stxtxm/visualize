@@ -115,29 +115,33 @@ Définies dans `BaseEffect._get_color_palette()` :
 
 ### quality_presets.py
 
-- **Codecs H.264 détectés automatiquement** : auto-détection par ordre de priorité :
-  1. **Hardware** : `h264_nvenc` (NVIDIA), `h264_vaapi` (Intel/AMD), `h264_videotoolbox` (Apple)
-     - Chaque encodeur est vérifié par un encodage test réel (2x2 frame) avant d'être sélectionné
-     - NVENC : `-preset p7 -rc vbr -cq 18 -profile:v high`
-     - VAAPI : `-global_quality 18 -profile:v high`
-     - VideoToolbox : `-q:v 18 -profile:v high`
-  2. **`libopenh264`** si disponible (pas de `-preset`)
-  3. **`libx264`** avec `-preset`, `-crf`, `-tune animation`
+- **Codecs vidéo configurables (`video_codec`)** :
+  - **`h264`** (par défaut) : H.264 (NVENC > VAAPI > VideoToolbox > libopenh264 > libx264). Standard universel.
+  - **`vp9`** : WebM / VP9 (`libvpx-vp9`) + Opus (`libopus`). **Royalty-free**, lisible immédiatement sur Fedora/Linux sans aucun codec propriétaire ou dépôt RPM Fusion.
+  - **`h265`** : HEVC (`libx265`) pour une compression optimale.
 - Présélections : `dev` (720p15), `fast` (720p20), `normal` (1080p30), `high` (1080p60), `4k` (4K30)
-- `build_ffmpeg_cmd()` construit la commande ffmpeg complète
+- `build_ffmpeg_cmd()` et `codec_for_output()` construisent les paramètres FFmpeg et ajustent automatiquement l'extension (`.webm` pour VP9, `.mp4` pour H.264/H.265).
 - Supporte `render_width`/`render_height` : quand différent de la sortie, ajoute `-vf scale=W:H:flags=lanczos`
 
 ### Pipelines de rendu pour l'export
 
 ```
 main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB→BGR → tobytes()
-  → [queue.Queue maxsize=8] → writer thread → ffmpeg (rawvideo pipe) → output.mp4
+  → [queue.Queue maxsize=2] → writer thread → ffmpeg (rawvideo pipe) → output.mp4
 ```
+
+- Le CLI et `VideoRecorder` utilisent `AudioFrameReader` en mode export : le fichier audio n'est plus entièrement décodé en mémoire.
+- La taille du bloc d'analyse est calculée avec `ceil(44100 / fps)` et `AudioFrameReader` distribue précisément les échantillons fractionnaires afin qu'une image corresponde à la bonne durée audio et que les mixes longs restent synchronisés.
+- La durée d'export provient de `ffprobe` sur le fichier source, y compris lorsque `NO_SOUND=1` active l'analyse simulée.
+- FFmpeg écrit d'abord dans `<output>.part.mp4`; le fichier final n'est remplacé qu'après une terminaison réussie et une validation minimale.
+- La GUI expose une échelle de rendu interne de 100 %, 75 % ou 50 % (100 % par défaut); FFmpeg upscale ensuite vers la résolution finale si une échelle réduite est choisie.
+- `--render-workers` lance des segments 4K indépendants dans des processus séparés; les segments sont concaténés avec `-c:v copy`, sans remise à l'échelle ni ré-encodage vidéo final. Chaque FFmpeg de segment est limité à un thread d'encodage et de filtre pour éviter la multiplication des threads et des buffers internes du codec.
+- L'AppImage utilise en priorité son FFmpeg embarqué, teste un encodeur matériel réellement utilisable puis retombe sur `libx264` logiciel (OpenH264 est réservé aux installations non-standalone). `VISUALIZE_4K_SAFE=1` active automatiquement le preset x264 `superfast` en 4K si aucun encodeur matériel n'est disponible, avec CRF 18 et une mémoire bornée. `recommended_render_workers()` limite le parallélisme selon les CPU et la RAM disponible.
 
 ### Progress de l'export
 
 - **GUI** : barre 2px `#00f0ff` (`NEON_CYAN`) dans `status_frame` (`self._export_progress_bar`), visible via `_show_export_progress()` / cachée via `_export_finished()`.
-- **CLI** : `print(f"\r  Export: {frame_count}/{total_frames} ({pct:.0f}%)", end="", flush=True)` dans `main.py:328` (tous les 10 frames).
+- **CLI** : `print(f"\r  Export: {frame_count}/{total_frames} ({pct:.0f}%)", end="", flush=True)` dans `main.py` (tous les 10 frames).
 - **Programmatique** : `VideoRecorder.record(progress_callback=callable(frame_count, total_frames))` — appelé à chaque frame.
 
 ---
@@ -151,7 +155,7 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB→BGR 
   - **Onglet Effets** (`EffectsTab`) : effet + palette avec description dynamique
   - **Onglet Fond** (`BackgroundTab`) : image de fond + curseur opacité temps réel
   - **Onglet Logo** (`LogoTab`) : image superposée + position, coordonnées, taille et opacité
-  - **Onglet Export** (`ExportTab`) : résolution, FPS, présélection, bouton export + barre progression intégrée
+  - **Onglet Export** (`ExportTab`) : résolution, FPS, présélection, échelle de rendu, bouton export + barre progression intégrée
   - **Onglet Logs** (`LogsTab`) : logs colorés intégrés
 - Boutons Lecture/Stop + curseur volume sous les onglets
 - **4 thèmes** (`ui/theme.py`) : Cyberpunk, Synthwave, Matrix, Tokyo Night — sélecteur dans le header, persisté dans `~/.visualize_config.json`
@@ -285,23 +289,29 @@ Déclenché sur push de tag `v*`.
 ### 🔵 Optimisations export (ajoutées v0.X)
 
 19. **Encodage matériel auto-détecté** — `quality_presets._check_hardware_encoder()` vérifie chaque encodeur par un test réel (2x2 frame). Priorité : NVENC > VAAPI > VideoToolbox > libx264 > libopenh264. Le test réel évite les faux positifs (encodeur listé mais libcuda.so.1 manquant).
-20. **Thread writer asynchrone** — `VideoRecorder.record()` utilise un thread + `queue.Queue(maxsize=8)` pour superposer le rendu des frames et l'écriture du pipe ffmpeg. Le thread principal pousse les bytes dans la queue, le writer thread écrit sur stdin. Le sentinel `_SENTINEL` signale l'arrêt.
-21. **`--render-scale`** (CLI uniquement) — Rendu à résolution réduite, ffmpeg upscale avec lanczos. Ex: `--render-scale 0.5` sur export 4K → rendu 1080p, upscale 4K. Gain ~4x sur le rendu. Aucun impact quality pour du contenu abstrait.
+20. **Thread writer asynchrone** — `VideoRecorder.record()` utilise un thread + `queue.Queue(maxsize=2)` pour superposer le rendu des frames et l'écriture du pipe ffmpeg. Le thread principal pousse les bytes dans la queue, le writer thread écrit sur stdin. Le sentinel `_SENTINEL` signale l'arrêt. Deux frames limitent la mémoire occupée en 4K.
+21. **Échelle de rendu** (CLI et GUI) — Rendu à résolution réduite, ffmpeg upscale avec lanczos. Ex: `--render-scale 0.5` sur export 4K → rendu 1080p, upscale 4K. Gain ~4x sur le rendu. Aucun impact quality pour du contenu abstrait.
 22. **RGB→BGR par vue numpy** — Dans `main.py`, utiliser `frame[:, :, ::-1]` au lieu de `cv2.cvtColor` évite une copie mémoire complète de la frame (25 Mo pour 4K). Économise ~750 Mo/s à 30fps 4K.
+23. **Exports longs bornés en mémoire** — Ne pas réintroduire `AudioAnalyzer(..., load_file=True)` dans un pipeline d'export; conserver le décodage audio par flux et fermer le lecteur dans le `finally`.
+24. **Fichiers temporaires d'export** — Les sorties intermédiaires doivent conserver un suffixe `.mp4` (`<output>.part.mp4`) pour permettre à FFmpeg de détecter le muxer; utiliser `os.replace()` après succès.
+25. **Parallélisme 4K** — `recorder/parallel_export.py` rend des segments natifs dans des processus séparés et assemble la vidéo avec `-c:v copy`; l'audio est muxé ensuite avec les mêmes paramètres AAC que l'export séquentiel. Cette isolation contourne le GIL Python et protège le processus principal contre un arrêt d'encodeur.
+26. **Mémoire FFmpeg 4K** — Les workers limitent `-threads`, `-filter_threads` et `-filter_complex_threads`; le mode standalone choisit `superfast` avec CRF 18 pour éviter l'accumulation de buffers x264 qui peut dépasser 1 Go par encodeur sur les longs flux rawvideo.
+27. **Compatibilité AppImage** — `build_standalone.sh` sélectionne le FFmpeg embarqué, teste les encodeurs matériels disponibles et conserve `libx264` comme fallback universel; aucun GPU ni pilote propriétaire n'est requis. Le nombre de workers 4K est limité par `MemAvailable` et le nombre de CPU.
+28. **Gradation Trance Scope** — Sans image de fond, `_grade_background()` applique une version vectorisée équivalente par lignes et réutilise un buffer; le chemin doit rester pixel-identique au calcul float32 général.
 
 ### 🔴 CI + Release — English release message obligatoire
 
-23. **`generate_release_notes: true`** dans `.github/workflows/release.yml` — La CI utilise `softprops/action-gh-release` avec l'option `generate_release_notes: true`. NE JAMAIS mettre de `body:` en dur dans la workflow : cela écrase le message de release à chaque push de tag.
-24. **Éditer la release après la CI** — Dès que la CI a créé la release (auto-generated notes), vous devez immédiatement la modifier avec un message de release en anglais décrivant les changements. Utilisez `gh release edit vX.Y.Z --notes "..."` ou éditez-la sur GitHub directement.
-25. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
-26. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
-27. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
+29. **`generate_release_notes: true`** dans `.github/workflows/release.yml` — La CI utilise `softprops/action-gh-release` avec l'option `generate_release_notes: true`. NE JAMAIS mettre de `body:` en dur dans la workflow : cela écrase le message de release à chaque push de tag.
+30. **Éditer la release après la CI** — Dès que la CI a créé la release (auto-generated notes), vous devez immédiatement la modifier avec un message de release en anglais décrivant les changements. Utilisez `gh release edit vX.Y.Z --notes "..."` ou éditez-la sur GitHub directement.
+31. **README et messages de release en anglais** — Le README.md et les `body` des GitHub Releases doivent être rédigés en anglais uniquement. Tout agent travaillant sur ce projet doit produire et maintenir ces contenus en anglais.
+32. **AGENTS.md et fichiers internes** — Ce fichier (`AGENTS.md`) ainsi que `MARCHE_A_SUIVRE.md`, `NOUVEAUTES.md` et autres documents internes peuvent rester en français si nécessaire, car ils sont destinés aux développeurs du projet.
+33. **Commits et PRs** — Les messages de commit et les titres/descriptions de Pull Requests doivent être en anglais.
 
 ### 🟢 Recommandations
 
-28. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
-29. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
-30. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
+34. **Toujours lancer les tests** (`python3 -m pytest tests/ -v`) avant de commit.
+35. **Mettre à jour AGENTS.md** après tout changement architectural, nouvelle dépendance, ou nouveau processus.
+36. **Ajouter tout nouvel effet dans EFFECT_MAP** (`effects/manager.py`) ET dans les `choices` du argparse (`main.py`).
 
 ---
 
@@ -356,6 +366,9 @@ git tag v0.X.Y && git push origin v0.X.Y
 # Exporter avec --render-scale (0.25-1.0, défaut 1.0) pour rendu accéléré
 # ex: rendu à 1080p → upscale 4K avec lanczos
 python3 main.py audio.mp3 -o video.mp4 --render-scale 0.5
+
+# 4K standalone-safe export: hardware probe + software fallback + CPU/RAM-aware workers
+python3 main.py audio.mp3 -o video.mp4 --preset 4k --render-workers 0
 
 # Ajouter les release notes en anglais après la CI
 gh release edit v0.X.Y --notes "## What's new in v0.X.Y ..."

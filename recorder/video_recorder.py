@@ -8,6 +8,8 @@ import sys
 import os
 import threading
 import queue
+import tempfile
+import math
 
 
 class VideoRecorder:
@@ -20,32 +22,14 @@ class VideoRecorder:
                  background_image=None, background_opacity=0.72,
                  render_scale=1.0, logo_image=None,
                  logo_position='top-right', logo_x=0.5, logo_y=0.5,
-                 logo_scale=0.18, logo_opacity=1.0):
+                 logo_scale=0.18, logo_opacity=1.0, render_workers=1,
+                 preset='normal', video_codec='h264'):
         """
         Initialize the video recorder.
-
-        Args:
-            audio_file: Path to input audio file
-            output_file: Path to output video file
-            width: Video width in pixels
-            height: Video height in pixels
-            fps: Frames per second
-            effect_type: Type of visual effect to use
-            color_palette: Color palette to use
-            background_image: Path to optional background image
-            background_opacity: Blend opacity for background image (0.0-1.0)
-            logo_image: Path to an optional foreground logo image
-            logo_position: Preset placement or ``custom``
-            logo_x/logo_y: Custom placement in normalized coordinates
-            logo_scale: Logo width as a fraction of the frame width
-            logo_opacity: Logo opacity (0.0-1.0)
-            render_scale: Scale factor for rendering (0.25-1.0).
-                          Lower values render at reduced resolution for
-                          faster export; ffmpeg upscales to target resolution.
-                          1.0 = full resolution (default).
         """
+        from quality_presets import codec_for_output
         self.audio_file = audio_file
-        self.output_file = output_file
+        self.video_codec, self.output_file = codec_for_output(video_codec, output_file)
         self.width = width
         self.height = height
         self.fps = fps
@@ -60,11 +44,17 @@ class VideoRecorder:
         self.logo_scale = max(0.01, min(1.0, float(logo_scale)))
         self.logo_opacity = max(0.0, min(1.0, float(logo_opacity)))
         self.render_scale = min(1.0, max(0.1, render_scale))
+        self.render_workers = max(1, int(render_workers))
+        self.preset = preset
         self._render_width = max(1, int(width * self.render_scale))
         self._render_height = max(1, int(height * self.render_scale))
+        is_webm = self.output_file.lower().endswith('.webm')
+        partial_suffix = '.part.webm' if is_webm else '.part.mp4'
+        self._partial_output_file = f"{self.output_file}{partial_suffix}"
         self._ffmpeg_cmd = self._build_ffmpeg_command()
         self._process = None
         self._cancelled = False
+        self._parallel_cancel_event = threading.Event()
         from effects.logo_overlay import LogoOverlay
         self._logo_overlay = LogoOverlay(
             self._render_width, self._render_height,
@@ -84,10 +74,11 @@ class VideoRecorder:
             self.height,
             self.fps,
             self.audio_file,
-            self.output_file,
-            'normal',
+            self._partial_output_file,
+            self.preset,
             render_width=self._render_width,
             render_height=self._render_height,
+            video_codec=self.video_codec,
         )
 
     def _get_audio_duration(self, audio_file):
@@ -143,12 +134,28 @@ class VideoRecorder:
 
     def _default_effect_generator(self):
         """Generates visualizer frames sequentially from the audio file with 0 RAM overhead."""
-        from audio.analyzer import AudioAnalyzer, AudioStreamReader
+        from audio.analyzer import AudioAnalyzer, AudioFrameReader
         from effects.manager import EffectManager
 
-        analyzer = AudioAnalyzer(self.audio_file, sample_rate=44100, chunk_size=1024, load_file=False)
+        sample_rate = 44100
+        # Match the decoded audio window to the video clock: one frame gets
+        # one FPS-sized block of samples.  A fixed 1024-sample block made a
+        # 30 FPS export consume audio at roughly 43 FPS.
+        chunk_size = max(64, int(math.ceil(sample_rate / self.fps)))
+        analyzer = AudioAnalyzer(
+            self.audio_file,
+            sample_rate=sample_rate,
+            chunk_size=chunk_size,
+            load_file=False,
+        )
         analyzer.start_stream()
-        reader = AudioStreamReader(self.audio_file, sample_rate=44100, chunk_size=1024, channels=1)
+        reader = AudioFrameReader(
+            self.audio_file,
+            sample_rate=sample_rate,
+            fps=self.fps,
+            channels=1,
+            analysis_chunk_size=chunk_size,
+        )
 
         class _Renderer:
             def __init__(self, w, h):
@@ -169,7 +176,7 @@ class VideoRecorder:
 
         try:
             while True:
-                chunk = reader.read_chunk()
+                chunk = reader.read_frame()
                 if chunk is None:
                     break
                 audio_data = analyzer.analyze_chunk(chunk)
@@ -178,10 +185,12 @@ class VideoRecorder:
                 yield frame
         finally:
             reader.close()
+            analyzer.cleanup()
 
     def cancel(self):
         """Cancel an ongoing export."""
         self._cancelled = True
+        self._parallel_cancel_event.set()
         self.cleanup()
 
     def record(self, effect_generator=None, progress_callback=None):
@@ -200,8 +209,12 @@ class VideoRecorder:
                            called periodically during export for UI progress updates.
         """
         import os
+        generated_from_audio = effect_generator is None
+        self._parallel_cancel_event.clear()
         if effect_generator is None:
             effect_generator = self._default_effect_generator()
+        elif callable(effect_generator):
+            effect_generator = effect_generator()
 
         # Validate audio file
         if not os.path.exists(self.audio_file):
@@ -210,6 +223,41 @@ class VideoRecorder:
         # Get audio duration
         audio_duration = self._get_audio_duration(self.audio_file)
         total_frames = int(audio_duration * self.fps)
+
+        if generated_from_audio and self.render_workers > 1:
+            from recorder.parallel_export import export_parallel
+            from quality_presets import recommended_render_workers
+            safe_workers = self.render_workers
+            if self.width >= 3840:
+                safe_workers = min(safe_workers, recommended_render_workers(
+                    self.width, self.height
+                ))
+            if safe_workers > 1:
+                export_parallel(
+                    audio_file=self.audio_file,
+                    output_file=self.output_file,
+                    width=self.width,
+                    height=self.height,
+                    fps=self.fps,
+                    preset=self.preset,
+                    effect_type=self.effect_type,
+                    color_palette=self.color_palette,
+                    background_image=self.background_image,
+                    background_opacity=self.background_opacity,
+                    logo_image=self.logo_image,
+                    logo_position=self.logo_position,
+                    logo_x=self.logo_x,
+                    logo_y=self.logo_y,
+                    logo_scale=self.logo_scale,
+                    logo_opacity=self.logo_opacity,
+                    render_scale=self.render_scale,
+                    audio_duration=audio_duration,
+                    workers=safe_workers,
+                    progress_callback=progress_callback,
+                    cancel_event=self._parallel_cancel_event,
+                    video_codec=self.video_codec,
+                )
+                return
 
         print(f"Exporting {self.audio_file} to {self.output_file}")
         print(f"  Resolution: {self.width}x{self.height}")
@@ -242,16 +290,39 @@ class VideoRecorder:
             # For system FFmpeg, remove LD_LIBRARY_PATH to avoid conflicts
             env.pop('LD_LIBRARY_PATH', None)
 
-        self._process = subprocess.Popen(
-            self._ffmpeg_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env
-        )
+        stderr_log = tempfile.TemporaryFile(mode='w+b')
+        try:
+            self._process = subprocess.Popen(
+                self._ffmpeg_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_log,
+                env=env
+            )
+        except Exception:
+            stderr_log.close()
+            raise
+
+        process = self._process
+
+        def _ffmpeg_diagnostic(prefix):
+            returncode = process.poll()
+            try:
+                stderr_log.seek(0)
+                detail = stderr_log.read().decode('utf-8', errors='ignore').strip()
+            except Exception:
+                detail = ''
+            if returncode == -9:
+                hint = ' (process killed by the OS, usually because of memory pressure)'
+            elif returncode is None:
+                hint = ''
+            else:
+                hint = f' (exit code {returncode})'
+            return f"{prefix}{hint}:\n{detail or 'no FFmpeg diagnostic was produced'}"
 
         # Thread-safe queue + sentinel for the async pipe writer
-        frame_queue = queue.Queue(maxsize=8)
+        # Keep only a small in-flight window: each 4K BGR frame is ~24 MiB.
+        frame_queue = queue.Queue(maxsize=2)
         _SENTINEL = object()
         writer_error = None
         writer_exception = None
@@ -264,12 +335,12 @@ class VideoRecorder:
                     if item is _SENTINEL:
                         frame_queue.task_done()
                         break
-                    if self._process.poll() is not None:
-                        writer_error = f"FFmpeg exited early"
+                    if process.poll() is not None:
+                        writer_error = _ffmpeg_diagnostic("FFmpeg exited early")
                         frame_queue.task_done()
                         break
                     try:
-                        self._process.stdin.write(item)
+                        process.stdin.write(item)
                     except (BrokenPipeError, ConnectionResetError, ValueError, IOError, OSError) as e:
                         writer_error = f"Pipe error: {e}"
                         frame_queue.task_done()
@@ -281,6 +352,7 @@ class VideoRecorder:
         writer_thread = threading.Thread(target=_pipe_writer, daemon=True)
         writer_thread.start()
 
+        export_succeeded = False
         try:
             frame_count = 0
 
@@ -307,10 +379,9 @@ class VideoRecorder:
                         self._logo_overlay.set_frame_size(frame.shape[1], frame.shape[0])
                         frame = self._logo_overlay.apply(frame)
 
-                    # Convert RGB to BGR (FFmpeg expects bgr24 pixel format)
+                    # Ensure the frame array is contiguous in memory before sending to FFmpeg
                     if frame.shape[2] == 3:
-                        import cv2
-                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR, dst=frame)
+                        frame = np.ascontiguousarray(frame)
 
                 # Queue the frame bytes for the writer thread, blocking with a short timeout to check for errors/cancellation
                 queued = False
@@ -320,9 +391,16 @@ class VideoRecorder:
                         frame_queue.put(buf, timeout=1.0)
                         queued = True
                     except queue.Full:
-                        if self._process.poll() is not None:
-                            writer_error = "FFmpeg process exited unexpectedly"
+                        if process.poll() is not None:
+                            writer_error = _ffmpeg_diagnostic(
+                                "FFmpeg process exited unexpectedly"
+                            )
                             break
+
+                if self._cancelled:
+                    raise RuntimeError("Export annulé par l'utilisateur")
+                if not queued:
+                    break
 
                 frame_count += 1
 
@@ -336,65 +414,90 @@ class VideoRecorder:
                     break
 
             # Signal writer thread to stop
-            try:
-                frame_queue.put(_SENTINEL, timeout=5)
-            except queue.Full:
-                pass
-            writer_thread.join(timeout=10)
+            if not writer_error:
+                frame_queue.put(_SENTINEL)
+            writer_thread.join()
+
+            if writer_error:
+                raise RuntimeError(_ffmpeg_diagnostic(writer_error))
+            if writer_exception:
+                raise RuntimeError(f"Writer thread error: {writer_exception}")
+            if generated_from_audio and frame_count < total_frames:
+                raise RuntimeError(
+                    f"Audio stream ended after {frame_count}/{total_frames} frames"
+                )
 
             # Close stdin to signal FFmpeg that we're done
             try:
-                if self._process.stdin and not self._process.stdin.closed:
-                    self._process.stdin.close()
+                if process.stdin and not process.stdin.closed:
+                    process.stdin.close()
             except Exception as e:
                 print(f"Warning when closing stdin: {e}")
 
-            # Wait for FFmpeg to finish
-            try:
-                stdout, stderr = self._process.communicate(timeout=30)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                stdout, stderr = self._process.communicate()
-                raise RuntimeError("FFmpeg timeout - export took too long")
-            except (ValueError, OSError):
-                # stdin pipe already broken — FFmpeg already exited
-                if self._process.returncode is None:
-                    self._process.wait(timeout=5)
-                stdout, stderr = (b'', b'')
+            # stdin is closed explicitly; wait without an arbitrary 30-second
+            # timeout, which is too short for finalizing a large MP4.
+            process.wait()
+            stderr_log.seek(0)
+            stderr = stderr_log.read()
 
-            if self._process.returncode != 0:
+            if process.returncode != 0:
                 error_msg = stderr.decode('utf-8', errors='ignore') if stderr else 'Unknown error'
                 print(f"FFmpeg stderr output:\n{error_msg}")
-                raise RuntimeError(f"FFmpeg error (code {self._process.returncode}):\n{error_msg}")
+                raise RuntimeError(f"FFmpeg error (code {process.returncode}):\n{error_msg}")
+
+            if not os.path.exists(self._partial_output_file) or os.path.getsize(self._partial_output_file) < 1024:
+                raise RuntimeError("FFmpeg completed without producing a valid output file")
+            os.replace(self._partial_output_file, self.output_file)
+            export_succeeded = True
 
             print(f"\nVideo exported successfully: {self.output_file}")
 
         except Exception as e:
             print(f"Export failed with error: {type(e).__name__}: {e}")
-            # Try to get FFmpeg's output in case of crash
-            if self._process:
+            # Preserve FFmpeg's diagnostic even when the writer fails before
+            # the normal wait path is reached.
+            if process:
                 try:
-                    stdout, stderr = self._process.communicate(timeout=5)
-                    if stderr:
-                        print(f"FFmpeg stderr:\n{stderr.decode('utf-8', errors='ignore')}")
+                    if process.poll() is None:
+                        process.terminate()
+                        process.wait(timeout=5)
                 except:
                     pass
+            try:
+                stderr_log.seek(0)
+                error_output = stderr_log.read()
+                if error_output:
+                    print(f"FFmpeg stderr:\n{error_output.decode('utf-8', errors='ignore')}")
+            except Exception:
+                pass
             raise
         finally:
-            if self._process and self._process.poll() is None:
-                self._process.terminate()
+            stderr_log.close()
+            if process and process.poll() is None:
+                process.terminate()
                 try:
-                    self._process.wait(timeout=5)
+                    process.wait(timeout=5)
                 except:
-                    self._process.kill()
+                    process.kill()
+            if not export_succeeded and os.path.exists(self._partial_output_file):
+                try:
+                    os.remove(self._partial_output_file)
+                except OSError:
+                    pass
             self._process = None
 
     def cleanup(self):
         """Clean up resources."""
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
+        process = self._process
+        if process and process.poll() is None:
             try:
-                self._process.wait(timeout=5)
+                if process.stdin and not process.stdin.closed:
+                    process.stdin.close()
+            except Exception:
+                pass
+            process.terminate()
+            try:
+                process.wait(timeout=5)
             except:
-                self._process.kill()
+                process.kill()
         self._process = None

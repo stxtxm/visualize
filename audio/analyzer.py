@@ -28,12 +28,14 @@ else:
 
 class AudioStreamReader:
     """Streams mono/stereo audio chunks from any file using ffmpeg."""
-    def __init__(self, filename, sample_rate=44100, chunk_size=1024, channels=1):
+    def __init__(self, filename, sample_rate=44100, chunk_size=1024, channels=1,
+                 seek_seconds=0.0):
         self.filename = filename
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.channels = channels
         self.process = None
+        self._seek_seconds = seek_seconds
         self._open_stream()
         
     def _open_stream(self):
@@ -41,10 +43,14 @@ class AudioStreamReader:
         ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
         if not ffmpeg_path:
             raise FileNotFoundError("ffmpeg non trouvé")
-            
-        cmd = [
-            ffmpeg_path,
-            '-v', 'error',
+
+        cmd = [ffmpeg_path, '-v', 'error']
+        # Input seeking: jump to the requested position before decoding.
+        # This avoids reading through all preceding audio data sequentially,
+        # which is critical for parallel export workers on long files.
+        if self._seek_seconds > 0:
+            cmd += ['-ss', f'{self._seek_seconds:.6f}']
+        cmd += [
             '-i', self.filename,
             '-f', 's16le',
             '-acodec', 'pcm_s16le',
@@ -53,9 +59,20 @@ class AudioStreamReader:
             '-'
         ]
         
-        # Run ffmpeg with clean environment (temporarily clean LD_LIBRARY_PATH if needed)
+        # Use the AppImage's bundled libraries when its FFmpeg is selected;
+        # otherwise strip embedded paths to avoid conflicts with system FFmpeg.
         env = os.environ.copy()
-        _saved_ldpath = env.pop('LD_LIBRARY_PATH', None)
+        self_dir = env.get('SELF_DIR')
+        try:
+            bundled = self_dir and os.path.realpath(ffmpeg_path).startswith(
+                os.path.realpath(self_dir) + os.sep
+            )
+        except OSError:
+            bundled = False
+        if bundled:
+            env['LD_LIBRARY_PATH'] = os.path.join(self_dir, 'usr', 'lib')
+        else:
+            env.pop('LD_LIBRARY_PATH', None)
         
         self.process = subprocess.Popen(
             cmd,
@@ -73,7 +90,15 @@ class AudioStreamReader:
             data = self.process.stdout.read(bytes_to_read)
         except Exception:
             return None
-        if not data or len(data) < bytes_to_read:
+        if not data:
+            return None
+
+        # Keep a final partial block.  Frame-level consumers can combine it
+        # with their sample buffer instead of silently losing the tail.
+        sample_bytes = self.channels * 2
+        usable_bytes = len(data) - (len(data) % sample_bytes)
+        data = data[:usable_bytes]
+        if not data:
             return None
             
         # Unpack bytes to numpy array
@@ -83,6 +108,7 @@ class AudioStreamReader:
             else:
                 samples = np.frombuffer(data, dtype=np.int16).reshape(-1, self.channels)
             return samples
+
         else:
             # Fallback structure unpacking without numpy
             import struct
@@ -104,6 +130,78 @@ class AudioStreamReader:
                 except Exception:
                     pass
             self.process = None
+
+
+class AudioFrameReader:
+    """Read audio blocks whose boundaries follow a video FPS clock.
+
+    ``sample_rate / fps`` is often fractional (for example 1837.5 samples at
+    24 FPS).  This reader distributes the extra sample across frames instead
+    of accumulating drift over a long export.
+    """
+
+    def __init__(self, filename, sample_rate=44100, fps=30, channels=1,
+                 analysis_chunk_size=None, start_frame=0):
+        self.sample_rate = sample_rate
+        self.fps = fps
+        self.channels = channels
+        self.analysis_chunk_size = (
+            analysis_chunk_size
+            if analysis_chunk_size is not None
+            else max(64, int(math.ceil(sample_rate / fps)))
+        )
+        # When start_frame > 0, use FFmpeg -ss input seeking to jump directly
+        # to the segment start instead of reading through all preceding audio.
+        seek_seconds = start_frame / fps if start_frame > 0 else 0.0
+        self._reader = AudioStreamReader(
+            filename,
+            sample_rate=sample_rate,
+            chunk_size=self.analysis_chunk_size,
+            channels=channels,
+            seek_seconds=seek_seconds,
+        )
+        self._frame_index = start_frame
+        if HAS_NUMPY:
+            self._buffer = (
+                np.empty((0, channels), dtype=np.int16)
+                if channels > 1 else np.empty(0, dtype=np.int16)
+            )
+        else:
+            self._buffer = []
+
+    def read_frame(self):
+        """Return the next FPS-sized mono/stereo block, or ``None`` at EOF."""
+        start = int(round(self._frame_index * self.sample_rate / self.fps))
+        end = int(round((self._frame_index + 1) * self.sample_rate / self.fps))
+        required = max(1, end - start)
+
+        while len(self._buffer) < required:
+            chunk = self._reader.read_chunk()
+            if chunk is None:
+                return None
+            if HAS_NUMPY:
+                self._buffer = np.concatenate((self._buffer, chunk))
+            else:
+                self._buffer.extend(chunk)
+
+        frame = self._buffer[:required]
+        self._buffer = self._buffer[required:]
+        self._frame_index += 1
+
+        # AudioAnalyzer uses one fixed FFT window.  Pad the occasional
+        # shorter FPS block without changing the video-clock boundaries.
+        if required < self.analysis_chunk_size:
+            padding = self.analysis_chunk_size - required
+            if HAS_NUMPY:
+                pad_width = ((0, padding), (0, 0)) if frame.ndim > 1 else (0, padding)
+                frame = np.pad(frame, pad_width, mode='constant')
+            else:
+                padding_value = [0] * self.channels if self.channels > 1 else 0
+                frame = frame + [padding_value] * padding
+        return frame
+
+    def close(self):
+        self._reader.close()
 
 
 class AudioAnalyzer:

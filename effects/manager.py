@@ -26,6 +26,20 @@ EFFECT_MAP = {
     'classic': ('classic', 'ClassicEffect'),
 }
 
+RANDOM_EFFECTS = [
+    'trance_scope',
+    'neon_equalizer',
+    'psychedelic_plasma',
+    '3d_cyber_tunnel',
+]
+
+
+def resolve_effect_type(effect_type):
+    """Resolve ``random`` once so parallel segments share one effect."""
+    if effect_type == 'random':
+        return random.choice(RANDOM_EFFECTS)
+    return effect_type
+
 
 class EffectManager:
     """
@@ -90,10 +104,7 @@ class EffectManager:
     def _create_effect(self):
         """Create the effect instance based on current settings."""
         # Determine which effect to use
-        if self.effect_type == 'random':
-            effect_name = random.choice(['trance_scope', 'neon_equalizer', 'psychedelic_plasma', '3d_cyber_tunnel'])
-        else:
-            effect_name = self.effect_type
+        effect_name = resolve_effect_type(self.effect_type)
         
         # Get module file and class name
         module_file, class_name = EFFECT_MAP.get(effect_name, ('classic', 'ClassicEffect'))

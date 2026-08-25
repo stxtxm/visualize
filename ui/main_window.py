@@ -66,6 +66,10 @@ class MainWindow:
         self.resolution = tk.StringVar(value="1080p")
         self.fps = tk.IntVar(value=60)
         self.selected_preset = tk.StringVar(value="normal")
+        self.video_codec = tk.StringVar(value="h264")
+        # Keep native output quality by default; reduced rendering remains an
+        # explicit option for users who prefer maximum speed over detail.
+        self.render_scale = tk.StringVar(value="100%")
         self.opacity_var = tk.DoubleVar(value=72)
         self.volume_var = tk.DoubleVar(value=80)
 
@@ -410,7 +414,9 @@ class MainWindow:
                       self.background_image,
                       export_callback=self._on_export_request,
                       cancel_callback=self._on_export_cancel,
-                      status_callback=self._set_status)
+                      status_callback=self._set_status,
+                      render_scale_var=self.render_scale,
+                      codec_var=self.video_codec)
         )
         self._logs_tab = self.tab_panel.add_tab(
             "📋 LOGS",
@@ -1184,13 +1190,27 @@ class MainWindow:
             return
 
         width, height = self._get_resolution()
+
+        # Validate audio file path before doing anything else
+        audio_path = self.audio_file.get()
+        if not audio_path or not os.path.isfile(audio_path):
+            messagebox.showerror(
+                "Fichier introuvable",
+                f"Le fichier audio est introuvable :\n{audio_path or '(aucun fichier sélectionné)'}\n\n"
+                "Utilisez le bouton PARCOURIR pour sélectionner le fichier."
+            )
+            return
+
         self._export_in_progress = True
 
         try:
             from recorder.video_recorder import VideoRecorder
-            from quality_presets import get_preset, build_ffmpeg_cmd
+            from quality_presets import (
+                get_preset, build_ffmpeg_cmd, recommended_render_workers,
+            )
 
             preset = get_preset(self.selected_preset.get())
+            render_scale = float(self.render_scale.get().rstrip('%')) / 100.0
 
             self.recorder = VideoRecorder(
                 audio_file=self.audio_file.get(),
@@ -1207,10 +1227,18 @@ class MainWindow:
                 logo_y=self.logo_y.get() / 100.0,
                 logo_scale=self.logo_scale.get() / 100.0,
                 logo_opacity=self.logo_opacity.get() / 100.0,
+                render_scale=render_scale,
+                render_workers=recommended_render_workers(width, height),
+                preset=self.selected_preset.get(),
+                video_codec=self.video_codec.get(),
             )
             self.recorder._ffmpeg_cmd = build_ffmpeg_cmd(
                 width, height, self.fps.get(),
-                self.audio_file.get(), filename, self.selected_preset.get()
+                self.audio_file.get(), self.recorder._partial_output_file,
+                self.selected_preset.get(),
+                render_width=self.recorder._render_width,
+                render_height=self.recorder._render_height,
+                video_codec=self.video_codec.get(),
             )
         except Exception as e:
             messagebox.showerror("Erreur", f"Échec de la création du recorder: {str(e)}")

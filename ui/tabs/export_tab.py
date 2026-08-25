@@ -28,7 +28,7 @@ class ExportTab(tk.Frame):
     def __init__(self, master, audio_file_var, resolution_var, fps_var,
                  preset_var, effect_var, palette_var, bg_image_var,
                  export_callback=None, cancel_callback=None,
-                 status_callback=None):
+                 status_callback=None, render_scale_var=None, codec_var=None):
         super().__init__(master)
         self.configure(bg=self.BG_PANEL)
         self._audio_file = audio_file_var
@@ -38,6 +38,8 @@ class ExportTab(tk.Frame):
         self._effect = effect_var
         self._palette = palette_var
         self._bg_image = bg_image_var
+        self._render_scale = render_scale_var
+        self._codec = codec_var
         self._export_callback = export_callback
         self._cancel_callback = cancel_callback
         self._status_callback = status_callback
@@ -64,6 +66,18 @@ class ExportTab(tk.Frame):
         self._create_dropdown("PRESET QUALITÉ", self._preset,
                               ['dev', 'fast', 'normal', 'high', '4k'],
                               self._on_preset_change)
+
+        if self._codec is not None:
+            self._create_dropdown(
+                "CODEC VIDÉO", self._codec,
+                ['h264', 'vp9', 'h265']
+            )
+
+        if self._render_scale is not None:
+            self._create_dropdown(
+                "ÉCHELLE DE RENDU (RAPIDITÉ)", self._render_scale,
+                ['100%', '75%', '50%']
+            )
 
         # FPS display
         fps_frame = tk.Frame(self, bg=self.BG_PANEL)

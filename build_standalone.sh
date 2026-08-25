@@ -59,6 +59,10 @@ RUN mkdir -p /output/usr/bin && \
         fi; \
     done
 
+# The standalone compatibility path relies on a software H.264 encoder.
+RUN ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'libx264' || \
+    (echo 'ERROR: bundled FFmpeg has no libx264 encoder' >&2 && exit 1)
+
 # Copier les bibliothèques système SDL2, audio et PortAudio
 RUN mkdir -p /output/usr/lib && \
     for lib in \
@@ -84,6 +88,48 @@ RUN mkdir -p /output/usr/lib && \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
+
+# Copy the complete transitive runtime closure of FFmpeg. The explicit list
+# above covers the common codecs, but distributions may add dependencies such
+# as pocketsphinx, VAAPI, or other demuxer libraries. Missing one makes the
+# bundled FFmpeg fail before the first audio frame on an otherwise valid host.
+RUN set -eux; \
+    for binary in /usr/bin/ffmpeg /usr/bin/ffprobe /usr/bin/ffplay; do \
+        ldd "$binary" 2>/dev/null | awk '/=> \/.* \(/ {print $3} /^[[:space:]]*\/[^ ]+ \(0x/ {print $1}'; \
+    done | sort -u | while read -r lib; do \
+        if [ -f "$lib" ]; then cp -nL "$lib" /output/usr/lib/; fi; \
+    done
+
+RUN set -eux; \
+    for pass in $(seq 1 8); do \
+        deps=$(mktemp); \
+        find /output/usr/lib -type f -name '*.so*' -exec ldd {} \; 2>/dev/null | \
+            awk '/=> \/.* \(/ {print $3} /^[[:space:]]*\/[^ ]+ \(0x/ {print $1}' | \
+            sort -u > "$deps"; \
+        changed=0; \
+        while read -r lib; do \
+            if [ -f "$lib" ] && [ ! -e "/output/usr/lib/$(basename "$lib")" ]; then \
+                cp -L "$lib" /output/usr/lib/; changed=1; \
+            fi; \
+        done < "$deps"; \
+        rm -f "$deps"; \
+        [ "$changed" -eq 0 ] && break; \
+    done
+
+# Never override the host's glibc/runtime ABI from an AppImage. These core
+# libraries must be resolved from the host kernel/userspace; bundling them can
+# make an otherwise valid FFmpeg binary segfault on another distribution.
+RUN rm -f \
+    /output/usr/lib/libc.so* \
+    /output/usr/lib/libm.so* \
+    /output/usr/lib/libdl.so* \
+    /output/usr/lib/libpthread.so* \
+    /output/usr/lib/librt.so* \
+    /output/usr/lib/libresolv.so* \
+    /output/usr/lib/libutil.so* \
+    /output/usr/lib/libgcc_s.so* \
+    /output/usr/lib/libstdc++.so* \
+    /output/usr/lib/ld-linux*.so*
     
 # Copier la bibliothèque FFmpeg runtime requise par ffmpeg/ffprobe
 # Inclut libx264 pour l'encodage H.264 (compatible Fedora, Windows, macOS)
@@ -103,6 +149,8 @@ RUN mkdir -p /output/usr/lib && \
         /usr/lib/x86_64-linux-gnu/libx264* \
         /usr/lib/x86_64-linux-gnu/libx265* \
         /usr/lib/x86_64-linux-gnu/libopenh264* \
+        /usr/lib/x86_64-linux-gnu/libvpx* \
+        /usr/lib/x86_64-linux-gnu/libopus* \
         ; do \
         cp -nL $lib /output/usr/lib/ 2>/dev/null || true; \
     done
@@ -332,19 +380,29 @@ fi
 # Export PYTHONPATH (sans LD_LIBRARY_PATH problématique pour la compatibilité PipeWire)
 export PYTHONPATH="$SELF_DIR/usr/lib/python3.11/site-packages:$SELF_DIR/usr/app:$PYTHONPATH"
 
-# Prefer system ffmpeg/ffprobe if available to avoid dynamic linker/library conflicts
-if command -v ffmpeg &> /dev/null; then
-    export FFMPEG_PATH=$(command -v ffmpeg)
-else
+# Always prefer the FFmpeg shipped in the AppImage. This keeps the codec set
+# and runtime libraries identical on every host. Hardware H.264 is probed only
+# when the host really supports it; bundled libx264 remains the universal
+# software fallback and does not require a GPU driver.
+if [ -x "$SELF_DIR/usr/bin/ffmpeg" ]; then
     export FFMPEG_PATH="$SELF_DIR/usr/bin/ffmpeg"
-    # When using bundled ffmpeg, add bundled libs (libopenh264, libx264, etc.)
+    # Keep the software fallback bounded on long 4K rawvideo exports. The
+    # quality target remains CRF 18; only x264's memory-heavy lookahead preset
+    # is changed when no usable hardware encoder is available.
+    export VISUALIZE_4K_SAFE=1
+    # Prefer the bundled x264 over OpenH264 for the software fallback. x264
+    # preserves the existing CRF/profile quality settings; hardware probing
+    # still has priority when a usable GPU encoder exists.
+    export VISUALIZE_PREFER_X264=1
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$SELF_DIR/usr/lib"
+elif command -v ffmpeg &> /dev/null; then
+    export FFMPEG_PATH=$(command -v ffmpeg)
 fi
 
-if command -v ffprobe &> /dev/null; then
-    export FFPROBE_PATH=$(command -v ffprobe)
-else
+if [ -x "$SELF_DIR/usr/bin/ffprobe" ]; then
     export FFPROBE_PATH="$SELF_DIR/usr/bin/ffprobe"
+elif command -v ffprobe &> /dev/null; then
+    export FFPROBE_PATH=$(command -v ffprobe)
 fi
 
 # Buffer audio réduit pour pygame
@@ -407,8 +465,7 @@ fi
 export SD_ENABLE_ALSA=1
 export SD_ENABLE_PULSEAUDIO=1
 
-cd "$SELF_DIR/usr/app"
-exec "$PYTHON" main.py "$@"
+exec "$PYTHON" "$SELF_DIR/usr/app/main.py" "$@"
 APPRUN_EOF
 chmod +x Visualisateur.AppDir/AppRun
 
