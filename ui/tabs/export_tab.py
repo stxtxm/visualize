@@ -58,6 +58,13 @@ class ExportTab(tk.Frame):
         )
         intro.pack(anchor=tk.W, padx=12, pady=(0, 8))
 
+        # Settings + action controls. Hidden while an export runs so the
+        # progress section always gets enough vertical space (otherwise the
+        # packer clips its last child — the cancel button).
+        self._controls_frame = tk.Frame(self, bg=self.BG_PANEL)
+        self._controls_frame.pack(fill=tk.X)
+        self._settings_hidden = False
+
         # Resolution
         self._create_dropdown("RÉSOLUTION", self._resolution,
                               ['1080p', '1440p', '4K'])
@@ -79,13 +86,13 @@ class ExportTab(tk.Frame):
                 ['100%', '75%', '50%']
             )
             tk.Label(
-                self, text="50% = rendu 1080p puis upscale : plus rapide, moins détaillé.",
+                self._controls_frame, text="50% = rendu 1080p puis upscale : plus rapide, moins détaillé.",
                 font=('Helvetica', 7), fg=self.FG_MUTED, bg=self.BG_PANEL,
                 justify=tk.LEFT, wraplength=250,
             ).pack(anchor=tk.W, padx=12, pady=(0, 6))
 
         # FPS display
-        fps_frame = tk.Frame(self, bg=self.BG_PANEL)
+        fps_frame = tk.Frame(self._controls_frame, bg=self.BG_PANEL)
         fps_frame.pack(fill=tk.X, padx=12, pady=(4, 10))
         lbl = tk.Label(fps_frame, text="FPS", font=('Helvetica', 8, 'bold'),
                        fg=self.FG_MUTED, bg=self.BG_PANEL)
@@ -96,12 +103,12 @@ class ExportTab(tk.Frame):
         self._fps_label.pack(side=tk.RIGHT)
 
         # Separator
-        sep = tk.Frame(self, bg="#2a2a3e", height=1)
+        sep = tk.Frame(self._controls_frame, bg="#2a2a3e", height=1)
         sep.pack(fill=tk.X, padx=12, pady=(10, 12))
 
         # Export button
         self.btn_export = tk.Button(
-            self, text="🎥 EXPORTER LA VIDÉO",
+            self._controls_frame, text="🎥 EXPORTER LA VIDÉO",
             command=self._on_export_click,
             bg=self.NEON_PINK, fg="#ffffff",
             activebackground="#ff52a2", activeforeground="#ffffff",
@@ -151,11 +158,12 @@ class ExportTab(tk.Frame):
         self._progress_frame.pack_forget()
 
     def _create_dropdown(self, label_text, variable, values, cmd=None):
-        lbl = tk.Label(self, text=label_text, font=('Helvetica', 8, 'bold'),
+        lbl = tk.Label(self._controls_frame, text=label_text,
+                       font=('Helvetica', 8, 'bold'),
                        fg=self.FG_MUTED, bg=self.BG_PANEL)
         lbl.pack(anchor=tk.W, padx=12, pady=(8, 4))
-        combo = ttk.Combobox(self, textvariable=variable, values=values,
-                             state='readonly')
+        combo = ttk.Combobox(self._controls_frame, textvariable=variable,
+                             values=values, state='readonly')
         combo.pack(fill=tk.X, padx=12, pady=(0, 6))
         if cmd:
             combo.bind('<<ComboboxSelected>>', cmd)
@@ -185,12 +193,30 @@ class ExportTab(tk.Frame):
         if self._export_callback:
             self._export_callback(filename)
 
+    def _hide_settings(self):
+        """Hide the settings controls while an export is running."""
+        if self._settings_hidden:
+            return
+        self._controls_frame.pack_forget()
+        self._settings_hidden = True
+
+    def _restore_settings(self):
+        """Show the settings controls again, above the progress section."""
+        if not self._settings_hidden:
+            return
+        try:
+            self._controls_frame.pack(fill=tk.X, before=self._progress_frame)
+        except tk.TclError:
+            self._controls_frame.pack(fill=tk.X)
+        self._settings_hidden = False
+
     def show_progress(self, current, total):
         """Show or update the progress bar."""
         pct = (current / total) * 100 if total > 0 else 0
         self._progress_label.configure(text=f"EXPORT {current}/{total}")
         self._progress_pct.configure(text=f"{pct:.0f}%")
         self._draw_progress(pct)
+        self._hide_settings()
         self._progress_frame.pack(fill=tk.X, padx=12, pady=(0, 4))
         self._progress_frame.update_idletasks()
 
@@ -199,6 +225,7 @@ class ExportTab(tk.Frame):
         self._progress_label.configure(text=f"ÉCHEC: {message[:50]}", fg="#ff3b3b")
         self._progress_pct.configure(text="ERR", fg="#ff3b3b")
         self._draw_progress(100, error_color=True)
+        self._restore_settings()
         self._progress_frame.pack(fill=tk.X, padx=12, pady=(0, 4))
         self._progress_frame.update_idletasks()
 
@@ -207,12 +234,14 @@ class ExportTab(tk.Frame):
         self._progress_label.configure(text=f"✓ EXPORT TERMINÉ: {basename}", fg=self.NEON_GREEN)
         self._progress_pct.configure(text="100%", fg=self.NEON_GREEN)
         self._draw_progress(100, success_color=True)
+        self._restore_settings()
         self._progress_frame.pack(fill=tk.X, padx=12, pady=(0, 4))
         self._progress_frame.update_idletasks()
 
     def hide_progress(self):
         """Hide the progress bar and cancel button."""
         self.btn_cancel.pack_forget()
+        self._restore_settings()
         self._progress_frame.pack_forget()
 
     def show_cancel_button(self):
