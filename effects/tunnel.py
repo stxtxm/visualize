@@ -219,8 +219,9 @@ class TunnelEffect(BaseEffect):
                 
             self._particles_surface.fill((0, 0, 0, 0))
             for p in self.particles:
-                alpha = int(255 * p['life'])
-                pygame.draw.circle(self._particles_surface, (*p['color'], alpha), (int(p['x']), int(p['y'])), int(p['size']))
+                alpha = max(0, min(255, int(255 * p['life'])))
+                color = tuple(int(c) for c in p['color'])
+                pygame.draw.circle(self._particles_surface, (*color, alpha), (int(p['x']), int(p['y'])), max(1, int(p['size'])) )
             surface.blit(self._particles_surface, (0, 0))
         
         # Ajouter un effet de centre qui pulse au rythme des basses
