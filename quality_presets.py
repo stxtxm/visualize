@@ -434,6 +434,46 @@ def codec_for_output(video_codec, output_file):
     return codec, output_file
 
 
+
+def preserve_failed_partial(partial_file):
+    """Keep a rejected ``*.part.*`` intermediate for post-mortem analysis.
+
+    Failed exports must not silently destroy the evidence of what FFmpeg
+    actually produced: the partial is renamed next to the target as
+    ``<target>.rejected.<ext>`` (any previous rejected file is replaced).
+    Returns the preserved path, or ``None`` when nothing could be kept.
+    """
+    import logging
+
+    try:
+        if not partial_file or not os.path.exists(partial_file):
+            return None
+        base, ext = os.path.splitext(str(partial_file))
+        # Drop the double extension produced by ``<out>.part.webm`` so the
+        # rejected artefact reads like ``azer.rejected.webm``.
+        first_base, first_ext = os.path.splitext(base)
+        if first_ext in ('.part',):
+            base = first_base
+            ext = ext or first_ext
+        rejected = f"{base}.rejected{ext}"
+        try:
+            if os.path.exists(rejected):
+                os.remove(rejected)
+        except OSError:
+            pass
+        os.replace(str(partial_file), rejected)
+        print(
+            f"  Preserved failed output for inspection: {rejected} "
+            f"({os.path.getsize(rejected)} bytes)"
+        )
+        logging.getLogger(__name__).info(
+            "preserved failed export artifact: %s", rejected
+        )
+        return rejected
+    except Exception:
+        # Preservation must never mask the original failure.
+        return None
+
 def validate_export_output(output_file, expected_duration=None, fps=None,
                            expect_audio=True):
     """Validate an exported media file before publishing it.
@@ -464,31 +504,53 @@ def validate_export_output(output_file, expected_duration=None, fps=None,
     import subprocess as _subprocess
 
     ffprobe_path = os.environ.get('FFPROBE_PATH') or 'ffprobe'
-    try:
-        probe = _subprocess.run(
-            [ffprobe_path, '-v', 'error', '-print_format', 'json',
-             '-show_format', '-show_streams', str(output_file)],
-            capture_output=True, timeout=60,
-        )
-    except FileNotFoundError:
-        print("  Validation skipped: ffprobe not found")
-        return {}
-    except _subprocess.TimeoutExpired:
-        print("  Validation skipped: ffprobe timed out")
-        return {}
+    # Pair bundled FFprobe with its own libraries exactly like the encoder
+    # probes do; a system FFprobe running under AppImage LD_LIBRARY_PATH or a
+    # bundled one missing its libs would fail for environment reasons rather
+    # than because of the produced file.
+    probe_env = _ffmpeg_environment(ffprobe_path)
 
-    if probe.returncode != 0:
-        detail = probe.stderr.decode('utf-8', errors='ignore').strip()[:400]
+    strict_cmd = [ffprobe_path, '-v', 'error', '-print_format', 'json',
+                  '-show_format', '-show_streams']
+    lenient_cmd = [ffprobe_path, '-v', 'fatal', '-err_detect', 'ignore_err',
+                   '-print_format', 'json', '-show_format', '-show_streams']
+
+    meta = None
+    errors_seen = []
+    used_lenient = False
+    for attempt, (probe, timeout) in enumerate(((strict_cmd, 90), (lenient_cmd, 180))):
+        try:
+            run_result = _subprocess.run(
+                probe + [str(output_file)],
+                capture_output=True, timeout=timeout, env=probe_env,
+            )
+        except FileNotFoundError:
+            print("  Validation skipped: ffprobe not found")
+            return {}
+        except _subprocess.TimeoutExpired:
+            print("  Validation skipped: ffprobe timed out")
+            return {}
+
+        if run_result.returncode == 0:
+            try:
+                meta = _json.loads(run_result.stdout.decode('utf-8', errors='ignore'))
+                break
+            except ValueError:
+                pass
+
+        detail = run_result.stderr.decode('utf-8', errors='ignore').strip()[:300]
+        errors_seen.append(detail or f"exit code {run_result.returncode}")
+        if attempt == 1:
+            used_lenient = True
+
+    if meta is None:
+        joined = " | ".join(errors_seen[-2:])
         raise RuntimeError(
             "Export validation failed: FFprobe could not parse "
-            f"{output_file}: {detail}"
+            f"{output_file}: {joined}"
         )
-
-    try:
-        meta = _json.loads(probe.stdout.decode('utf-8', errors='ignore'))
-    except ValueError:
-        print("  Validation skipped: unreadable ffprobe JSON output")
-        return {}
+    if used_lenient:
+        print("  Validation noticed stream warnings (accepted after retry)")
 
     streams = meta.get('streams') or []
     video_streams = [s for s in streams if s.get('codec_type') == 'video']

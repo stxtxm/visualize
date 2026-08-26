@@ -550,8 +550,9 @@ class VideoRecorder:
                     process.kill()
             if not export_succeeded and os.path.exists(self._partial_output_file):
                 try:
-                    os.remove(self._partial_output_file)
-                except OSError:
+                    from quality_presets import preserve_failed_partial
+                    preserve_failed_partial(self._partial_output_file)
+                except Exception:
                     pass
             self._process = None
 

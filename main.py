@@ -680,8 +680,9 @@ def run_export(args):
         stderr_log.close()
         if not export_succeeded and os.path.exists(partial_output):
             try:
-                os.remove(partial_output)
-            except OSError:
+                from quality_presets import preserve_failed_partial
+                preserve_failed_partial(partial_output)
+            except Exception:
                 pass
     
     if export_succeeded and os.path.exists(target_export):

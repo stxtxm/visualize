@@ -324,7 +324,7 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         raise FileNotFoundError(f"Audio file not found: {audio_file}")
 
     from effects.manager import resolve_effect_type
-    from quality_presets import codec_for_output
+    from quality_presets import codec_for_output, preserve_failed_partial
 
     effective_codec, output_file = codec_for_output(video_codec, output_file)
     is_webm = output_file.lower().endswith('.webm')
@@ -583,8 +583,7 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         _run_ffmpeg(concat_cmd)
 
     if not os.path.exists(partial_output) or os.path.getsize(partial_output) < 1024:
-        if os.path.exists(partial_output):
-            os.remove(partial_output)
+        preserve_failed_partial(partial_output)
         raise RuntimeError("Parallel export did not produce a valid output file")
 
     # Reject unusable/truncated assemblies before publishing. The per-segment
@@ -598,8 +597,7 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
     try:
         os.replace(partial_output, output_file)
     except Exception:
-        if os.path.exists(partial_output):
-            os.remove(partial_output)
+        preserve_failed_partial(partial_output)
         raise
     if progress_callback:
         progress_callback(total_frames, total_frames)
