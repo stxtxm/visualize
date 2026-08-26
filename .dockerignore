@@ -8,3 +8,8 @@ Dockerfile.appimage
 *.log
 *.swp
 __pycache__
+.kilo
+.claude
+test_*.webm
+*.tmp
+input/*.mp3

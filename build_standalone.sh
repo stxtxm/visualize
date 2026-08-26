@@ -20,6 +20,7 @@ log_success() { echo -e "${GREEN}✓${NC} $1"; }
 # Nettoyage
 log_info "Nettoyage..."
 rm -rf Visualize.AppDir output/ Dockerfile.appimage
+rm -f "$DIST_DIR"/Visualize.AppImage "$DIST_DIR"/Visualisateur*.AppImage 2>/dev/null || true
 mkdir -p "$DIST_DIR" output
 
 # Créer le Dockerfile de build
@@ -185,7 +186,7 @@ MOUNT_FLAG=""
 if [ "$CONTAINER_CMD" = "podman" ] || ($CONTAINER_CMD --version 2>/dev/null | grep -q -i "podman"); then
     MOUNT_FLAG=":Z"
 fi
-if ! $CONTAINER_CMD build -t visualize-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
+if ! $CONTAINER_CMD build --no-cache --pull -t visualize-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
     tail -10 "$BUILD_LOG"
     log_error "Build du conteneur échoué. Voir $BUILD_LOG"
 fi
@@ -222,7 +223,12 @@ fi
 
 # Copier le code source dans output/usr/app sans inclure les artefacts de build
 mkdir -p output/usr/app
-tar --exclude='./output' --exclude='./dist_standalone' --exclude='./Visualize.AppDir' --exclude='./appimagetool-x86_64.AppImage' --exclude='./Dockerfile.appimage' --exclude='./.git' -cf - . | tar -C output/usr/app -xpf -
+tar --exclude='./output' --exclude='./dist_standalone' --exclude='./Visualize.AppDir' \
+    --exclude='./appimagetool-x86_64.AppImage' --exclude='./Dockerfile.appimage' --exclude='./.git' \
+    --exclude='./.kilo' --exclude='./.claude' --exclude='./__pycache__' --exclude='./.pytest_cache' \
+    --exclude='./input/*.mp3' --exclude='./test_*.webm' --exclude='./*.log' --exclude='./*.tmp' \
+    --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pyo' \
+    -cf - . | tar -C output/usr/app -xpf -
 
 # Injecter la version actuelle de git dans version.py pour l'AppImage
 GIT_VERSION=$(git describe --tags --always 2>/dev/null || echo "0.0.2")
@@ -318,6 +324,7 @@ cp -r output/usr/app/* Visualize.AppDir/usr/app/
 rm -rf Visualize.AppDir/usr/app/__pycache__ 2>/dev/null || true
 find Visualize.AppDir/usr/app -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find Visualize.AppDir/usr/app -name "*.pyc" -delete 2>/dev/null || true
+find Visualize.AppDir/usr/app -name "*.bak" -delete 2>/dev/null || true
 
 # Copier les exécutables utiles (ffmpeg/ffprobe)
 if [ -d output/usr/bin ]; then
