@@ -95,10 +95,11 @@ Définies dans `BaseEffect._get_color_palette()` :
 ### Icône de l'application (branding)
 
 - Source de vérité : `assets/icon.svg` — tuile sombre arrondie, bordure néon dégradée (cyan `#00f0ff` → violet `#7c4dff` → magenta `#ff3ddb`), 5 barres d'égaliseur formant un « V » (Visualize).
-- `assets/icon.png` (256×256) : généré via `magick -background none assets/icon.svg -resize 256x256 -depth 8 -strip assets/icon.png`. Utilisé par l'AppImage (copié dans `hicolor/256x256` + racine AppDir par `build_standalone.sh`) et comme icône de fenêtre.
-- `assets/icon.ico` (16→256 px) : généré via `magick -background none assets/icon.svg -define icon:auto-resize=256,128,64,48,32,24,16 assets/icon.ico`. Utilisé par PyInstaller (`build_windows.spec` → `icon=`) et NSIS (`installer.nsi` → `Icon`/`UninstallIcon`).
-- Intégrations runtime : `MainWindow._set_window_icon()` (`iconphoto`, candidats `_MEIPASS/assets` puis `<repo>/assets`) ; `pygame.display.set_icon()` dans `main.py` (fallback plein écran) et `renderer/pygame_renderer.py`.
-- Après toute modification de `icon.svg`, régénérer `icon.png` ET `icon.ico`.
+- `assets/icon.png` (256×256) : `magick -background none assets/icon.svg -resize 256x256 -depth 8 -strip assets/icon.png`. `assets/icon-48/64/128.png` : mêmes commandes avec `-resize 48/64/128`. `icon.svg` copié en `hicolor/scalable`.
+- `assets/icon.ico` (16→256 px) : `magick -background none assets/icon.svg -define icon:auto-resize=256,128,64,48,32,24,16 assets/icon.ico`. Utilisé par PyInstaller (`build_windows.spec` → `icon=`) et NSIS (`installer.nsi` → `Icon`/`UninstallIcon`).
+- AppImage : `build_standalone.sh` installe `hicolor/{48,64,128,256}/apps/visualize.png` + `scalable/apps/visualize.svg`, copie `visualize.png` à la racine AppDir **et** `.DirIcon` (requis `AppImageSpec`), `visualize.desktop` avec `StartupWMClass=Visualize`, `Version=1.0`, `X-AppImage-Version`.
+- Intégrations runtime : `MainWindow._set_window_icon()` (`iconphoto`, candidats `_MEIPASS/assets` puis `<repo>/assets`) ; `pygame.display.set_icon()` dans `main.py` (fallback plein écran, `className='Visualize'`) et `renderer/pygame_renderer.py`.
+- Après toute modification de `icon.svg`, régénérer `icon.png`, `icon-48/64/128.png` ET `icon.ico`.
 
 ---
 

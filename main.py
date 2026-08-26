@@ -50,7 +50,11 @@ def run_gui():
         # Démarrer la capture des logs
         start_log_capture()
         
-        root = tk.Tk()
+        root = tk.Tk(className='Visualize')
+        try:
+            root.wm_iconname('Visualize')
+        except Exception:
+            pass
         app = MainWindow(root)
         root.protocol("WM_DELETE_WINDOW", lambda: app._stop_playback() or root.quit())
         root.mainloop()
@@ -572,8 +576,11 @@ def run_export(args):
             effect_manager.update(audio_data, 1.0/fps)
             frame = effect_manager.render_to_array()
 
+            # FFmpeg is declared rgb24 → keep RGB (do NOT swap to BGR).
+            # The old cv2.cvtColor RGB→BGR inverted colours on sequential exports.
+            import numpy as _np2
             if frame.shape[2] == 3:
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR, dst=frame)
+                frame = _np2.ascontiguousarray(frame)
 
             buf = memoryview(frame)
             queued = False

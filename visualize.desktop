@@ -1,8 +1,15 @@
 [Desktop Entry]
+Version=1.0
 Name=Visualize
+GenericName=Audio visualizer
 Comment=Audio visualizer
 Exec=Visualize
-Icon=org.timo.Visualize
+Icon=visualize
 Type=Application
-Categories=AudioVideo;Player;Graphics;
+Categories=AudioVideo;Graphics;
 Terminal=false
+StartupNotify=true
+StartupWMClass=Visualize
+X-AppImage-Version=0.3.6
+Keywords=audio;visualizer;psychedelic;
+MimeType=audio/mpeg;audio/x-wav;audio/ogg;audio/flac;

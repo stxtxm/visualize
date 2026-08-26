@@ -254,7 +254,11 @@ log_info "Création de AppDir..."
 rm -rf Visualize.AppDir
 mkdir -p Visualize.AppDir/usr/lib
 mkdir -p Visualize.AppDir/usr/share/applications
+mkdir -p Visualize.AppDir/usr/share/icons/hicolor/48x48/apps
+mkdir -p Visualize.AppDir/usr/share/icons/hicolor/64x64/apps
+mkdir -p Visualize.AppDir/usr/share/icons/hicolor/128x128/apps
 mkdir -p Visualize.AppDir/usr/share/icons/hicolor/256x256/apps
+mkdir -p Visualize.AppDir/usr/share/icons/hicolor/scalable/apps
 
 # Copier les dépendances Python (site-packages)
 log_info "Copie des dépendances Python..."
@@ -338,10 +342,23 @@ if [ -d output/usr/lib/pulseaudio ]; then
     cp -rL output/usr/lib/pulseaudio Visualize.AppDir/usr/lib/ 2>/dev/null || true
 fi
 
-# Icône
+# Icône — hicolor multi-résolutions + .DirIcon (requis AppImage + GNOME Wayland)
+if [ -f "assets/icon.svg" ]; then
+    cp assets/icon.svg Visualize.AppDir/usr/share/icons/hicolor/scalable/apps/visualize.svg 2>/dev/null || true
+fi
+for size in 48 64 128 256; do
+    src="assets/icon-${size}.png"
+    # fallback vers icon.png si taille spécifique absente (ex. 256)
+    if [ ! -f "$src" ] && [ "$size" = "256" ] && [ -f "assets/icon.png" ]; then
+        src="assets/icon.png"
+    fi
+    if [ -f "$src" ]; then
+        cp "$src" "Visualize.AppDir/usr/share/icons/hicolor/${size}x${size}/apps/visualize.png" 2>/dev/null || true
+    fi
+done
 if [ -f "assets/icon.png" ]; then
-    cp assets/icon.png Visualize.AppDir/usr/share/icons/hicolor/256x256/apps/visualize.png
     cp assets/icon.png Visualize.AppDir/visualize.png
+    cp assets/icon.png Visualize.AppDir/.DirIcon
 fi
 
 # Compter la taille
@@ -476,17 +493,28 @@ exec "$PYTHON" "$SELF_DIR/usr/app/main.py" "$@"
 APPRUN_EOF
 chmod +x Visualize.AppDir/AppRun
 
-# Desktop file
+# Desktop file — StartupWMClass requis Wayland (Fedora 44 GNOME)
 cat > Visualize.AppDir/visualize.desktop << 'DESKTOP_EOF'
 [Desktop Entry]
+Version=1.0
 Name=Visualize
+GenericName=Audio visualizer
 Comment=Audio visualizer
 Exec=AppRun
 Icon=visualize
 Type=Application
-Categories=AudioVideo;Player;Graphics;
+Categories=AudioVideo;Graphics;
 Terminal=false
+StartupNotify=true
+StartupWMClass=Visualize
+X-AppImage-Version=0.3.6
+Keywords=audio;visualizer;psychedelic;
+MimeType=audio/mpeg;audio/x-wav;audio/ogg;audio/flac;
 DESKTOP_EOF
+# Valider le desktop file si disponible
+if command -v desktop-file-validate &>/dev/null; then
+    desktop-file-validate Visualize.AppDir/visualize.desktop 2>&1 | head -n 5 || true
+fi
 
 # Vérifier/télécharger le runtime AppImage
 RUNTIME="${RUNTIME_PATH:-/tmp/runtime-x86_64}"
