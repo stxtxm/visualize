@@ -1,1 +1,1 @@
-# Tests for Psychedelic Visualizer
+# Tests for Visualize

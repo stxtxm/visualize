@@ -1,5 +1,5 @@
 """
-Toast notification system for the psychedelic visualizer.
+Toast notification system for Visualize.
 Shows temporary overlay messages that auto-dismiss after a set duration.
 """
 

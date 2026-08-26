@@ -62,7 +62,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
     def test_help_runs(self):
         proc = self._run_main(['--help'])
         self.assertEqual(proc.returncode, 0)
-        self.assertIn('Psychedelic', proc.stdout)
+        self.assertIn('Visualize', proc.stdout)
         self.assertIn('trance_scope', proc.stdout)
         self.assertIn('--background', proc.stdout)
         self.assertIn('--background-opacity', proc.stdout)

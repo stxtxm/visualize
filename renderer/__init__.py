@@ -1,5 +1,5 @@
 """
-Renderer module for psychedelic visualizer.
+Renderer module for Visualize.
 Contains base renderer and specific implementations.
 """
 

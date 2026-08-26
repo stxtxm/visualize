@@ -1,5 +1,5 @@
 """
-Theme system for the psychedelic visualizer.
+Theme system for Visualize.
 Provides multiple colour schemes that can be switched at runtime.
 """
 

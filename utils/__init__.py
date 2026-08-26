@@ -1,5 +1,5 @@
 """
-Utils module for psychedelic visualizer.
+Utils module for Visualize.
 """
 
 __all__ = []

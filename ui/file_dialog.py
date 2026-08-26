@@ -1,5 +1,5 @@
 """
-Custom file selection / save dialog for the psychedelic visualizer GUI.
+Custom file selection / save dialog for the Visualize GUI.
 
 Replaces tkinter.filedialog which, on Linux, renders with Tk's themed widgets
 (the old 'default' Motif theme) producing unreadable text and an awkward filename

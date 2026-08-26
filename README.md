@@ -1,4 +1,4 @@
-# Psychedelic Visualizer 🎨🎵
+# Visualize 🎨🎵
 
 > Generate high-quality Winamp/Media Player-style visualizations synced to your music.
 
@@ -29,12 +29,12 @@
 
 ## 🚀 Usage (AppImage)
 
-Download the latest `Visualisateur_Psychedelic.AppImage` from the [Releases](https://github.com/stxtxm/visualize/releases) page.
+Download the latest `Visualize.AppImage` from the [Releases](https://github.com/stxtxm/visualize/releases) page.
 
 ```bash
-chmod +x Visualisateur_Psychedelic.AppImage
-./Visualisateur_Psychedelic.AppImage                  # GUI (default)
-./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4  # CLI export
+chmod +x Visualize.AppImage
+./Visualize.AppImage                  # GUI (default)
+./Visualize.AppImage audio.mp3 -o video.mp4  # CLI export
 ```
 
 ### GUI Mode (default)
@@ -50,12 +50,12 @@ The GUI offers a streamlined interface :
 ### CLI Export
 
 ```bash
-./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --preset normal
-./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect spectrum --color rainbow --preset 4k
-./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --effect trance_scope --background cover.png
-./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --logo logo.png --logo-position custom --logo-x 50 --logo-y 8 --logo-scale 18
+./Visualize.AppImage audio.mp3 -o video.mp4 --preset normal
+./Visualize.AppImage audio.mp3 -o video.mp4 --effect spectrum --color rainbow --preset 4k
+./Visualize.AppImage audio.mp3 -o video.mp4 --effect trance_scope --background cover.png
+./Visualize.AppImage audio.mp3 -o video.mp4 --logo logo.png --logo-position custom --logo-x 50 --logo-y 8 --logo-scale 18
 # Faster 4K export: safe worker count is selected automatically; no GPU is required
-./Visualisateur_Psychedelic.AppImage audio.mp3 -o video.mp4 --preset 4k --render-workers 0
+./Visualize.AppImage audio.mp3 -o video.mp4 --preset 4k --render-workers 0
 ```
 
 | Option | Values |
@@ -108,7 +108,7 @@ python3 main.py audio.mp3 -o video.mp4 --preset normal
 ```bash
 # Requires docker or podman
 bash build_standalone.sh
-# Generates dist_standalone/Visualisateur_Psychedelic.AppImage
+# Generates dist_standalone/Visualize.AppImage
 ```
 
 ---
@@ -185,7 +185,7 @@ python3 tests/test_export.py            # Full export test (generates video)
 |---------|----------|
 | `libopenh264` not found | Falls back to `libx264` automatically |
 | `tkinter` not found | `sudo apt install python3-tk` ; or use `--no-gui` |
-| AppImage won't run | `./Visualisateur_Psychedelic.AppImage --help` |
+| AppImage won't run | `./Visualize.AppImage --help` |
 | Slow 4K export or a long mix | Use `--preset 4k --render-workers 0`; this keeps native 4K output, uses isolated renderer processes, bounds FFmpeg memory, and assembles segments without a final video re-encode |
 
 ---

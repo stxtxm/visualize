@@ -1,5 +1,5 @@
 """
-Export tab for the psychedelic visualizer.
+Export tab for Visualize.
 Integrates resolution, quality preset, FPS, and progress bar.
 """
 

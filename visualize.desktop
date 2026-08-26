@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Visualize
+Comment=Audio visualizer
+Exec=Visualize
+Icon=org.timo.Visualize
+Type=Application
+Categories=AudioVideo;Player;Graphics;
+Terminal=false

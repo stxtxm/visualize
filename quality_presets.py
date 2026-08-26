@@ -380,19 +380,24 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     ]
 
     if audio_file:
+        # Pad audio with silence to video length (total_frames ceil) before
+        # loudness normalization.  Without apad, `-shortest` truncates video
+        # to audio (floor) and the padded last video frame is discarded.
+        # With apad, audio is extended to video and `-shortest` keeps the
+        # full ceil duration.
         if is_webm:
             # WebM container requires Opus or Vorbis audio (not AAC).
             cmd += [
                 '-c:a', 'libopus',
                 '-b:a', '192k',
-                '-af', 'dynaudnorm=peak=0.95',
+                '-af', 'apad,dynaudnorm=peak=0.95',
                 '-shortest',
             ]
         else:
             cmd += [
                 '-c:a', 'aac',
                 '-b:a', '192k',
-                '-af', 'dynaudnorm=peak=0.95',
+                '-af', 'apad,dynaudnorm=peak=0.95',
                 '-shortest',
             ]
 

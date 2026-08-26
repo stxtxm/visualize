@@ -1,9 +1,9 @@
 @echo off
-REM Build script for Windows - Visualisateur Psychedelique
+REM Build script for Windows - Visualize
 REM Requires: Python 3.12+, PyInstaller, NSIS (optional)
 
 echo ========================================
-echo Visualisateur Psychedelique - Windows Build
+echo Visualize - Windows Build
 echo ========================================
 
 echo.
@@ -26,7 +26,7 @@ if %ERRORLEVEL% neq 0 ( echo FAILED & exit /b 1 )
 
 echo.
 echo [4/5] Build complete!
-echo    Portable: dist\Visualisateur_Psychedelique_portable\
+echo    Portable: dist\Visualize_portable\
 
 echo.
 echo [5/5] To create installer (requires NSIS installed):

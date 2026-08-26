@@ -1,5 +1,5 @@
 """
-Logs tab for the psychedelic visualizer.
+Logs tab for Visualize.
 Integrated log viewer (no separate window needed).
 """
 

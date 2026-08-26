@@ -1,4 +1,4 @@
-# Build AppImage - Visualisateur Psychédélique
+# Build AppImage - Visualize
 
 > **Application portable semi-standalone** — fonctionne sur Fedora, Debian, Ubuntu, Linux Mint et toute distribution Linux.
 > Build via Podman (Docker) pour un environnement reproductible.
@@ -69,13 +69,13 @@ Le résultat se trouve dans `dist_standalone/` :
 
 ```
 dist_standalone/
-└── Visualisateur_Psychedelic.AppImage    # Fichier exécutable unique
+└── Visualize.AppImage    # Fichier exécutable unique
 ```
 
 **Utilisation :**
 ```bash
-chmod +x dist_standalone/Visualisateur_Psychedelic.AppImage
-./dist_standalone/Visualisateur_Psychedelic.AppImage
+chmod +x dist_standalone/Visualize.AppImage
+./dist_standalone/Visualize.AppImage
 ```
 
 ---
@@ -106,10 +106,10 @@ L'AppImage détecte automatiquement le système audio au lancement :
 Pour forcer un mode :
 ```bash
 # Forcer ALSA
-SDL_AUDIODRIVER=alsa ./Visualisateur_Psychedelic.AppImage
+SDL_AUDIODRIVER=alsa ./Visualize.AppImage
 
 # Forcer mode sans son
-NO_SOUND=1 ./Visualisateur_Psychedelic.AppImage
+NO_SOUND=1 ./Visualize.AppImage
 ```
 
 ---
@@ -142,8 +142,8 @@ ls -lh dist_standalone/
 
 ### 2. Tester l'AppImage
 ```bash
-chmod +x dist_standalone/Visualisateur_Psychedelic.AppImage
-./dist_standalone/Visualisateur_Psychedelic.AppImage
+chmod +x dist_standalone/Visualize.AppImage
+./dist_standalone/Visualize.AppImage
 ```
 
 ### 3. Nettoyer
@@ -158,13 +158,13 @@ make standalone-clean
 ### ❌ AppImage ne se lance pas
 ```bash
 # Vérifier les permissions
-chmod +x Visualisateur_Psychedelic.AppImage
+chmod +x Visualize.AppImage
 
 # Vérifier que Python 3.11 est installé
 python3.11 --version
 
 # Lancer avec debug
-./Visualisateur_Psychedelic.AppImage --appimage-extract-and-run
+./Visualize.AppImage --appimage-extract-and-run
 ```
 
 ### ❌ Erreur "module not found"
@@ -183,10 +183,10 @@ pulseaudio --check && echo "OK" || echo "PulseAudio non démarré"
 sudo dnf install ffmpeg
 
 # Forcer ALSA
-SDL_AUDIODRIVER=alsa ./Visualisateur_Psychedelic.AppImage
+SDL_AUDIODRIVER=alsa ./Visualize.AppImage
 
 # Mode sans son
-NO_SOUND=1 ./Visualisateur_Psychedelic.AppImage
+NO_SOUND=1 ./Visualize.AppImage
 ```
 
 ### 🔧 Fedora 44 / PipeWire (dépannage spécifique)
@@ -201,7 +201,7 @@ which ffplay || sudo dnf install ffmpeg
 pgrep -x "pipewire" && echo "PipeWire détecté" || echo "PulseAudio ou autre"
 
 # Relancer l'AppImage (ffplay sera utilisé automatiquement)
-./Visualisateur_Psychedelic.AppImage
+./Visualize.AppImage
 ```
 
 Pour vérifier les logs d'erreur audio, cliquez sur le bouton "📝 Logs" dans l'interface.

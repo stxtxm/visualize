@@ -1,5 +1,5 @@
 """
-Effects selection tab for the psychedelic visualizer.
+Effects selection tab for Visualize.
 """
 
 import tkinter as tk

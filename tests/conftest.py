@@ -1,5 +1,5 @@
 """
-Fixtures pytest pour les tests du Visualisateur Psychédélique.
+Fixtures pytest pour les tests de Visualize.
 Ce fichier fournit des fixtures réutilisables pour tous les tests.
 """
 

@@ -1,5 +1,5 @@
 """
-UI module for psychedelic visualizer.
+UI module for Visualize.
 Contains Tkinter-based interface components.
 """
 

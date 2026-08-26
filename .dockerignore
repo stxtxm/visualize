@@ -1,5 +1,5 @@
 output
-Visualisateur.AppDir
+Visualize.AppDir
 dist_standalone
 appimagetool-x86_64.AppImage
 Dockerfile.appimage

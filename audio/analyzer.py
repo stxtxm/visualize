@@ -178,7 +178,25 @@ class AudioFrameReader:
         while len(self._buffer) < required:
             chunk = self._reader.read_chunk()
             if chunk is None:
-                return None
+                if len(self._buffer) == 0:
+                    return None
+                # EOF with a partial buffer: pad with silence to complete
+                # the last video frame instead of dropping it. This prevents
+                # "Audio stream ended before segment frame" on files where
+                # ffprobe's duration is a few ms longer than the decodable
+                # PCM stream (common for MP3 gapless).
+                missing = required - len(self._buffer)
+                if HAS_NUMPY:
+                    if self.channels == 1:
+                        pad = np.zeros(missing, dtype=np.int16)
+                        self._buffer = np.concatenate((self._buffer, pad))
+                    else:
+                        pad = np.zeros((missing, self.channels), dtype=np.int16)
+                        self._buffer = np.concatenate((self._buffer, pad))
+                else:
+                    pad_val = [0] * self.channels if self.channels > 1 else 0
+                    self._buffer.extend([pad_val] * missing)
+                break
             if HAS_NUMPY:
                 self._buffer = np.concatenate((self._buffer, chunk))
             else:

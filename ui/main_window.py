@@ -1,5 +1,5 @@
 """
-Main window for the psychedelic visualizer GUI.
+Main window for the Visualize GUI.
 Refactored with tabbed sidebar, theme switching, toast notifications,
 pulsing LED, recent files, timecode, volume, and keyboard shortcuts.
 """
@@ -316,6 +316,23 @@ class MainWindow:
         return "cyberpunk"
 
     # ── UI Setup ───────────────────────────────────────────────────────
+    def _set_window_icon(self):
+        """Apply the app logo to the window (taskbar + title bar)."""
+        candidates = [
+            os.path.join(getattr(sys, "_MEIPASS", ""), "assets", "icon.png"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "assets", "icon.png"),
+        ]
+        for path in candidates:
+            try:
+                if path and os.path.isfile(path):
+                    icon = ImageTk.PhotoImage(Image.open(path))
+                    self.root.iconphoto(True, icon)
+                    self._window_icon = icon  # keep a reference (Tk quirk)
+                    return
+            except Exception:
+                continue
+
     def _setup_ui(self):
         saved_theme = self._load_theme_pref()
         theme = get_theme(saved_theme)
@@ -324,7 +341,8 @@ class MainWindow:
 
         T = theme  # shorthand
 
-        self.root.title(f"Visualisateur Psychédélique {__version__}")
+        self.root.title(f"Visualize {__version__}")
+        self._set_window_icon()
         self.root.geometry("1360x820")
         self.root.minsize(1120, 720)
         self.root.configure(bg=T.bg_dark)

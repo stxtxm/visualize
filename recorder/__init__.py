@@ -1,5 +1,5 @@
 """
-Recorder module for psychedelic visualizer.
+Recorder module for Visualize.
 Contains video recording functionality.
 """
 

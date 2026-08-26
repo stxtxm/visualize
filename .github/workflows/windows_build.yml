@@ -95,14 +95,14 @@ jobs:
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Visualisateur_Psychedelique_Portable
-          path: dist/Visualisateur_Psychedelique_portable/
+          name: Visualize_Portable
+          path: dist/Visualize_portable/
           compression-level: 0
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Visualisateur_Psychedelique_Installer
+          name: Visualize_Installer
           path: "*.exe"
           compression-level: 0
 
@@ -111,7 +111,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Visualisateur_Psychedelique_*.exe
-            dist/Visualisateur_Psychedelique_portable/
+            Visualize_*.exe
+            dist/Visualize_portable/
           generate_release_notes: false
           fail_on_unmatched_files: false

@@ -1,5 +1,5 @@
 """
-Effect manager module for psychedelic visualizer.
+Effect manager module for Visualize.
 Manages the selection and instantiation of visual effects.
 """
 

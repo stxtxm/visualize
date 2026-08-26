@@ -1,4 +1,4 @@
-# Audio module for Psychedelic Visualizer
+# Audio module for Visualize
 from .analyzer import AudioAnalyzer
 from .player import AudioPlayer
 

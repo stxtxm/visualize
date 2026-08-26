@@ -62,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AppImage
-          path: dist_standalone/Visualisateur_Psychedelic.AppImage
+          path: dist_standalone/Visualize.AppImage
 
   release:
     needs: build
@@ -77,6 +77,6 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Visualisateur_Psychedelic.AppImage
+          files: Visualize.AppImage
           generate_release_notes: true
 

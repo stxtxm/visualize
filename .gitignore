@@ -1,4 +1,4 @@
-# Visualisateur Psychédélique - .gitignore
+# Visualize - .gitignore
 # https://github.com/github/gitignore/blob/main/Python.gitignore
 
 # ============================================================================
@@ -213,7 +213,7 @@ logs/
 # =============================================================================
 
 dist_standalone/
-Visualisateur.AppDir/
+Visualize.AppDir/
 build_standalone/
 build_venv/
 linuxdeploy*.AppImage

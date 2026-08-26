@@ -1,6 +1,6 @@
 # 🎨 Nouveautés - Style Winamp Professionnel
 
-## 🚀 Améliorations du Visualisateur Psychédélique
+## 🚀 Améliorations de Visualize
 
 Ce document décrit toutes les améliorations apportées pour un style **Winamp professionnel**.
 

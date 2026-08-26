@@ -222,7 +222,11 @@ class VideoRecorder:
 
         # Get audio duration
         audio_duration = self._get_audio_duration(self.audio_file)
-        total_frames = int(audio_duration * self.fps)
+        # ceil preserves tail up to one frame (<33 ms). Subtract a tiny
+        # epsilon to avoid floating-point ceil overshoot on exact multiples
+        # (e.g. 3289.766667*30 = 98693.00001).
+        import math
+        total_frames = int(math.ceil(audio_duration * self.fps - 1e-4))
 
         # VP9 segment concatenation is not reliable across all decoders;
         # encode it as one continuous stream to avoid boundary flashes.
@@ -429,9 +433,18 @@ class VideoRecorder:
             if writer_exception:
                 raise RuntimeError(f"Writer thread error: {writer_exception}")
             if generated_from_audio and frame_count < total_frames:
-                raise RuntimeError(
-                    f"Audio stream ended after {frame_count}/{total_frames} frames"
-                )
+                # Audio ended slightly before video duration (MP3 gapless /
+                # ffprobe rounding). Pad was already applied in
+                # AudioFrameReader; if we are still short, warn and let
+                # ffmpeg -shortest trim audio instead of aborting. This is
+                # <1 frame (33 ms) for floor rounding, at most a few frames
+                # for VBR drift – inaudible vs. aborting export.
+                missing = total_frames - frame_count
+                print(f"  Warning: audio ended {missing} frame(s) early "
+                      f"({frame_count}/{total_frames}), final video will be "
+                      f"{frame_count/self.fps:.2f}s (short by {missing/self.fps:.3f}s)")
+
+                # Do not abort – finalize with what we have.
 
             # Close stdin to signal FFmpeg that we're done
             try:

@@ -1,5 +1,5 @@
 """
-Generate high-quality, readable social-media footer icons for the visualizer GUI.
+Generate high-quality, readable social-media footer icons for the Visualize GUI.
 
 Design goals:
 - Larger, crisp icons (supersampled then downscaled for smooth edges).

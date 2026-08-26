@@ -1,4 +1,4 @@
-# Effects module for Psychedelic Visualizer
+# Effects module for Visualize
 from .base import BaseEffect
 from .bars import BarEffect
 from .circles import CircleEffect

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visualisateur Audio Psychédélique - Point d'entrée principal"""
+"""Visualize - Point d'entrée principal"""
 
 import os
 import sys
@@ -89,8 +89,14 @@ def _run_pygame_fallback():
         width = 1920
         height = 1080
     
+    try:
+        _icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+        if os.path.isfile(_icon_path):
+            pygame.display.set_icon(pygame.image.load(_icon_path))
+    except Exception:
+        pass
     screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN | pygame.DOUBLEBUF)
-    pygame.display.set_caption("Visualisateur Psychédélique")
+    pygame.display.set_caption("Visualize")
     
     preset = get_preset('normal')
     fps = 60
@@ -197,7 +203,7 @@ def _run_pygame_fallback():
 
 def run_cli():
     parser = argparse.ArgumentParser(
-        description='Psychedelic Audio Visualizer',
+        description='Visualize - Audio Visualizer',
         epilog="Examples:\n  python3 main.py audio.mp3\n  python3 main.py audio.mp3 --export video.mp4"
     )
     parser.add_argument('audio_file', nargs='?', default=None)
@@ -439,7 +445,8 @@ def run_export(args):
             raise ValueError("invalid duration")
     except (OSError, ValueError, subprocess.SubprocessError):
         audio_duration = analyzer.get_duration_seconds()
-    total_frames = int(audio_duration * fps)
+    import math as _math
+    total_frames = int(_math.ceil(audio_duration * fps - 1e-4))
     print(f"  Duration: {audio_duration:.0f}s, Frames: {total_frames}")
     if render_scale < 1.0:
         print(f"  Render scale: {render_scale}x ({render_width}x{render_height})")
@@ -553,9 +560,13 @@ def run_export(args):
             # which made the visual timeline run faster than the video FPS.
             chunk = reader.read_frame()
             if chunk is None:
-                raise RuntimeError(
-                    f"Audio stream ended after {frame_count}/{total_frames} frames"
-                )
+                # EOF reached before total_frames (MP3 gapless / VBR rounding):
+                # pad with silence to honour exact video duration instead of aborting.
+                try:
+                    import numpy as _np
+                    chunk = _np.zeros(analysis_chunk_size, dtype=_np.int16)
+                except Exception:
+                    chunk = [0] * analysis_chunk_size
 
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.update(audio_data, 1.0/fps)
@@ -595,9 +606,11 @@ def run_export(args):
                         f"FFmpeg stopped after {frame_count}/{total_frames} frames"
                     )
                 )
-            raise RuntimeError(
-                f"Export stopped after {frame_count}/{total_frames} frames"
-            )
+            missing = total_frames - frame_count
+            print(f"  Warning: export short by {missing} frame(s) "
+                  f"({frame_count}/{total_frames}), continuing")
+
+            # Do not abort – finalize with available frames.
 
         frame_queue.put(_SENTINEL)
         writer_thread.join()

@@ -1,4 +1,4 @@
-# Dépendances Python pour le Visualisateur Psychédélique
+# Dépendances Python pour le Visualize
 
 # Audio
 pydub>=0.25.1

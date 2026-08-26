@@ -76,6 +76,12 @@ class PygameRenderer:
             self._surface = pygame.Surface((self.width, self.height))
         else:
             # Mode avec fenêtre (CLI ou export)
+            try:
+                _icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon.png")
+                if os.path.isfile(_icon_path):
+                    pygame.display.set_icon(pygame.image.load(_icon_path))
+            except Exception:
+                pass
             if self.fullscreen:
                 info = pygame.display.Info()
                 self.width = info.current_w
@@ -89,7 +95,7 @@ class PygameRenderer:
                     (self.width, self.height),
                     pygame.HWSURFACE | pygame.DOUBLEBUF
                 )
-            pygame.display.set_caption("Visualisateur Psychédélique")
+            pygame.display.set_caption("Visualize")
             self._surface = pygame.Surface((self.width, self.height))
         
         self.clock = pygame.time.Clock()

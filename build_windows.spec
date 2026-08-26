@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Visualisateur Psychédélique Windows build.
+"""PyInstaller spec for Visualize Windows build.
 
 Usage:
     python -m PyInstaller build_windows.spec
@@ -79,6 +79,8 @@ a = Analysis(
     datas=[
         # Include input directory if it exists
         *([(os.path.join(ROOT, "input"), "input")] if os.path.exists(os.path.join(ROOT, "input")) else []),
+        # App icon used by the GUI (window/taskbar icon)
+        *([(os.path.join(ROOT, "assets", "icon.png"), "assets")] if os.path.exists(os.path.join(ROOT, "assets", "icon.png")) else []),
     ],
     hiddenimports=HIDDEN_IMPORTS,
     hookspath=[],
@@ -109,7 +111,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="Visualisateur_Psychedelique",
+    name="Visualize",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -122,7 +124,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=os.path.join(ROOT, "assets", "icon.ico") if os.path.exists(os.path.join(ROOT, "assets", "icon.ico")) else None,
 )
 
 # Also create the one-folder variant with all files
@@ -133,5 +135,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="Visualisateur_Psychedelique_portable",
+    name="Visualize_portable",
 )

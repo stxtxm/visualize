@@ -1,5 +1,5 @@
 """
-Background image tab for the psychedelic visualizer.
+Background image tab for Visualize.
 """
 
 import tkinter as tk

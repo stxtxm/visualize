@@ -7,7 +7,9 @@
 
 ## Vue d'ensemble
 
-Application Python de visualisation audio psychédélique. Prend un fichier audio en entrée, l'analyse en temps réel (FFT, BPM, beats) et génère des animations synchronisées. Dispose d'une interface graphique Tkinter, d'un mode export vidéo, et peut être distribuée sous forme d'AppImage autonome.
+**Visualize** — Application Python de visualisation audio psychédélique. Prend un fichier audio en entrée, l'analyse en temps réel (FFT, BPM, beats) et génère des animations synchronisées. Dispose d'une interface graphique Tkinter, d'un mode export vidéo, et peut être distribuée sous forme d'AppImage autonome.
+
+> **Rebrand (v0.3.1+)** : ancien nom « Visualisateur Psychédélique » / « Psychedelic Visualizer ». Artefacts renommés : `Visualize.AppImage`, `Visualize.AppDir`, `visualize.desktop`, `Visualize.exe` / `Visualize_portable` (Windows), image Docker `visualize-appimage`. La palette `psychedelic` et l'effet `psychedelic_plasma` conservent leurs IDs d'origine.
 
 ---
 
@@ -89,6 +91,14 @@ Définies dans `BaseEffect._get_color_palette()` :
 - Le logo est propagé par le CLI (`--logo`, `--logo-position`, `--logo-x`, `--logo-y`, `--logo-scale`, `--logo-opacity`) et par `VideoRecorder`.
 - Les positions nommées utilisent les neuf ancres écran; `custom` utilise X/Y en pourcentage de l'espace disponible après prise en compte de la taille du logo.
 - L'onglet **Logo** de l'interface permet de choisir le fichier, l'ancre, les coordonnées, la taille et l'opacité. Les coordonnées sont normalisées dans le manager pour rester indépendantes de la résolution.
+
+### Icône de l'application (branding)
+
+- Source de vérité : `assets/icon.svg` — tuile sombre arrondie, bordure néon dégradée (cyan `#00f0ff` → violet `#7c4dff` → magenta `#ff3ddb`), 5 barres d'égaliseur formant un « V » (Visualize).
+- `assets/icon.png` (256×256) : généré via `magick -background none assets/icon.svg -resize 256x256 -depth 8 -strip assets/icon.png`. Utilisé par l'AppImage (copié dans `hicolor/256x256` + racine AppDir par `build_standalone.sh`) et comme icône de fenêtre.
+- `assets/icon.ico` (16→256 px) : généré via `magick -background none assets/icon.svg -define icon:auto-resize=256,128,64,48,32,24,16 assets/icon.ico`. Utilisé par PyInstaller (`build_windows.spec` → `icon=`) et NSIS (`installer.nsi` → `Icon`/`UninstallIcon`).
+- Intégrations runtime : `MainWindow._set_window_icon()` (`iconphoto`, candidats `_MEIPASS/assets` puis `<repo>/assets`) ; `pygame.display.set_icon()` dans `main.py` (fallback plein écran) et `renderer/pygame_renderer.py`.
+- Après toute modification de `icon.svg`, régénérer `icon.png` ET `icon.ico`.
 
 ---
 

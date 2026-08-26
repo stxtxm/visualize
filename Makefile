@@ -1,13 +1,13 @@
 .PHONY: help run-cli standalone-appimage standalone-clean
 
 # Nom de l'image (hérité, conservé pour compatibilité)
-IMAGE_NAME := psychedelic-visualizer
+IMAGE_NAME := visualize-appimage
 IMAGE_TAG := latest
 AUDIO_DIR ?= ${HOME}/Music
 OUTPUT_DIR ?= ${HOME}/Videos
 
 help:
-	@echo "Visualisateur Psychédélique - Commandes"
+	@echo "Visualize - Commandes"
 	@echo "=========================================="
 	@echo ""
 	@echo "Exécution:"
@@ -52,5 +52,5 @@ standalone-appimage:
 
 standalone-clean:
 	@echo "Nettoyage des builds standalone..."
-	rm -rf dist_standalone/ Visualisateur.AppDir/ output/ appimagetool-x86_64.AppImage Dockerfile.appimage
+	rm -rf dist_standalone/ Visualize.AppDir/ output/ appimagetool-x86_64.AppImage Dockerfile.appimage
 	@echo "✓ Builds standalone nettoyés"

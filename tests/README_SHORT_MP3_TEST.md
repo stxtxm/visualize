@@ -1,6 +1,6 @@
 # Test E2E: Ajouter MP3 Short + Appuyer sur Lecture
 
-Ce test reproduit le flux utilisateur pour déboguer les problèmes de lecture dans l'application Visualisateur Psychédélique.
+Ce test reproduit le flux utilisateur pour déboguer les problèmes de lecture dans l'application Visualize.
 
 ## Fichiers créés
 

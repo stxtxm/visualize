@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Build AppImage - Visualisateur Psychédélique
+# Build AppImage - Visualize
 # =============================================================================
 # Build via Podman (Docker) pour un environnement reproductible.
 # Copie intégrale de Python + dépendances avec résolution des liens symboliques.
@@ -19,7 +19,7 @@ log_success() { echo -e "${GREEN}✓${NC} $1"; }
 
 # Nettoyage
 log_info "Nettoyage..."
-rm -rf Visualisateur.AppDir output/ Dockerfile.appimage
+rm -rf Visualize.AppDir output/ Dockerfile.appimage
 mkdir -p "$DIST_DIR" output
 
 # Créer le Dockerfile de build
@@ -185,7 +185,7 @@ MOUNT_FLAG=""
 if [ "$CONTAINER_CMD" = "podman" ] || ($CONTAINER_CMD --version 2>/dev/null | grep -q -i "podman"); then
     MOUNT_FLAG=":Z"
 fi
-if ! $CONTAINER_CMD build -t psychedelic-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
+if ! $CONTAINER_CMD build -t visualize-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
     tail -10 "$BUILD_LOG"
     log_error "Build du conteneur échoué. Voir $BUILD_LOG"
 fi
@@ -208,7 +208,7 @@ if [ "$IS_PODMAN" = true ]; then
 else
     CHOWN_TARGET="$(id -u):$(id -g)"
 fi
-$CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" psychedelic-appimage sh -c "cp -rL /output/* /out/ && chown -R $CHOWN_TARGET /out"
+$CONTAINER_CMD run --rm -v "$SCRIPT_DIR/output:/out${MOUNT_FLAG}" visualize-appimage sh -c "cp -rL /output/* /out/ && chown -R $CHOWN_TARGET /out"
 # Reprendre la propriété côté hôte au cas où les fichiers appartiendraient à root
 # (docker rootful ou droits non propagés). sudo si nécessaire.
 if [ ! -O "$SCRIPT_DIR/output" ]; then
@@ -222,7 +222,7 @@ fi
 
 # Copier le code source dans output/usr/app sans inclure les artefacts de build
 mkdir -p output/usr/app
-tar --exclude='./output' --exclude='./dist_standalone' --exclude='./Visualisateur.AppDir' --exclude='./appimagetool-x86_64.AppImage' --exclude='./Dockerfile.appimage' --exclude='./.git' -cf - . | tar -C output/usr/app -xpf -
+tar --exclude='./output' --exclude='./dist_standalone' --exclude='./Visualize.AppDir' --exclude='./appimagetool-x86_64.AppImage' --exclude='./Dockerfile.appimage' --exclude='./.git' -cf - . | tar -C output/usr/app -xpf -
 
 # Injecter la version actuelle de git dans version.py pour l'AppImage
 GIT_VERSION=$(git describe --tags --always 2>/dev/null || echo "0.0.2")
@@ -245,19 +245,19 @@ log_success "site-packages trouvé dans output"
 
 # Créer AppDir
 log_info "Création de AppDir..."
-rm -rf Visualisateur.AppDir
-mkdir -p Visualisateur.AppDir/usr/lib
-mkdir -p Visualisateur.AppDir/usr/share/applications
-mkdir -p Visualisateur.AppDir/usr/share/icons/hicolor/256x256/apps
+rm -rf Visualize.AppDir
+mkdir -p Visualize.AppDir/usr/lib
+mkdir -p Visualize.AppDir/usr/share/applications
+mkdir -p Visualize.AppDir/usr/share/icons/hicolor/256x256/apps
 
 # Copier les dépendances Python (site-packages)
 log_info "Copie des dépendances Python..."
-mkdir -p Visualisateur.AppDir/usr/lib/python3.11
-cp -rL output/usr/lib/python3.11/site-packages Visualisateur.AppDir/usr/lib/python3.11/
+mkdir -p Visualize.AppDir/usr/lib/python3.11
+cp -rL output/usr/lib/python3.11/site-packages Visualize.AppDir/usr/lib/python3.11/
 
 # Créer les symlinks manquants pour pygame.libs
-if [ -d Visualisateur.AppDir/usr/lib/python3.11/site-packages/pygame.libs ]; then
-    pushd Visualisateur.AppDir/usr/lib/python3.11/site-packages/pygame.libs > /dev/null
+if [ -d Visualize.AppDir/usr/lib/python3.11/site-packages/pygame.libs ]; then
+    pushd Visualize.AppDir/usr/lib/python3.11/site-packages/pygame.libs > /dev/null
     for source in libpulse-simple*.so*; do
         if [ -f "$source" ]; then
             ln -sf "$source" libpulse-simple.so.0
@@ -281,8 +281,8 @@ if [ -d Visualisateur.AppDir/usr/lib/python3.11/site-packages/pygame.libs ]; the
 fi
 
 # Créer les symlinks manquants dans usr/lib/pulseaudio aussi
-if [ -d Visualisateur.AppDir/usr/lib/pulseaudio ]; then
-    pushd Visualisateur.AppDir/usr/lib/pulseaudio > /dev/null
+if [ -d Visualize.AppDir/usr/lib/pulseaudio ]; then
+    pushd Visualize.AppDir/usr/lib/pulseaudio > /dev/null
     for source in libpulsecommon*.so*; do
         if [ -f "$source" ]; then
             ln -sf "$source" libpulsecommon.so
@@ -307,42 +307,42 @@ fi
 
 # Copier les libs système sans les bibliothèques PulseAudio conflictuelles
 if [ -d output/usr/lib ]; then
-    mkdir -p Visualisateur.AppDir/usr/lib
-    find output/usr/lib -maxdepth 1 -type f -name '*.so*' ! -name 'libpulse*' ! -name 'libpulse-simple*' ! -name 'libpulsecommon*' -exec cp -rL {} Visualisateur.AppDir/usr/lib/ \; 2>/dev/null || true
+    mkdir -p Visualize.AppDir/usr/lib
+    find output/usr/lib -maxdepth 1 -type f -name '*.so*' ! -name 'libpulse*' ! -name 'libpulse-simple*' ! -name 'libpulsecommon*' -exec cp -rL {} Visualize.AppDir/usr/lib/ \; 2>/dev/null || true
 fi
 
 # Copier le code source
 log_info "Copie du code source..."
-mkdir -p Visualisateur.AppDir/usr/app
-cp -r output/usr/app/* Visualisateur.AppDir/usr/app/
-rm -rf Visualisateur.AppDir/usr/app/__pycache__ 2>/dev/null || true
-find Visualisateur.AppDir/usr/app -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-find Visualisateur.AppDir/usr/app -name "*.pyc" -delete 2>/dev/null || true
+mkdir -p Visualize.AppDir/usr/app
+cp -r output/usr/app/* Visualize.AppDir/usr/app/
+rm -rf Visualize.AppDir/usr/app/__pycache__ 2>/dev/null || true
+find Visualize.AppDir/usr/app -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find Visualize.AppDir/usr/app -name "*.pyc" -delete 2>/dev/null || true
 
 # Copier les exécutables utiles (ffmpeg/ffprobe)
 if [ -d output/usr/bin ]; then
-    mkdir -p Visualisateur.AppDir/usr/bin
-    cp -rL output/usr/bin Visualisateur.AppDir/usr/ 2>/dev/null || true
+    mkdir -p Visualize.AppDir/usr/bin
+    cp -rL output/usr/bin Visualize.AppDir/usr/ 2>/dev/null || true
 fi
 
 # Copier les bibliothèques PulseAudio restantes
 if [ -d output/usr/lib/pulseaudio ]; then
-    mkdir -p Visualisateur.AppDir/usr/lib
-    cp -rL output/usr/lib/pulseaudio Visualisateur.AppDir/usr/lib/ 2>/dev/null || true
+    mkdir -p Visualize.AppDir/usr/lib
+    cp -rL output/usr/lib/pulseaudio Visualize.AppDir/usr/lib/ 2>/dev/null || true
 fi
 
 # Icône
 if [ -f "assets/icon.png" ]; then
-    cp assets/icon.png Visualisateur.AppDir/usr/share/icons/hicolor/256x256/apps/visualisateur.png
-    cp assets/icon.png Visualisateur.AppDir/visualisateur.png
+    cp assets/icon.png Visualize.AppDir/usr/share/icons/hicolor/256x256/apps/visualize.png
+    cp assets/icon.png Visualize.AppDir/visualize.png
 fi
 
 # Compter la taille
-APPDIR_SIZE=$(du -sh Visualisateur.AppDir/usr/lib/python3.11 2>/dev/null | cut -f1 || echo "?")
+APPDIR_SIZE=$(du -sh Visualize.AppDir/usr/lib/python3.11 2>/dev/null | cut -f1 || echo "?")
 log_info "Taille des libs Python: $APPDIR_SIZE"
 
 # AppRun - script de lancement (compatible Python 3.11+)
-cat > Visualisateur.AppDir/AppRun << 'APPRUN_EOF'
+cat > Visualize.AppDir/AppRun << 'APPRUN_EOF'
 #!/bin/bash
 SELF_DIR=$(dirname "$(readlink -f "$0")")
 export SELF_DIR="$SELF_DIR"
@@ -467,15 +467,15 @@ export SD_ENABLE_PULSEAUDIO=1
 
 exec "$PYTHON" "$SELF_DIR/usr/app/main.py" "$@"
 APPRUN_EOF
-chmod +x Visualisateur.AppDir/AppRun
+chmod +x Visualize.AppDir/AppRun
 
 # Desktop file
-cat > Visualisateur.AppDir/visualisateur.desktop << 'DESKTOP_EOF'
+cat > Visualize.AppDir/visualize.desktop << 'DESKTOP_EOF'
 [Desktop Entry]
-Name=Visualisateur Psychédélique
-Comment=Visualisateur audio psychédélique
+Name=Visualize
+Comment=Audio visualizer
 Exec=AppRun
-Icon=visualisateur
+Icon=visualize
 Type=Application
 Categories=AudioVideo;Player;Graphics;
 Terminal=false
@@ -493,12 +493,12 @@ fi
 
 # Builder l'AppImage
 log_info "Création de l'AppImage..."
-python3 create_appimage.py "$RUNTIME" Visualisateur.AppDir "$DIST_DIR/Visualisateur_Psychedelic.AppImage"
+python3 create_appimage.py "$RUNTIME" Visualize.AppDir "$DIST_DIR/Visualize.AppImage"
 
-if [ -f "$DIST_DIR/Visualisateur_Psychedelic.AppImage" ]; then
-    chmod +x "$DIST_DIR/Visualisateur_Psychedelic.AppImage"
-    log_success "AppImage créée : $DIST_DIR/Visualisateur_Psychedelic.AppImage"
-    ls -lh "$DIST_DIR/Visualisateur_Psychedelic.AppImage"
+if [ -f "$DIST_DIR/Visualize.AppImage" ]; then
+    chmod +x "$DIST_DIR/Visualize.AppImage"
+    log_success "AppImage créée : $DIST_DIR/Visualize.AppImage"
+    ls -lh "$DIST_DIR/Visualize.AppImage"
 else
     log_error "Échec création AppImage"
 fi
@@ -506,5 +506,5 @@ fi
 echo ""
 echo "========================================"
 echo "Lance avec :"
-echo "  ./dist_standalone/Visualisateur_Psychedelic.AppImage"
+echo "  ./dist_standalone/Visualize.AppImage"
 echo "========================================"

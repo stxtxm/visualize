@@ -1,5 +1,5 @@
 """
-File selection tab for the psychedelic visualizer.
+File selection tab for Visualize.
 """
 
 import tkinter as tk

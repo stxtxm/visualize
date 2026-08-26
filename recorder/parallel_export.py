@@ -197,9 +197,14 @@ def _render_segment(config):
                 raise RuntimeError("Export annulé par l'utilisateur")
             chunk = reader.read_frame()
             if chunk is None:
-                raise RuntimeError(
-                    f"Audio stream ended before segment frame {frame_index}"
-                )
+                # Past EOF: synthesize silence to keep video duration exact.
+                # This covers MP3 encoder-delay / ffprobe rounding where
+                # decodable PCM is a few ms shorter than format duration.
+                try:
+                    import numpy as _np
+                    chunk = _np.zeros(analysis_chunk_size, dtype=_np.int16)
+                except Exception:
+                    chunk = [0] * analysis_chunk_size
             audio_data = analyzer.analyze_chunk(chunk)
             manager.update(audio_data, 1.0 / config['fps'])
             if writer_error:
@@ -331,7 +336,8 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
             raise RuntimeError(f"Unable to determine audio duration: {probe.stderr}")
         audio_duration = float(probe.stdout.strip())
 
-    total_frames = int(audio_duration * fps)
+    import math as _math
+    total_frames = int(_math.ceil(audio_duration * fps - 1e-4))
     render_scale = min(1.0, max(0.1, float(render_scale)))
     render_width = max(1, int(width * render_scale))
     render_height = max(1, int(height * render_scale))
@@ -367,8 +373,12 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         # Probe the encoder once before starting workers.  Without this warmup,
         # all workers can race through the hardware/libopenh264 detection.
         from quality_presets import build_ffmpeg_cmd
+        # VP9/WebM concat with `-c:v copy` is fragile in the ffmpeg
+        # concat demuxer (black flash at segment boundaries). Use Matroska
+        # (.mkv) for VP9 intermediates – same VP9/Opus streams, but mkv
+        # handles copy-concat reliably and is later muxed to final .webm.
         if is_webm:
-            segment_ext = '.webm'
+            segment_ext = '.mkv'
         elif effective_codec == 'h264':
             segment_ext = '.ts'
         else:
@@ -548,15 +558,21 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         audio_codec_args = ['-c:a', 'libopus', '-b:a', '192k'] if is_webm else ['-c:a', 'aac', '-b:a', '192k']
         movflags_args = [] if is_webm else ['-movflags', '+faststart']
 
+        # Use +genpts to rebuild missing PTS after copy-concat (prevents
+        # 1-frame black flash at segment boundaries with VP9/WebM when the
+        # concat demuxer leaves a timestamp gap).
         concat_cmd = [
             os.environ.get('FFMPEG_PATH') or 'ffmpeg', '-y',
+            '-fflags', '+genpts',
             '-f', 'concat', '-safe', '0', '-i', list_file,
             '-i', audio_file,
             '-map', '0:v:0', '-map', '1:a:0',
             '-c:v', 'copy',
             *audio_codec_args,
-            '-af', 'dynaudnorm=peak=0.95',
-            '-shortest', *movflags_args,
+            '-af', 'apad,dynaudnorm=peak=0.95',
+            '-shortest',
+            '-avoid_negative_ts', 'make_zero',
+            *movflags_args,
             '-loglevel', 'error', partial_output,
         ]
         _run_ffmpeg(concat_cmd)
