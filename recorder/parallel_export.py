@@ -85,6 +85,7 @@ def _render_segment(config):
     from audio.analyzer import AudioAnalyzer, AudioFrameReader
     from effects.manager import EffectManager
     from quality_presets import build_ffmpeg_cmd
+    from utils.frame_guard import FrameOwnershipGuard
 
     # Each process owns one encoder and one renderer.  Bound OpenCV's native
     # pool as well, otherwise N worker processes can each create N threads.
@@ -187,6 +188,7 @@ def _render_segment(config):
     segment_index = config.get('segment_index', 0)
     cancel_event = config.get('cancel_event')
     local_count = 0
+    frame_guard = FrameOwnershipGuard()
 
     try:
         # Loop only over the segment's own frames.  AudioFrameReader has
@@ -218,6 +220,9 @@ def _render_segment(config):
             frame = manager.render_to_array()
             if frame.shape[2] == 3:
                 frame = np.ascontiguousarray(frame)
+
+            # Copy-on-recycle protection for this worker's writer thread.
+            frame = frame_guard.ensure_owned(frame)
 
             queued = False
             while not queued and not writer_error:
@@ -581,6 +586,15 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         if os.path.exists(partial_output):
             os.remove(partial_output)
         raise RuntimeError("Parallel export did not produce a valid output file")
+
+    # Reject unusable/truncated assemblies before publishing. The per-segment
+    # loops enforce their own counts; this guards concat/mux regressions.
+    from quality_presets import validate_export_output
+    validate_export_output(
+        partial_output,
+        expected_duration=(total_frames / fps) if fps else None,
+        fps=fps,
+    )
     try:
         os.replace(partial_output, output_file)
     except Exception:

@@ -51,8 +51,7 @@ class ClassicEffect(BaseEffect):
         self.freq_bands = []
         self.bass_level = 0.0
 
-        # Buffers réutilisables
-        self._frame = None
+        # Caches de vignettes/masques ; jamais le frame de sortie
         self._vignette = None
         self._fade_mask = None
 
@@ -293,9 +292,9 @@ class ClassicEffect(BaseEffect):
         W, H = self.width, self.height
         s = H / 450.0
 
-        if self._frame is None or self._frame.shape != (H, W, 3):
-            self._frame = np.zeros((H, W, 3), dtype=np.uint8)
-        frame = self._frame
+        # Every render must own fresh memory: cached buffers corrupt
+        # asynchronous exports (torn/black flashes). See AGENTS.md.
+        frame = np.zeros((H, W, 3), dtype=np.uint8)
         frame[:] = [4, 3, 8]
 
         # Dimensions equalizer
@@ -446,9 +445,9 @@ class ClassicEffect(BaseEffect):
     def _render_numpy_fallback(self):
         """Fallback pur NumPy si cv2 non disponible."""
         W, H = self.width, self.height
-        if self._frame is None or self._frame.shape != (H, W, 3):
-            self._frame = np.zeros((H, W, 3), dtype=np.uint8)
-        frame = self._frame
+        # Every render must own fresh memory: cached buffers corrupt
+        # asynchronous exports (torn/black flashes). See AGENTS.md.
+        frame = np.zeros((H, W, 3), dtype=np.uint8)
         frame[:] = [4, 3, 8]
 
         bar_baseline = H - 6

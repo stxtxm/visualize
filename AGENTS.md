@@ -145,6 +145,9 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB→BGR 
 - La taille du bloc d'analyse est calculée avec `ceil(44100 / fps)` et `AudioFrameReader` distribue précisément les échantillons fractionnaires afin qu'une image corresponde à la bonne durée audio et que les mixes longs restent synchronisés.
 - La durée d'export provient de `ffprobe` sur le fichier source, y compris lorsque `NO_SOUND=1` active l'analyse simulée.
 - FFmpeg écrit d'abord dans `<output>.part.mp4`; le fichier final n'est remplacé qu'après une terminaison réussie et une validation minimale.
+- **Padding de fin de piste** — Le générateur du `VideoRecorder` pade maintenant en silence jusqu'à `total_frames` (comme `run_export()` et `parallel_export`), y compris quand ffprobe surestime la durée PCM décodable (MP3 gapless/VBR) : plus aucun « audio ended N frame(s) early », la vidéo atteint toujours sa durée cible.
+- **Validation avant publication** — `quality_presets.validate_export_output()` (ffprobe JSON) est appelée sur chaque `.part.*` juste avant `os.replace()` dans les trois chemins d'export : flux vidéo (+audio) requis, > 0 paquets vidéo, durée à ±max(0,35 s ; 6 frames). Un export invalide échoue au lieu d'être publié ; sans ffprobe, la validation se dégrade en simple notice.
+- **VP9 stable** — Les flags explicites `-tile-columns/-tile-rows` ont été retirés des deux branches VP9 (`build_ffmpeg_cmd` et fallback sans H.264 logiciel) : ils déclenchaient des corruptions visuelles sur certaines builds libvpx ; le tiling automatique derrière `-row-mt 1` suffit.
 - La GUI expose une échelle de rendu interne de 100 %, 75 % ou 50 % (100 % par défaut); FFmpeg upscale ensuite vers la résolution finale si une échelle réduite est choisie.
 - `--render-workers` lance des segments 4K indépendants dans des processus séparés; les segments sont concaténés avec `-c:v copy`, sans remise à l'échelle ni ré-encodage vidéo final. Chaque FFmpeg de segment est limité à un thread d'encodage et de filtre pour éviter la multiplication des threads et des buffers internes du codec.
 - L'AppImage utilise en priorité son FFmpeg embarqué, teste un encodeur matériel réellement utilisable puis retombe sur `libx264` logiciel (OpenH264 est réservé aux installations non-standalone). `VISUALIZE_4K_SAFE=1` active automatiquement le preset x264 `superfast` en 4K si aucun encodeur matériel n'est disponible, avec CRF 18 et une mémoire bornée. `recommended_render_workers()` limite le parallélisme selon les CPU et la RAM disponible.
@@ -258,7 +261,7 @@ Déclenché sur push de tag `v*`.
  
  | Fichier | Description |
  |---------|-------------|
- | `test_export.py` | Lance `main.py --export`, vérifie la vidéo avec ffprobe, progress output, progress_callback |
+ | `test_export.py` | Lance `main.py --export`, vérifie la vidéo avec ffprobe, progress output, progress_callback ; fiabilisation export : buffers frais par effet (12 rendus), padding jusqu'à total_frames (sources tronquées), rejet/acceptation `validate_export_output` |
  | `test_e2e_simple.py` | Test bout-en-bout sans GUI (6 scénarios) |
  | `test_e2e_gui.py` | Tests d'intégration GUI (pygame renderer) |
  | `test_e2e_short_mp3_play_simple.py` | Tests simplifiés playback MP3 |
@@ -275,7 +278,7 @@ Déclenché sur push de tag `v*`.
 
 ### 🔴 Critiques
 
-1. **`render_to_array()` et `render()` sont DUPLIQUÉS** dans chaque effet. Les deux méthodes doivent produire le même rendu. Ne JAMAIS modifier l'une sans l'autre.
+1. **`render_to_array()` et `render()` sont DUPLIQUÉS** dans chaque effet. Les deux méthodes doivent produire le même rendu. Ne JAMAIS modifier l'une sans l'autre. **Propriété du buffer** : chaque appel à `render_to_array()` doit retourner de la mémoire fraîchement allouée pour la frame — les exports mettent les frames en file pour un thread FFmpeg asynchrone pendant que le rendu continue ; un buffer d'instance réutilisé produit des frames déchirées et des flashs noirs. Un garde-fou `FrameOwnershipGuard` (`utils/frame_guard.py`) copie défensivement toute adresse recyclée trop tôt dans les trois boucles d'export (`main.py`, `VideoRecorder.record()`, `parallel_export._render_segment()`).
 2. **OpenH264 ne supporte PAS `-preset`**. Le code détecte le codec disponible (`_check_openh264()`) et n'ajoute `-preset` que pour `libx264`.
 3. **ALSA underrun protégé** : `_start_sounddevice()` pré-remplit la queue avec 8 chunks silencieux AVANT de démarrer le stream, et le callback rejoue `_last_chunk_f32` sur underrun au lieu du silence. `blocksize = chunk_size * 8`, `queue.maxsize = 256`, `latency='high'`.
 3. **Pygame doit être initialisé APRÈS Tkinter** dans le thread principal pour la GUI. L'order est : `pygame.display.init()` → `pygame.font.init()` → Tkinter → boucle d'aperçu. Note: `pygame.time.init()` n'existe plus dans pygame 2.x.
@@ -308,7 +311,7 @@ Déclenché sur push de tag `v*`.
 25. **Parallélisme 4K** — `recorder/parallel_export.py` rend des segments natifs dans des processus séparés et assemble la vidéo avec `-c:v copy`; l'audio est muxé ensuite avec les mêmes paramètres AAC que l'export séquentiel. Cette isolation contourne le GIL Python et protège le processus principal contre un arrêt d'encodeur.
 26. **Mémoire FFmpeg 4K** — Les workers limitent `-threads`, `-filter_threads` et `-filter_complex_threads`; le mode standalone choisit `superfast` avec CRF 18 pour éviter l'accumulation de buffers x264 qui peut dépasser 1 Go par encodeur sur les longs flux rawvideo.
 27. **Compatibilité AppImage** — `build_standalone.sh` sélectionne le FFmpeg embarqué, teste les encodeurs matériels disponibles et conserve `libx264` comme fallback universel; aucun GPU ni pilote propriétaire n'est requis. Le nombre de workers 4K est limité par `MemAvailable` et le nombre de CPU.
-28. **Gradation Trance Scope** — Sans image de fond, `_grade_background()` applique une version vectorisée équivalente par lignes et réutilise un buffer; le chemin doit rester pixel-identique au calcul float32 général.
+28. **Gradation Trance Scope** — Sans image de fond, `_grade_background()` applique une version vectorisée équivalente par lignes en allouant le frame de sortie à chaque appel ; le chemin reste pixel-identique au calcul float32 général et n'a jamais réutilisé un buffer partagé entre frames.
 29. **VP9 4K continu** — Les exports VP9 ne passent pas par la concaténation de segments parallèles, car des segments indépendants peuvent produire des glitches de décodage aux frontières; ils utilisent le flux séquentiel. En 4K, le VP9 vise CRF 24 avec le mode `good` pour préserver les détails.
 
 ### 🔴 CI + Release — English release message obligatoire

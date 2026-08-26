@@ -293,9 +293,9 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-b:v', bitrate,
             '-deadline', 'good',
             '-cpu-used', '4',
+            # Explicit tile counts triggered frame-corruption flashes on
+            # some libvpx builds; auto tiling behind row-mt stays stable.
             '-row-mt', '1',
-            '-tile-columns', '2',
-            '-tile-rows', '1',
             '-g', str(max(1, int(fps * 2))),
         ]
     elif codec in ('h265', 'hevc'):
@@ -366,9 +366,9 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-b:v', bitrate,
             '-deadline', 'good',
             '-cpu-used', '4',
+            # Explicit tile counts triggered frame-corruption flashes on
+            # some libvpx builds; auto tiling behind row-mt stays stable.
             '-row-mt', '1',
-            '-tile-columns', '2',
-            '-tile-rows', '1',
             '-g', str(max(1, int(fps * 2))),
         ]
 
@@ -432,3 +432,132 @@ def codec_for_output(video_codec, output_file):
             output_file = base + '.webm'
         return codec, output_file
     return codec, output_file
+
+
+def validate_export_output(output_file, expected_duration=None, fps=None,
+                           expect_audio=True):
+    """Validate an exported media file before publishing it.
+
+    Parses FFprobe metadata and fails loudly when the produced file cannot be
+    played reliably: missing video/audio stream, zero video packets, or a
+    duration far away from the requested export length.  When FFprobe is not
+    installed or individual metrics are missing, the check degrades to a
+    printed notice so exports are never blocked by tooling differences.
+
+    Args:
+        output_file: media file (typically the ``*.part.*`` intermediate) to
+            inspect.
+        expected_duration: requested video duration in seconds
+            (``total_frames / fps``).
+        fps: export frame rate, refines the duration tolerance.
+        expect_audio: require an audio stream (exports without source audio
+            can pass ``False``).
+
+    Returns:
+        dict with measured ``duration``, ``frames``, ``video_codec`` and
+        ``audio_codec``.
+
+    Raises:
+        RuntimeError: when the output is unusable or badly out of spec.
+    """
+    import json as _json
+    import subprocess as _subprocess
+
+    ffprobe_path = os.environ.get('FFPROBE_PATH') or 'ffprobe'
+    try:
+        probe = _subprocess.run(
+            [ffprobe_path, '-v', 'error', '-print_format', 'json',
+             '-show_format', '-show_streams', str(output_file)],
+            capture_output=True, timeout=60,
+        )
+    except FileNotFoundError:
+        print("  Validation skipped: ffprobe not found")
+        return {}
+    except _subprocess.TimeoutExpired:
+        print("  Validation skipped: ffprobe timed out")
+        return {}
+
+    if probe.returncode != 0:
+        detail = probe.stderr.decode('utf-8', errors='ignore').strip()[:400]
+        raise RuntimeError(
+            "Export validation failed: FFprobe could not parse "
+            f"{output_file}: {detail}"
+        )
+
+    try:
+        meta = _json.loads(probe.stdout.decode('utf-8', errors='ignore'))
+    except ValueError:
+        print("  Validation skipped: unreadable ffprobe JSON output")
+        return {}
+
+    streams = meta.get('streams') or []
+    video_streams = [s for s in streams if s.get('codec_type') == 'video']
+    audio_streams = [s for s in streams if s.get('codec_type') == 'audio']
+    video_stream = video_streams[0] if video_streams else {}
+
+    def _to_float(value):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed == parsed else None  # filter NaN
+
+    stream_duration = _to_float(video_stream.get('duration'))
+    format_duration = _to_float((meta.get('format') or {}).get('duration'))
+    measured_duration = stream_duration or format_duration
+
+    frames = None
+    try:
+        frames = int(video_stream.get('nb_frames'))
+    except (TypeError, ValueError):
+        pass
+    if frames is None:
+        try:
+            counter = _subprocess.run(
+                [ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
+                 '-count_packets', '-show_entries', 'stream=nb_read_packets',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', str(output_file)],
+                capture_output=True, timeout=120,
+            )
+            if counter.returncode == 0:
+                frames = int(counter.stdout.strip())
+        except (FileNotFoundError, _subprocess.TimeoutExpired, ValueError):
+            frames = None
+
+    problems = []
+    if not video_streams:
+        problems.append("no video stream")
+    elif frames == 0:
+        problems.append("zero video frames encoded")
+    if expect_audio and not audio_streams:
+        problems.append("no audio stream")
+
+    tolerance = max(0.35, (6.0 / fps) if fps and fps > 0 else 0.0)
+    if expected_duration is not None and measured_duration is not None:
+        drift = abs(measured_duration - float(expected_duration))
+        if drift > tolerance:
+            problems.append(
+                f"duration {measured_duration:.2f}s, expected "
+                f"{float(expected_duration):.2f}s (+/-{tolerance:.2f}s)"
+            )
+
+    info = {
+        'duration': measured_duration,
+        'frames': frames,
+        'video_codec': video_streams[0].get('codec_name') if video_streams else None,
+        'audio_codec': audio_streams[0].get('codec_name') if audio_streams else None,
+    }
+    if problems:
+        raise RuntimeError(
+            "Export validation failed (" + "; ".join(problems) + ")"
+        )
+
+    parts = ["unknown duration" if measured_duration is None
+             else f"{measured_duration:.2f}s"]
+    if frames is not None:
+        parts.append(f"{frames} video frames")
+    for key in ('video_codec', 'audio_codec'):
+        if info[key]:
+            parts.append(str(info[key]))
+    print("  Validated output: " + ", ".join(parts))
+    return info

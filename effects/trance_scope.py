@@ -45,7 +45,6 @@ class TranceScopeEffect(BaseEffect):
         self.onset = 0.0
         self.rotation = 0.0
         self.flash = 0.0
-        self._frame = None
         self._vignette = None
         self._scanlines = None
         self._grid_cache = None
@@ -234,10 +233,14 @@ class TranceScopeEffect(BaseEffect):
             rows = base + (
                 tint_a[None, :] * (1.0 - y) + tint_b[None, :] * y
             ) * tint_factor
-            if self._frame is None or self._frame.shape != (H, W, 3):
-                self._frame = np.empty((H, W, 3), dtype=np.uint8)
-            self._frame[:] = np.clip(rows, 0, 255).astype(np.uint8)[:, None, :]
-            return self._frame
+            # Every call must return freshly-owned memory: export
+            # pipelines queue frames for an asynchronous FFmpeg writer
+            # while rendering continues; handing back a cached buffer
+            # produces torn/black flashes (see AGENTS.md ownership rule).
+            graded_rows = np.clip(rows, 0, 255).astype(np.uint8)[:, None, :]
+            frame_out = np.empty((H, W, 3), dtype=np.uint8)
+            frame_out[:] = graded_rows
+            return frame_out
 
         graded = frame.astype(np.float32)
         graded *= lift

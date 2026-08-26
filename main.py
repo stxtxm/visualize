@@ -315,6 +315,7 @@ def run_export(args):
         get_preset, RESOLUTIONS, build_ffmpeg_cmd,
         recommended_render_workers,
     )
+    from utils.frame_guard import FrameOwnershipGuard
     import subprocess, tempfile
     
     preset = get_preset(args.preset)
@@ -554,6 +555,8 @@ def run_export(args):
     
     export_succeeded = False
     frame_count = 0
+    # Copy-on-recycle protection for frames queued to the async writer.
+    frame_guard = FrameOwnershipGuard()
     try:
         for _ in range(total_frames):
             if writer_error or process.poll() is not None:
@@ -581,6 +584,10 @@ def run_export(args):
             import numpy as _np2
             if frame.shape[2] == 3:
                 frame = _np2.ascontiguousarray(frame)
+
+            # A recycled buffer being overwritten while the writer thread
+            # still streams it produces torn/black flashes.
+            frame = frame_guard.ensure_owned(frame)
 
             buf = memoryview(frame)
             queued = False
@@ -645,6 +652,15 @@ def run_export(args):
 
         if not os.path.exists(partial_output) or os.path.getsize(partial_output) < 1024:
             raise RuntimeError("FFmpeg completed without producing a valid output file")
+
+        # Fail loudly BEFORE publishing when the intermediate cannot be
+        # played reliably (missing stream, zero frames, bad duration).
+        from quality_presets import validate_export_output
+        validate_export_output(
+            partial_output,
+            expected_duration=(total_frames / fps) if fps else None,
+            fps=fps,
+        )
         os.replace(partial_output, target_export)
         export_succeeded = True
         print(f"[OK] Export completed: {target_export}")

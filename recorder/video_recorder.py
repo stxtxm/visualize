@@ -11,6 +11,8 @@ import queue
 import tempfile
 import math
 
+from utils.frame_guard import FrameOwnershipGuard
+
 
 class VideoRecorder:
     """
@@ -132,8 +134,15 @@ class VideoRecorder:
         duration = (file_size * 8) / bitrate
         return duration
 
-    def _default_effect_generator(self):
-        """Generates visualizer frames sequentially from the audio file with 0 RAM overhead."""
+    def _default_effect_generator(self, total_frames=None):
+        """Generates visualizer frames sequentially from the audio file with 0 RAM overhead.
+
+        When *total_frames* is provided and the decodable PCM stream ends early
+        (MP3 gapless / VBR estimation gap), silent chunks keep feeding the
+        analyzer so exactly *total_frames* frames are produced. The encoded
+        video therefore always reaches its intended duration instead of
+        stopping a few frames short.
+        """
         from audio.analyzer import AudioAnalyzer, AudioFrameReader
         from effects.manager import EffectManager
 
@@ -175,14 +184,25 @@ class VideoRecorder:
         delta_time = 1.0 / self.fps
 
         try:
+            produced = 0
             while True:
                 chunk = reader.read_frame()
                 if chunk is None:
-                    break
+                    # MP3 gapless / VBR: decodable PCM can stop before the
+                    # ffprobe-reported duration that defined total_frames.
+                    # Pad silence so the export reaches its exact target;
+                    # mirrors what run_export() already does.
+                    if total_frames is None or produced >= total_frames:
+                        break
+                    try:
+                        import numpy as _np
+                        chunk = _np.zeros(chunk_size, dtype=_np.int16)
+                    except Exception:
+                        chunk = [0] * chunk_size
                 audio_data = analyzer.analyze_chunk(chunk)
                 manager.update(audio_data, delta_time)
-                frame = manager.render_to_array()
-                yield frame
+                yield manager.render_to_array()
+                produced += 1
         finally:
             reader.close()
             analyzer.cleanup()
@@ -211,10 +231,6 @@ class VideoRecorder:
         import os
         generated_from_audio = effect_generator is None
         self._parallel_cancel_event.clear()
-        if effect_generator is None:
-            effect_generator = self._default_effect_generator()
-        elif callable(effect_generator):
-            effect_generator = effect_generator()
 
         # Validate audio file
         if not os.path.exists(self.audio_file):
@@ -222,11 +238,24 @@ class VideoRecorder:
 
         # Get audio duration
         audio_duration = self._get_audio_duration(self.audio_file)
+
+        # Compute the frame budget before building the generator so the
+        # internal renderer can pad truncated sources up to total_frames.
         # ceil preserves tail up to one frame (<33 ms). Subtract a tiny
         # epsilon to avoid floating-point ceil overshoot on exact multiples
         # (e.g. 3289.766667*30 = 98693.00001).
         import math
         total_frames = int(math.ceil(audio_duration * self.fps - 1e-4))
+
+        if effect_generator is None:
+            effect_generator = self._default_effect_generator(total_frames)
+        elif callable(effect_generator):
+            effect_generator = effect_generator()
+
+        # Defence-in-depth against recycled effect buffers: a single cached
+        # array returned twice lets the async writer read bytes the next
+        # render overwrote (torn/black flashes). See AGENTS.md ownership rule.
+        frame_guard = FrameOwnershipGuard()
 
         # VP9 segment concatenation is not reliable across all decoders;
         # encode it as one continuous stream to avoid boundary flashes.
@@ -393,6 +422,9 @@ class VideoRecorder:
                     if frame.shape[2] == 3:
                         frame = np.ascontiguousarray(frame)
 
+                # Copy-on-recycle protection for the async writer thread.
+                frame = frame_guard.ensure_owned(frame)
+
                 # Queue the frame bytes for the writer thread, blocking with a short timeout to check for errors/cancellation
                 queued = False
                 buf = memoryview(frame)
@@ -466,6 +498,24 @@ class VideoRecorder:
 
             if not os.path.exists(self._partial_output_file) or os.path.getsize(self._partial_output_file) < 1024:
                 raise RuntimeError("FFmpeg completed without producing a valid output file")
+
+            # Fail loudly on unusable/truncated output BEFORE replacing the
+            # final artifact; missing ffprobe degrades to a printed notice.
+            from quality_presets import validate_export_output
+
+            # Strict duration checking applies to the internal audio-driven
+            # generator, which now guarantees exactly total_frames frames.
+            # Custom generators define their own frame budget (documented
+            # programmatic API), so only structural checks apply to them.
+            validate_export_output(
+                self._partial_output_file,
+                expected_duration=(
+                    (total_frames / self.fps)
+                    if generated_from_audio and total_frames > 0
+                    else None
+                ),
+                fps=self.fps,
+            )
             os.replace(self._partial_output_file, self.output_file)
             export_succeeded = True
 
