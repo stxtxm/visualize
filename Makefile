@@ -1,4 +1,4 @@
-.PHONY: help run-cli standalone-appimage standalone-clean
+.PHONY: help run-cli standalone-appimage standalone-clean integrate
 
 # Nom de l'image (hérité, conservé pour compatibilité)
 IMAGE_NAME := visualize-appimage
@@ -23,6 +23,7 @@ help:
 	@echo "AppImage:"
 	@echo "  make standalone-appimage - Build AppImage (recommandé)"
 	@echo "  make standalone-clean    - Nettoyer les builds standalone"
+	@echo "  make integrate           - Enregistrer icônes + lanceur (utilisateur courant)"
 	@echo ""
 	@echo "Tests:"
 	@echo "  python3 -m pytest tests/ -v"
@@ -54,3 +55,7 @@ standalone-clean:
 	@echo "Nettoyage des builds standalone..."
 	rm -rf dist_standalone/ Visualize.AppDir/ output/ appimagetool-x86_64.AppImage Dockerfile.appimage
 	@echo "✓ Builds standalone nettoyés"
+
+integrate:
+	@echo "Intégration des icônes + lanceur (par utilisateur)..."
+	bash scripts/integrate_appimage.sh $(or $(APPIMAGE),dist_standalone/Visualize.AppImage)

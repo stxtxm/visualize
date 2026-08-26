@@ -204,6 +204,39 @@ pgrep -x "pipewire" && echo "PipeWire détecté" || echo "PulseAudio ou autre"
 ./Visualize.AppImage
 ```
 
+### 🎨 Fedora 44 / GNOME — Icônes & lanceur
+
+GNOME n'intègre pas automatiquement les AppImages : tant qu'aucun fichier
+`.desktop` utilisateur n'est enregistré, le dock et la vue Activités affichent
+une icône générique. Le dépôt fournit un script d'intégration par utilisateur,
+idempotent et sans droit root :
+
+```bash
+chmod +x Visualize.AppImage
+./scripts/integrate_appimage.sh dist_standalone/Visualize.AppImage
+```
+
+Le script installe les icônes dans `~/.local/share/icons/hicolor/`, crée
+`~/.local/share/applications/visualize.desktop` (avec
+`StartupWMClass=Visualize`) et rafraîchit le cache GTK. Lancez ensuite
+l'application depuis Activités puis épinglez-la au dock. Si l'icône du dock
+reste générique, déconnectez/reconnectez-vous (ou `Alt+F2 r` sous X11).
+Options : `--dry-run` (prévisualisation), `--force` (écrase un `.desktop`
+personnalisé), et accepte aussi un dossier `Visualize.AppDir`.
+
+**Icône du fichier `.AppImage` dans Files (Nautilus)** : contrairement à
+d'autres gestionnaires, GNOME Files n'extrait pas les icônes embarquées ;
+il faut un thumbnailer système (non fourni par Fedora) :
+- recommandé : **AppImageLauncher** (RPM depuis ses releases GitHub ou un COPR),
+  qui propose « Integrate » au premier lancement ;
+- sinon : `appimage-thumbnailer` (script upstream ou paquet COPR).
+Sans l'un de ces outils, le fichier garde une icône générique — c'est normal.
+
+**Diagnostic** : vérifiez la classe de fenêtre avec `xprop | grep WM_CLASS`
+(X11) ou le Looking Glass (`Alt+F2` → `lg` → onglet *Windows*) ; elle doit
+valoir `"Visualize"`. Le script conserve précisément cette valeur via
+`StartupWMClass=Visualize`.
+
 Pour vérifier les logs d'erreur audio, cliquez sur le bouton "📝 Logs" dans l'interface.
 
 ### ❌ Pas de rendu graphique
