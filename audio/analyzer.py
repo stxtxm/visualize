@@ -156,7 +156,11 @@ class AudioFrameReader:
         self._reader = AudioStreamReader(
             filename,
             sample_rate=sample_rate,
-            chunk_size=self.analysis_chunk_size,
+            # Read ahead in sizeable blocks. Reading one ~1/30 s block from
+            # the FFmpeg pipe for every frame causes thousands of syscalls on
+            # long exports and is especially costly inside AppImage workers.
+            # The frame buffer still returns exact FPS-aligned boundaries.
+            chunk_size=max(self.analysis_chunk_size, sample_rate),
             channels=channels,
             seek_seconds=seek_seconds,
         )

@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-__version__ = "0.3.10"
+__version__ = "0.3.11"
 
 # Si on est en mode dev, on essaie de récupérer dynamiquement la version via git
 if __version__ == "dev":

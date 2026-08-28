@@ -93,6 +93,7 @@ The GUI offers a streamlined interface :
 - VP9 uses pure CRF mode (`-b:v 0`) rather than a bitrate ceiling, preventing quality pumping on high-energy frames.
 - Parallel VP9 exports use Matroska segment files and regenerated timestamps before the final WebM mux, avoiding decoder glitches at joins.
 - Dynamic loudness normalization is intentionally disabled: the exported mix retains the source's level and dynamics. Audio is encoded as AAC 256 kbps in MP4 or Opus 224 kbps in WebM.
+- Audio decoding uses one-second read-ahead blocks while preserving exact frame boundaries, reducing pipe overhead during long GUI/AppImage exports without changing the rendered result.
 
 ---
 

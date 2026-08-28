@@ -143,6 +143,7 @@ main.py → AudioAnalyzer → EffectManager → render_to_array() → RGB bytes 
 
 - Le CLI et `VideoRecorder` utilisent `AudioFrameReader` en mode export : le fichier audio n'est plus entièrement décodé en mémoire.
 - La taille du bloc d'analyse est calculée avec `ceil(44100 / fps)` et `AudioFrameReader` distribue précisément les échantillons fractionnaires afin qu'une image corresponde à la bonne durée audio et que les mixes longs restent synchronisés.
+- `AudioFrameReader` lit l'audio en blocs d'une seconde dans un buffer interne, puis découpe exactement les fenêtres par frame; cela réduit fortement les appels pipe/FFmpeg sans modifier les échantillons analysés.
 - Les exports appellent `AudioAnalyzer.set_stream_position(frame_index, frame_index / fps)` avant chaque analyse afin que `beat_phase` utilise l'horloge vidéo exacte, y compris pour les FPS à nombre d'échantillons fractionnaire.
 - La durée d'export provient de `ffprobe` sur le fichier source, y compris lorsque `NO_SOUND=1` active l'analyse simulée.
 - FFmpeg écrit d'abord dans `<output>.part.mp4`; le fichier final n'est remplacé qu'après une terminaison réussie et une validation minimale.
