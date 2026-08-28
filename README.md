@@ -74,7 +74,7 @@ The GUI offers a streamlined interface :
 | `--resolution` / `-r` | `720p`, `1080p`, `1440p`, `4K` |
 | `--fps` | `15`, `20`, `24`, `30`, `60`, `120` |
 | `--render-scale` | Internal render scale from `0.1` to `1.0`; lower values speed up long exports but reduce detail (50% renders 1080p before 4K upscaling) |
-| `--render-workers` | Parallel process workers; `0` auto-selects a CPU/RAM-safe count for 4K, `1` disables segmentation. Workers replay effect state without rasterizing it, so joins remain seamless. |
+| `--render-workers` | Parallel process workers; `0` keeps 720p/1080p on the faster single pipeline and auto-selects up to four CPU/RAM-safe workers for 1440p/4K. `1` disables segmentation. Workers replay effect state without rasterizing it, so joins remain seamless. |
 
 ---
 

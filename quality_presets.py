@@ -71,7 +71,13 @@ RESOLUTIONS = {
 def recommended_render_workers(width, height):
     """Choose optimal worker count for parallel video rendering across CPU cores."""
     cpus = os.cpu_count() or 2
-    cpu_workers = max(1, cpus - 1 if cpus > 2 else cpus)
+    # Every segment replays the inexpensive state update prefix so that
+    # temporal effects remain frame-identical at joins. More workers therefore
+    # add duplicated analysis work; unbounded CPU-count parallelism can be
+    # slower than the single streaming pipeline, especially below 4K.
+    if width < 2560:
+        return 1
+    cpu_workers = min(4, max(1, cpus - 1 if cpus > 2 else cpus))
 
     if width >= 3840:
         per_worker_mb = 768
