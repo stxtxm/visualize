@@ -100,6 +100,62 @@ class TestQualityPresets(unittest.TestCase):
         self.assertEqual(cmd[cmd.index('-crf') + 1], '24')
         self.assertEqual(cmd[cmd.index('-deadline') + 1], 'good')
 
+    def test_build_ffmpeg_cmd_vp9_constant_quality(self):
+        """VP9 uses true constant-quality (no bitrate cap → no quality pumping)."""
+        cmd = build_ffmpeg_cmd(3840, 2160, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.webm'), '4k', video_codec='vp9')
+        self.assertEqual(cmd[cmd.index('-b:v') + 1], '0')
+        self.assertNotIn('-maxrate', cmd)
+        self.assertNotIn('-bufsize', cmd)
+        self.assertIn('-row-mt', cmd)
+        self.assertEqual(cmd[cmd.index('-cpu-used') + 1], '4')
+
+    def test_vp9_does_not_probe_unrelated_h264_encoders(self):
+        """VP9 startup must not pay for H.264 hardware/software probes."""
+        import quality_presets
+        original_state = quality_presets.encoder_probe_state()
+        original_check_encoder = quality_presets._check_encoder
+        calls = []
+        try:
+            quality_presets._HAS_OPENH264 = None
+            quality_presets._HAS_HW_ENCODER = None
+            quality_presets._HW_ENCODER_TYPE = None
+            quality_presets._HAS_X264 = None
+            quality_presets._check_encoder = lambda path, codec: calls.append(codec) or False
+            cmd = build_ffmpeg_cmd(
+                1280, 720, 15, None,
+                os.path.join(tempfile.gettempdir(), 'probe-free.webm'),
+                'dev', video_codec='vp9',
+            )
+            self.assertIn('libvpx-vp9', cmd)
+            self.assertEqual(calls, [])
+        finally:
+            quality_presets.restore_encoder_probe_state(original_state)
+            quality_presets._check_encoder = original_check_encoder
+
+    def test_build_ffmpeg_cmd_crf_encoders_have_no_bitrate_cap(self):
+        """CRF encoders (x264/x265) must not get a maxrate/bufsize throttle."""
+        import quality_presets
+        orig_openh264 = quality_presets._HAS_OPENH264
+        orig_hw = quality_presets._HAS_HW_ENCODER
+        try:
+            quality_presets._HAS_OPENH264 = False
+            quality_presets._HAS_HW_ENCODER = False
+            cmd = build_ffmpeg_cmd(3840, 2160, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'out4k.mp4'), '4k', video_codec='h264')
+            self.assertNotIn('-maxrate', cmd)
+            self.assertNotIn('-bufsize', cmd)
+        finally:
+            quality_presets._HAS_OPENH264 = orig_openh264
+            quality_presets._HAS_HW_ENCODER = orig_hw
+
+    def test_audio_filters_preserve_source_loudness(self):
+        """No dynamic loudness filter; audio bitrates stay transparent."""
+        cmd_webm = build_ffmpeg_cmd(1280, 720, 15, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'a.webm'), 'dev', video_codec='vp9')
+        self.assertNotIn('dynaudnorm', ' '.join(cmd_webm))
+        self.assertEqual(cmd_webm[cmd_webm.index('-b:a') + 1], '224k')
+        cmd_mp4 = build_ffmpeg_cmd(1280, 720, 15, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'a.mp4'), 'dev', video_codec='h264')
+        self.assertNotIn('dynaudnorm', ' '.join(cmd_mp4))
+        self.assertEqual(cmd_mp4[cmd_mp4.index('-b:a') + 1], '256k')
+
     def test_build_ffmpeg_cmd_h265(self):
         """Test FFmpeg command building for H265 codec."""
         cmd = build_ffmpeg_cmd(3840, 2160, 30, os.path.join(tempfile.gettempdir(), 'audio.mp3'), os.path.join(tempfile.gettempdir(), 'output.mp4'), '4k', video_codec='h265')
@@ -175,12 +231,14 @@ class TestQualityPresets(unittest.TestCase):
         original_openh264 = quality_presets._HAS_OPENH264
         original_hw = quality_presets._HAS_HW_ENCODER
         original_hw_type = quality_presets._HW_ENCODER_TYPE
+        original_x264 = quality_presets._HAS_X264
         original_check_encoder = quality_presets._check_encoder
         try:
             os.environ['VISUALIZE_4K_SAFE'] = '1'
             quality_presets._HAS_OPENH264 = False
             quality_presets._HAS_HW_ENCODER = False
             quality_presets._HW_ENCODER_TYPE = None
+            quality_presets._HAS_X264 = None
             quality_presets._check_encoder = lambda path, codec: codec == 'libx264'
             cmd = build_ffmpeg_cmd(
                 3840, 2160, 30, None,
@@ -199,6 +257,7 @@ class TestQualityPresets(unittest.TestCase):
             quality_presets._HAS_OPENH264 = original_openh264
             quality_presets._HAS_HW_ENCODER = original_hw
             quality_presets._HW_ENCODER_TYPE = original_hw_type
+            quality_presets._HAS_X264 = original_x264
             quality_presets._check_encoder = original_check_encoder
 
     def test_standalone_prefers_x264_over_openh264_fallback(self):

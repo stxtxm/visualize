@@ -257,6 +257,78 @@ def test_export_vp9():
     print("VP9 Export test PASSED")
 
 
+def test_parallel_vp9_export_no_boundary_flash():
+    """VP9 parallel segments assemble seamlessly (no black/garbage frame).
+
+    Regression guard: VP9 used to be forced sequential because copy-concat
+    of segments could flash black at boundaries. Segments are now Matroska
+    intermediates assembled with `+fflags genpts`; this test scans every
+    decoded frame for near-black intrusions and verifies duration/frames.
+    """
+    audio = 'input/test.wav'
+    if not os.path.exists(audio):
+        subprocess.run([sys.executable, 'scripts/gen_test_audio.py'], check=True)
+
+    output = os.path.join(tempfile.gettempdir(), 'test_vp9_parallel.webm')
+    if os.path.exists(output):
+        os.unlink(output)
+
+    result = subprocess.run([
+        sys.executable, 'main.py', audio,
+        '--effect', 'bars',
+        '--color', 'psychedelic',
+        '--export', output,
+        '--preset', 'dev',
+        '--codec', 'vp9',
+        '--render-workers', '3',
+    ], capture_output=True, text=True, timeout=600)
+
+    try:
+        assert result.returncode == 0, f"VP9 parallel export failed:\n{result.stderr[-2000:]}"
+        assert os.path.exists(output) and os.path.getsize(output) > 50000
+
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+             '-count_packets', '-show_entries',
+             'stream=nb_read_packets,codec_name', '-of', 'json', output],
+            capture_output=True, text=True, timeout=60,
+        )
+        import json as _json
+        meta = _json.loads(probe.stdout)
+        stream = meta['streams'][0]
+        assert stream['codec_name'] == 'vp9'
+
+        # Decode luma for every frame and flag flash-like intrusions:
+        # a near-black frame surrounded by well-lit content.
+        import numpy as np
+        decoder = subprocess.run(
+            ['ffmpeg', '-v', 'error', '-i', output,
+             '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1'],
+            capture_output=True, timeout=120,
+        )
+        assert decoder.returncode == 0
+        raw = decoder.stdout
+        # dev preset = 1280x720
+        frame_size = 1280 * 720
+        n_frames = len(raw) // frame_size
+        assert n_frames == int(stream['nb_read_packets']), (
+            f"frame count mismatch: decoded {n_frames} vs "
+            f"container {stream['nb_read_packets']}"
+        )
+        luma = np.frombuffer(
+            raw[:n_frames * frame_size], dtype=np.uint8
+        ).reshape(n_frames, frame_size).mean(axis=1)
+        flashes = [
+            i for i in range(1, n_frames - 1)
+            if luma[i] < 5.0 and luma[i - 1] > 20.0 and luma[i + 1] > 20.0
+        ]
+        assert not flashes, f"flash frames detected at indices: {flashes}"
+    finally:
+        if os.path.exists(output):
+            os.unlink(output)
+    print("VP9 parallel no-flash test PASSED")
+
+
 def test_render_to_array_returns_fresh_buffer_each_frame():
     """Rendered frames must never be mutated while callers still own them.
 

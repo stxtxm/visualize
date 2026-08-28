@@ -22,6 +22,8 @@
 - **Click-to-select** : click the empty preview to open the file picker
 - **Keyboard shortcuts** : Space/Ctrl+P play, Ctrl+S/Esc stop, Ctrl+E export
 - **MP4 video export** (H.264 + AAC) : 720p, 1080p, 1440p, 4K
+- **Reliable parallel 4K and VP9/WebM export**: workers preserve temporal effect state at segment joins; VP9 uses constant-quality encoding and Matroska intermediates to avoid black flashes
+- **Faithful audio export**: source loudness is left untouched; AAC is encoded at 256 kbps and Opus at 224 kbps
 - **Standalone AppImage** : zero system dependencies, works on any Linux distro
 - **Pygame fullscreen mode** with drag-and-drop (fallback when tkinter is unavailable)
 
@@ -72,19 +74,25 @@ The GUI offers a streamlined interface :
 | `--resolution` / `-r` | `720p`, `1080p`, `1440p`, `4K` |
 | `--fps` | `15`, `20`, `24`, `30`, `60`, `120` |
 | `--render-scale` | Internal render scale from `0.1` to `1.0`; lower values speed up long exports but reduce detail (50% renders 1080p before 4K upscaling) |
-| `--render-workers` | Parallel process workers; `0` auto-selects a CPU/RAM-safe count for 4K, `1` disables segmentation |
+| `--render-workers` | Parallel process workers; `0` auto-selects a CPU/RAM-safe count for 4K, `1` disables segmentation. Workers replay effect state without rasterizing it, so joins remain seamless. |
 
 ---
 
 ## 📦 Quality Presets
 
-| Preset | Resolution | FPS | Bitrate | Usage |
+| Preset | Resolution | FPS | Nominal rate / CRF | Usage |
 |--------|------------|-----|---------|-------|
-| `dev` | 720p | 15 | 10M | Quick tests |
-| `fast` | 720p | 20 | 10M | Fast iteration |
+| `dev` | 720p | 15 | 8M / CRF 28 | Quick tests |
+| `fast` | 720p | 20 | 8M / CRF 23 | Fast iteration |
 | `normal` | 1080p | 30 | 15M | Standard quality |
 | `high` | 1080p | 60 | 20M | High quality |
-| `4k` | 4K | 30 | 50M | Maximum quality |
+| `4k` | 4K | 30 | CRF 18 (H.264), CRF 24 (VP9); 20M only where an encoder requires a cap | Maximum quality |
+
+### Export quality and reliability
+
+- VP9 uses pure CRF mode (`-b:v 0`) rather than a bitrate ceiling, preventing quality pumping on high-energy frames.
+- Parallel VP9 exports use Matroska segment files and regenerated timestamps before the final WebM mux, avoiding decoder glitches at joins.
+- Dynamic loudness normalization is intentionally disabled: the exported mix retains the source's level and dynamics. Audio is encoded as AAC 256 kbps in MP4 or Opus 224 kbps in WebM.
 
 ---
 
@@ -186,7 +194,7 @@ python3 tests/test_export.py            # Full export test (generates video)
 | `libopenh264` not found | Falls back to `libx264` automatically |
 | `tkinter` not found | `sudo apt install python3-tk` ; or use `--no-gui` |
 | AppImage won't run | `./Visualize.AppImage --help` |
-| Slow 4K export or a long mix | Use `--preset 4k --render-workers 0`; this keeps native 4K output, uses isolated renderer processes, bounds FFmpeg memory, and assembles segments without a final video re-encode |
+| Slow 4K export or a long mix | Use `--preset 4k --render-workers 0`; this keeps native 4K output, uses isolated renderer processes, replays state without pre-rendering frames, bounds FFmpeg memory, and assembles segments without a final video re-encode |
 
 ---
 

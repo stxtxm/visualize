@@ -336,9 +336,11 @@ def run_export(args):
                 f"for available hardware resources"
             )
 
-    # Concatenating independently encoded VP9 segments can produce decoder
-    # glitches at segment boundaries. Use the sequential path for VP9.
-    if render_workers > 1 and args.codec != 'vp9':
+    # Concatenating independently encoded VP9 segments is done through
+    # Matroska (.mkv) intermediates + `+fflags genpts` (see parallel_export),
+    # which keeps segment boundaries seamless — VP9 exports now benefit from
+    # parallel workers too.
+    if render_workers > 1:
         from recorder.parallel_export import export_parallel
 
         def _parallel_progress(current, total):
@@ -575,6 +577,7 @@ def run_export(args):
                 except Exception:
                     chunk = [0] * analysis_chunk_size
 
+            analyzer.set_stream_position(frame_count, frame_count / fps)
             audio_data = analyzer.analyze_chunk(chunk)
             effect_manager.update(audio_data, 1.0/fps)
             frame = effect_manager.render_to_array()

@@ -2,16 +2,20 @@
 
 The visualizer is stateful, so frames cannot be rendered independently from
 one shared effect instance.  This module starts one independent renderer per
-contiguous segment.  Each renderer replays the inexpensive audio/effect state
-updates up to its segment and renders only its own frames.  The encoded video
-segments are concatenated with ``-c:v copy``; the final video is never scaled
-or re-encoded during assembly.
+contiguous segment. Each renderer replays the inexpensive audio/effect state
+updates from the beginning of the track up to its segment and rasterizes only
+its own frames. This keeps temporal effects, audio smoothing and beat timing
+continuous at segment boundaries. The encoded video segments are concatenated
+with ``-c:v copy``; the final video is never scaled or re-encoded during
+assembly.
 """
 
+import hashlib
 import math
 import multiprocessing
 import os
 import queue
+import random
 import subprocess
 import tempfile
 import threading
@@ -48,9 +52,6 @@ def _run_ffmpeg(command):
     )
     if result.returncode != 0:
         error = result.stderr.decode('utf-8', errors='ignore').strip()
-        failed_output = command[-1] if command else None
-        if failed_output and failed_output.endswith('.part.mp4') and os.path.exists(failed_output):
-            os.remove(failed_output)
         raise RuntimeError(
             f"FFmpeg error (code {result.returncode}):\n{error or 'unknown error'}"
         )
@@ -84,8 +85,18 @@ def _render_segment(config):
     """Render and encode one contiguous video segment."""
     from audio.analyzer import AudioAnalyzer, AudioFrameReader
     from effects.manager import EffectManager
-    from quality_presets import build_ffmpeg_cmd
+    from quality_presets import build_ffmpeg_cmd, restore_encoder_probe_state
     from utils.frame_guard import FrameOwnershipGuard
+
+    # Spawned processes do not inherit the parent module cache. Reusing the
+    # already-probed encoder state avoids several FFmpeg probe processes per
+    # segment before rendering starts.
+    restore_encoder_probe_state(config.get('encoder_probe_state'))
+
+    # Stateful effects use Python's module-level RNG. Starting every worker
+    # from this seed and replaying the same prefix preserves state across
+    # joins instead of introducing a visible random reset.
+    random.seed(config.get('random_seed', 0))
 
     # Each process owns one encoder and one renderer.  Bound OpenCV's native
     # pool as well, otherwise N worker processes can each create N threads.
@@ -108,7 +119,10 @@ def _render_segment(config):
         fps=config['fps'],
         channels=1,
         analysis_chunk_size=analysis_chunk_size,
-        start_frame=start_frame,
+        # The effect and analyzer are stateful. Replaying a non-rasterized
+        # prefix is inexpensive compared with drawing 4K frames and makes the
+        # first frame of every segment match a sequential export.
+        start_frame=0,
     )
     analyzer.start_stream()
 
@@ -142,7 +156,7 @@ def _render_segment(config):
         config['preset'],
         render_width=config['render_width'],
         render_height=config['render_height'],
-        ffmpeg_threads=1,
+        ffmpeg_threads=config.get('ffmpeg_threads', 1),
         video_codec=config.get('video_codec', 'h264'),
     )
     stderr_log = tempfile.TemporaryFile(mode='w+b')
@@ -191,10 +205,9 @@ def _render_segment(config):
     frame_guard = FrameOwnershipGuard()
 
     try:
-        # Loop only over the segment's own frames.  AudioFrameReader has
-        # already seeked to start_frame via FFmpeg -ss, so every read_frame()
-        # call returns the next frame in this segment without wasted I/O.
-        for frame_index in range(start_frame, end_frame):
+        # Replay the state from frame zero but rasterize and enqueue only the
+        # requested range. No full-resolution pre-roll frames are retained.
+        for frame_index in range(end_frame):
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Export annulé par l'utilisateur")
             chunk = reader.read_frame()
@@ -207,8 +220,11 @@ def _render_segment(config):
                     chunk = _np.zeros(analysis_chunk_size, dtype=_np.int16)
                 except Exception:
                     chunk = [0] * analysis_chunk_size
+            analyzer.set_stream_position(frame_index, frame_index / config['fps'])
             audio_data = analyzer.analyze_chunk(chunk)
             manager.update(audio_data, 1.0 / config['fps'])
+            if frame_index < start_frame:
+                continue
             if writer_error:
                 raise RuntimeError(_segment_ffmpeg_error(process, stderr_log, writer_error))
             if process.poll() is not None:
@@ -375,9 +391,9 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         return on_progress
 
     with tempfile.TemporaryDirectory(dir=temp_parent, prefix='.visualize-parallel-') as temp_dir:
-        # Probe the encoder once before starting workers.  Without this warmup,
-        # all workers can race through the hardware/libopenh264 detection.
-        from quality_presets import build_ffmpeg_cmd
+        # Probe the encoder once before starting workers. Its capability state
+        # is passed to spawned processes so they do not repeat these probes.
+        from quality_presets import build_ffmpeg_cmd, encoder_probe_state
         # VP9/WebM concat with `-c:v copy` is fragile in the ffmpeg
         # concat demuxer (black flash at segment boundaries). Use Matroska
         # (.mkv) for VP9 intermediates – same VP9/Opus streams, but mkv
@@ -395,8 +411,21 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
             preset,
             render_width=render_width,
             render_height=render_height,
-            ffmpeg_threads=1,
+            ffmpeg_threads=min(4, max(1, (os.cpu_count() or 2) // workers))
+            if effective_codec == 'vp9' else 1,
             video_codec=effective_codec,
+        )
+        encoder_state = encoder_probe_state()
+
+        # All workers replay the same state prefix. A stable seed also makes
+        # random-based effects (plasma, particles, tunnel) continuous at a
+        # segment boundary and reproducible for the same export settings.
+        seed_material = '|'.join((
+            os.path.realpath(audio_file), effect_type, color_palette,
+            str(width), str(height), str(fps),
+        )).encode('utf-8', errors='surrogateescape')
+        random_seed = int.from_bytes(
+            hashlib.blake2b(seed_material, digest_size=8).digest(), 'big'
         )
 
         segments = []
@@ -431,6 +460,8 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
                 'progress': make_progress(index, start, end),
                 'cancel_event': cancel_event,
                 'video_codec': effective_codec,
+                'encoder_probe_state': encoder_state,
+                'random_seed': random_seed,
             })
 
         # The renderers must be separate processes.  Trance Scope spends a
@@ -448,12 +479,18 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         all_dead_since = None
 
         # Do not pass threading callbacks/events through the process boundary.
+        cpus = os.cpu_count() or 2
+        # VP9 single-threaded encoding is extremely slow at high resolutions;
+        # give each segment a small encoder thread pool (row-mt scales well).
+        # x264/x265 segments stay at one encoder thread to bound memory.
+        segment_ffmpeg_threads = (
+            min(4, max(1, cpus // workers)) if effective_codec == 'vp9' else 1
+        )
         worker_configs = []
         for config in configs:
             worker_config = dict(config)
-            worker_config['cv_threads'] = max(
-                1, (os.cpu_count() or 2) // workers
-            )
+            worker_config['ffmpeg_threads'] = segment_ffmpeg_threads
+            worker_config['cv_threads'] = max(1, cpus // workers)
             worker_config.pop('progress', None)
             worker_config.pop('cancel_event', None)
             worker_configs.append(worker_config)
@@ -560,12 +597,14 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
         # Single-pass concat + audio muxing directly to partial_output.
         # This avoids writing a intermediate joined.mp4 copy (~5GB for long 4K mix),
         # halving disk space usage and speeding up final assembly.
-        audio_codec_args = ['-c:a', 'libopus', '-b:a', '192k'] if is_webm else ['-c:a', 'aac', '-b:a', '192k']
+        audio_codec_args = ['-c:a', 'libopus', '-b:a', '224k'] if is_webm else ['-c:a', 'aac', '-b:a', '256k']
         movflags_args = [] if is_webm else ['-movflags', '+faststart']
 
         # Use +genpts to rebuild missing PTS after copy-concat (prevents
         # 1-frame black flash at segment boundaries with VP9/WebM when the
         # concat demuxer leaves a timestamp gap).
+        # No dynaudnorm: the exported audio must stay faithful to the source
+        # mix (dynamic normalization pumps loudness over time).
         concat_cmd = [
             os.environ.get('FFMPEG_PATH') or 'ffmpeg', '-y',
             '-fflags', '+genpts',
@@ -574,13 +613,19 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
             '-map', '0:v:0', '-map', '1:a:0',
             '-c:v', 'copy',
             *audio_codec_args,
-            '-af', 'apad,dynaudnorm=peak=0.95',
+            '-af', 'apad',
             '-shortest',
             '-avoid_negative_ts', 'make_zero',
             *movflags_args,
             '-loglevel', 'error', partial_output,
         ]
-        _run_ffmpeg(concat_cmd)
+        try:
+            _run_ffmpeg(concat_cmd)
+        except Exception:
+            # Keep even a partially muxed WebM/MP4. It often contains the
+            # exact FFmpeg failure clue needed to diagnose an export issue.
+            preserve_failed_partial(partial_output)
+            raise
 
     if not os.path.exists(partial_output) or os.path.getsize(partial_output) < 1024:
         preserve_failed_partial(partial_output)
@@ -589,11 +634,15 @@ def export_parallel(audio_file, output_file, width, height, fps, preset,
     # Reject unusable/truncated assemblies before publishing. The per-segment
     # loops enforce their own counts; this guards concat/mux regressions.
     from quality_presets import validate_export_output
-    validate_export_output(
-        partial_output,
-        expected_duration=(total_frames / fps) if fps else None,
-        fps=fps,
-    )
+    try:
+        validate_export_output(
+            partial_output,
+            expected_duration=(total_frames / fps) if fps else None,
+            fps=fps,
+        )
+    except Exception:
+        preserve_failed_partial(partial_output)
+        raise
     try:
         os.replace(partial_output, output_file)
     except Exception:

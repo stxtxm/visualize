@@ -199,6 +199,7 @@ class VideoRecorder:
                         chunk = _np.zeros(chunk_size, dtype=_np.int16)
                     except Exception:
                         chunk = [0] * chunk_size
+                analyzer.set_stream_position(produced, produced / self.fps)
                 audio_data = analyzer.analyze_chunk(chunk)
                 manager.update(audio_data, delta_time)
                 yield manager.render_to_array()
@@ -257,13 +258,10 @@ class VideoRecorder:
         # render overwrote (torn/black flashes). See AGENTS.md ownership rule.
         frame_guard = FrameOwnershipGuard()
 
-        # VP9 segment concatenation is not reliable across all decoders;
-        # encode it as one continuous stream to avoid boundary flashes.
-        if (
-            generated_from_audio
-            and self.render_workers > 1
-            and self.video_codec != 'vp9'
-        ):
+        # VP9 segment concatenation goes through Matroska (.mkv) intermediates
+        # with `+fflags genpts` (see parallel_export) so parallel workers are
+        # safe for VP9 as well.
+        if generated_from_audio and self.render_workers > 1:
             from recorder.parallel_export import export_parallel
             from quality_presets import recommended_render_workers
             safe_workers = self.render_workers

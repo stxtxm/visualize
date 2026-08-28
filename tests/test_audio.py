@@ -93,6 +93,16 @@ class TestAudioLoading(unittest.TestCase):
 class TestAudioAnalysis(unittest.TestCase):
     """Test audio analysis functions."""
 
+    def test_stream_position_accepts_the_exact_video_clock(self):
+        """Headless export can retain fractional FPS timing for beat phase."""
+        from audio.analyzer import AudioAnalyzer
+
+        analyzer = AudioAnalyzer.__new__(AudioAnalyzer)
+        analyzer.set_stream_position(47, 47 / 24)
+
+        self.assertEqual(analyzer.current_chunk, 47)
+        self.assertAlmostEqual(analyzer._stream_time_seconds, 47 / 24)
+
     def test_analyze_chunk_exposes_enhanced_audio_metrics(self):
         """Test that richer audio metrics are returned for better visual sync."""
         from audio.analyzer import AudioAnalyzer

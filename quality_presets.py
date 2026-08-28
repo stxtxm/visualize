@@ -120,6 +120,7 @@ def get_preset_names():
 _HAS_OPENH264 = None
 _HAS_HW_ENCODER = None
 _HW_ENCODER_TYPE = None  # 'h264_nvenc', 'h264_vaapi', 'h264_videotoolbox', or None
+_HAS_X264 = None
 
 HW_ENCODERS = {
     'h264_nvenc': 'NVIDIA NVENC',
@@ -187,6 +188,46 @@ def _check_openh264(ffmpeg_path):
     return _check_encoder(ffmpeg_path, 'libopenh264')
 
 
+def _has_x264(ffmpeg_path):
+    """Return a cached result for the libx264 capability probe."""
+    global _HAS_X264
+    if _HAS_X264 is None:
+        _HAS_X264 = _check_encoder(ffmpeg_path, 'libx264')
+    return _HAS_X264
+
+
+def encoder_probe_state():
+    """Return the cached encoder capabilities for a spawned render worker.
+
+    Probing an encoder performs several real FFmpeg encodes.  Workers started
+    with the ``spawn`` method do not inherit module globals, so passing this
+    small serializable state prevents every parallel segment from repeating
+    those probes before it can render its first frame.
+    """
+    return {
+        'openh264': _HAS_OPENH264,
+        'hardware': _HAS_HW_ENCODER,
+        'hardware_type': _HW_ENCODER_TYPE,
+        'x264': _HAS_X264,
+    }
+
+
+def restore_encoder_probe_state(state):
+    """Restore encoder capabilities previously returned by
+    :func:`encoder_probe_state`.
+
+    Invalid or partial state is ignored so normal probing remains the safe
+    fallback for callers outside the parallel export pipeline.
+    """
+    if not isinstance(state, dict):
+        return
+    global _HAS_OPENH264, _HAS_HW_ENCODER, _HW_ENCODER_TYPE, _HAS_X264
+    _HAS_OPENH264 = state.get('openh264', _HAS_OPENH264)
+    _HAS_HW_ENCODER = state.get('hardware', _HAS_HW_ENCODER)
+    _HW_ENCODER_TYPE = state.get('hardware_type', _HW_ENCODER_TYPE)
+    _HAS_X264 = state.get('x264', _HAS_X264)
+
+
 def _check_hardware_encoder(ffmpeg_path):
     """Check for hardware-accelerated H.264 encoders.
 
@@ -215,9 +256,10 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     not multiply across workers.
     """
     import os
-    global _HAS_OPENH264, _HAS_HW_ENCODER, _HW_ENCODER_TYPE
+    global _HAS_OPENH264, _HAS_HW_ENCODER, _HW_ENCODER_TYPE, _HAS_X264
     ffmpeg_path = os.environ.get('FFMPEG_PATH') or 'ffmpeg'
     preset_config = get_preset(preset)
+    codec = str(video_codec).lower()
     force_software = os.environ.get('VISUALIZE_SOFTWARE_ENCODER', '').lower() in {
         '1', 'true', 'yes', 'on'
     }
@@ -243,23 +285,28 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     elif width >= 1280:
         bitrate = "8M" if bitrate == "5M" else bitrate
 
-    if force_software:
-        # Explicit compatibility override for hosts where hardware probing
-        # must not touch vendor drivers. The bundled FFmpeg includes libx264.
-        _HAS_OPENH264 = False
-        _HAS_HW_ENCODER = False
-        _HW_ENCODER_TYPE = None
-    elif _HAS_OPENH264 is None:
-        _HAS_OPENH264 = _check_openh264(ffmpeg_path)
-
-    if _HAS_HW_ENCODER is None:
-        hw_encoder = _check_hardware_encoder(ffmpeg_path)
-        if hw_encoder:
-            _HAS_HW_ENCODER = True
-            _HW_ENCODER_TYPE = hw_encoder
-        else:
+    # VP9 and HEVC never use an H.264 encoder.  Avoid launching four-to-five
+    # probe FFmpeg processes for each export (and, without transferred state,
+    # for every spawned parallel worker) when they are irrelevant.
+    needs_h264_probe = codec not in ('vp9', 'h265', 'hevc')
+    if needs_h264_probe:
+        if force_software:
+            # Explicit compatibility override for hosts where hardware probing
+            # must not touch vendor drivers. The bundled FFmpeg includes libx264.
+            _HAS_OPENH264 = False
             _HAS_HW_ENCODER = False
             _HW_ENCODER_TYPE = None
+        elif _HAS_OPENH264 is None:
+            _HAS_OPENH264 = _check_openh264(ffmpeg_path)
+
+        if _HAS_HW_ENCODER is None:
+            hw_encoder = _check_hardware_encoder(ffmpeg_path)
+            if hw_encoder:
+                _HAS_HW_ENCODER = True
+                _HW_ENCODER_TYPE = hw_encoder
+            else:
+                _HAS_HW_ENCODER = False
+                _HW_ENCODER_TYPE = None
 
     cmd = [
         ffmpeg_path,
@@ -279,18 +326,24 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
     if needs_scale:
         cmd += ['-vf', f'scale={width}:{height}:flags=lanczos']
 
-    codec = str(video_codec).lower()
     is_webm = output_file.lower().endswith('.webm')
+
+    # CRF-based encoders (VP9 constant-quality, libx264, libx265) must NOT
+    # receive the generic `-b:v/-maxrate/-bufsize` cap below: constraining a
+    # CRF stream throttles quality on busy frames, which shows up as visible
+    # quality pumping / flashes in 4K exports.
+    crf_based_rc = False
 
     if codec == 'vp9':
         # VP9: royalty-free codec, plays natively on all Linux distributions.
-        # Keep a quality-oriented rate control setting for 4K.  CRF 31 with
-        # realtime mode is visibly soft after a 50% render is upscaled.
+        # `-b:v 0` + CRF = true constant-quality mode.  The previous
+        # `-b:v 20M -maxrate -bufsize` constrained mode made libvpx starve
+        # quality on beat-heavy content: visible flashes in 4K exports.
         vp9_crf = '24' if width >= 3840 else '28'
         cmd += [
             '-c:v', 'libvpx-vp9',
             '-crf', vp9_crf,
-            '-b:v', bitrate,
+            '-b:v', '0',
             '-deadline', 'good',
             '-cpu-used', '4',
             # Explicit tile counts triggered frame-corruption flashes on
@@ -298,6 +351,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-row-mt', '1',
             '-g', str(max(1, int(fps * 2))),
         ]
+        crf_based_rc = True
     elif codec in ('h265', 'hevc'):
         cmd += [
             '-c:v', 'libx265',
@@ -307,6 +361,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-flags', '+cgop',
             '-g', str(max(1, int(fps * 2))),
         ]
+        crf_based_rc = True
     elif _HAS_HW_ENCODER and _HW_ENCODER_TYPE:
         encoder = _HW_ENCODER_TYPE
         if encoder == 'h264_nvenc':
@@ -337,7 +392,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             ]
     elif _HAS_OPENH264 and not prefer_x264:
         cmd += ['-c:v', 'libopenh264', '-coder', 'cavlc']
-    elif _check_encoder(ffmpeg_path, 'libx264'):
+    elif _has_x264(ffmpeg_path):
         encoder_preset = preset_config['ffmpeg_preset']
         if (
             width >= 3840
@@ -356,6 +411,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-g', str(max(1, int(fps * 2))),
             '-bf', '2',
         ]
+        crf_based_rc = True
     else:
         # Host FFmpeg lacks H.264 software encoders (e.g. stock Fedora package).
         # Fall back to libvpx-vp9 which is universally shipped in all Linux FFmpeg packages.
@@ -363,7 +419,7 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
         cmd += [
             '-c:v', 'libvpx-vp9',
             '-crf', vp9_crf,
-            '-b:v', bitrate,
+            '-b:v', '0',
             '-deadline', 'good',
             '-cpu-used', '4',
             # Explicit tile counts triggered frame-corruption flashes on
@@ -371,33 +427,43 @@ def build_ffmpeg_cmd(width, height, fps, audio_file, output_file, preset='normal
             '-row-mt', '1',
             '-g', str(max(1, int(fps * 2))),
         ]
+        crf_based_rc = True
 
+    # Bitrate caps only apply to encoders that are not CRF-driven
+    # (hardware encoders, libopenh264).  CRF encoders stay unconstrained.
+    if not crf_based_rc:
+        cmd += [
+            '-b:v', bitrate,
+            '-maxrate', bitrate,
+            '-bufsize', bitrate,
+        ]
     cmd += [
-        '-b:v', bitrate,
-        '-maxrate', bitrate,
-        '-bufsize', bitrate,
         '-pix_fmt', 'yuv420p',
     ]
 
     if audio_file:
-        # Pad audio with silence to video length (total_frames ceil) before
-        # loudness normalization.  Without apad, `-shortest` truncates video
-        # to audio (floor) and the padded last video frame is discarded.
-        # With apad, audio is extended to video and `-shortest` keeps the
-        # full ceil duration.
+        # Pad audio with silence up to the video length (total_frames ceil).
+        # Without apad, `-shortest` truncates video to audio (floor) and the
+        # padded last video frame is discarded.  With apad, audio is extended
+        # to video and `-shortest` keeps the full ceil duration.
+        #
+        # NOTE: no dynaudnorm/loudness filter here — dynamic normalization
+        # alters the mix over time and breaks fidelity to the source audio.
+        # Higher audio bitrates keep the re-encode transparent:
+        # AAC 256k / Opus 224k sit well above the transparency threshold.
         if is_webm:
             # WebM container requires Opus or Vorbis audio (not AAC).
             cmd += [
                 '-c:a', 'libopus',
-                '-b:a', '192k',
-                '-af', 'apad,dynaudnorm=peak=0.95',
+                '-b:a', '224k',
+                '-af', 'apad',
                 '-shortest',
             ]
         else:
             cmd += [
                 '-c:a', 'aac',
-                '-b:a', '192k',
-                '-af', 'apad,dynaudnorm=peak=0.95',
+                '-b:a', '256k',
+                '-af', 'apad',
                 '-shortest',
             ]
 

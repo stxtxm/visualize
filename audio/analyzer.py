@@ -458,6 +458,7 @@ class AudioAnalyzer:
     def start_stream(self):
         """Démarre le flux audio."""
         self.current_chunk = 0
+        self._stream_time_seconds = None
         self.is_playing = True
         # Log pour le debug
         try:
@@ -465,6 +466,20 @@ class AudioAnalyzer:
             log_message(f"AudioAnalyzer: Stream démarré (simulated={self.use_simulated})")
         except:
             pass
+
+    def set_stream_position(self, frame_index, time_seconds=None):
+        """Set the visual stream position before analysing an export frame.
+
+        ``AudioFrameReader`` supplies frames directly during headless export,
+        so :meth:`get_next_chunk` is not involved in advancing
+        ``current_chunk``.  Keeping the position explicit makes beat-phase
+        timing follow the video clock exactly, including fractional
+        sample-per-frame rates such as 44.1 kHz at 24 FPS.
+        """
+        self.current_chunk = max(0, int(frame_index))
+        self._stream_time_seconds = (
+            float(time_seconds) if time_seconds is not None else None
+        )
     
     def set_current_stream_chunk(self, chunk):
         """Met à jour le chunk de flux courant (appelé par le thread de lecture)."""
@@ -615,7 +630,9 @@ class AudioAnalyzer:
         
         # Détection de BPM et beats avec le détecteur dédié
         bpm_result = self.bpm_detector.detect(chunk)
-        current_time = self.current_chunk * (self.chunk_size / self.sample_rate)
+        current_time = getattr(self, '_stream_time_seconds', None)
+        if current_time is None:
+            current_time = self.current_chunk * (self.chunk_size / self.sample_rate)
         if bpm_result['is_beat']:
             self.last_beat_time = current_time
             self.beat_phase = 0.0
