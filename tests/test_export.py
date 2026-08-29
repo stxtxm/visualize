@@ -118,6 +118,21 @@ def test_audio_frame_reader_preserves_non_integer_samples_per_frame():
     assert frames == 120
 
 
+def test_wav_reader_uses_direct_pcm_path():
+    """Compatible WAV input avoids spawning an FFmpeg decoder."""
+    from audio.analyzer import AudioFrameReader
+
+    audio = 'input/test.wav'
+    reader = AudioFrameReader(audio, sample_rate=44100, fps=24)
+    try:
+        assert reader._reader._wave is not None
+        first = reader.read_frame()
+        assert first is not None
+        assert len(first) == 1838
+    finally:
+        reader.close()
+
+
 def test_parallel_recorder_keeps_native_output_duration():
     """Parallel rendering keeps the requested video geometry and duration."""
     from recorder.video_recorder import VideoRecorder

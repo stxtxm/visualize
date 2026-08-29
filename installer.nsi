@@ -6,7 +6,7 @@ Unicode True
 RequestExecutionLevel admin
 
 !define PRODUCT_NAME "Visualize"
-!define PRODUCT_VERSION "0.3.11"
+!define PRODUCT_VERSION "0.3.12"
 !define PRODUCT_PUBLISHER "stxtxm"
 !define PRODUCT_WEB_SITE "https://github.com/stxtxm/visualize"
 !define PRODUCT_DIR "$PROGRAMFILES64\${PRODUCT_NAME}"

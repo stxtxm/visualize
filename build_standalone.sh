@@ -507,7 +507,7 @@ Categories=AudioVideo;Graphics;
 Terminal=false
 StartupNotify=true
 StartupWMClass=Visualize
-X-AppImage-Version=0.3.11
+X-AppImage-Version=0.3.12
 Keywords=audio;visualizer;psychedelic;
 MimeType=audio/mpeg;audio/x-wav;audio/ogg;audio/flac;
 DESKTOP_EOF

@@ -8,6 +8,7 @@ import os
 import sys
 import subprocess
 import tempfile
+import wave
 
 # Importer numpy conditionnellement - vérifier NO_SOUND AVANT l'import
 no_sound = os.environ.get('NO_SOUND', '').lower() in ('1', 'true', 'yes')
@@ -35,10 +36,32 @@ class AudioStreamReader:
         self.chunk_size = chunk_size
         self.channels = channels
         self.process = None
+        self._wave = None
         self._seek_seconds = seek_seconds
         self._open_stream()
         
     def _open_stream(self):
+        # WAV PCM 16-bit at the requested rate can be streamed directly.
+        # This avoids starting a separate FFmpeg decoder in every 4K worker
+        # (and removes a large amount of duplicated work for long WAV files).
+        # Other formats and sample layouts retain the FFmpeg path below.
+        try:
+            wav = wave.open(self.filename, 'rb')
+            if (
+                wav.getcomptype() == 'NONE'
+                and wav.getsampwidth() == 2
+                and wav.getframerate() == self.sample_rate
+            ):
+                wav.setpos(min(
+                    wav.getnframes(),
+                    max(0, int(round(self._seek_seconds * self.sample_rate))),
+                ))
+                self._wave = wav
+                return
+            wav.close()
+        except (OSError, EOFError, wave.Error):
+            pass
+
         from shutil import which
         ffmpeg_path = os.environ.get('FFMPEG_PATH') or which('ffmpeg')
         if not ffmpeg_path:
@@ -82,6 +105,38 @@ class AudioStreamReader:
         )
         
     def read_chunk(self):
+        if self._wave is not None:
+            try:
+                data = self._wave.readframes(self.chunk_size)
+            except (OSError, EOFError):
+                return None
+            if not data:
+                return None
+            if HAS_NUMPY:
+                samples = np.frombuffer(data, dtype=np.int16)
+                source_channels = self._wave.getnchannels()
+                usable = (len(samples) // source_channels) * source_channels
+                samples = samples[:usable]
+                if source_channels != self.channels:
+                    samples = samples.reshape(-1, source_channels)
+                    if self.channels == 1:
+                        samples = np.rint(samples.astype(np.float32).mean(axis=1)).astype(np.int16)
+                    elif source_channels == 1:
+                        samples = np.repeat(samples, self.channels, axis=1)
+                    else:
+                        samples = samples[:, :self.channels]
+                return samples
+            import struct
+            count = len(data) // 2
+            samples = list(struct.unpack(f"<{count}h", data[:count * 2]))
+            source_channels = self._wave.getnchannels()
+            if source_channels != self.channels and self.channels == 1:
+                samples = [
+                    round(sum(samples[i:i + source_channels]) / source_channels)
+                    for i in range(0, len(samples), source_channels)
+                ]
+            return samples
+
         if not self.process:
             return None
         # 16-bit samples = 2 bytes per sample
@@ -120,6 +175,12 @@ class AudioStreamReader:
             return samples
         
     def close(self):
+        if self._wave is not None:
+            try:
+                self._wave.close()
+            except Exception:
+                pass
+            self._wave = None
         if self.process:
             try:
                 self.process.terminate()
