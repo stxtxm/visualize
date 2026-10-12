@@ -24,6 +24,8 @@ EFFECT_MAP = {
     'spectrum': ('spectrum', 'SpectrumEffect'),
     'plasma': ('plasma', 'PlasmaEffect'),
     'classic': ('classic', 'ClassicEffect'),
+    'psychedelic_303': ('psychedelic_303', 'Psychedelic303Effect'),
+    'acid_303': ('psychedelic_303', 'Psychedelic303Effect'),
 }
 
 RANDOM_EFFECTS = [

@@ -186,7 +186,7 @@ MOUNT_FLAG=""
 if [ "$CONTAINER_CMD" = "podman" ] || ($CONTAINER_CMD --version 2>/dev/null | grep -q -i "podman"); then
     MOUNT_FLAG=":Z"
 fi
-if ! $CONTAINER_CMD build --no-cache --pull -t visualize-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
+if ! $CONTAINER_CMD build ${CONTAINER_BUILD_FLAGS---no-cache --pull} -t visualize-appimage -f Dockerfile.appimage . > "$BUILD_LOG" 2>&1; then
     tail -10 "$BUILD_LOG"
     log_error "Build du conteneur échoué. Voir $BUILD_LOG"
 fi
@@ -507,7 +507,7 @@ Categories=AudioVideo;Graphics;
 Terminal=false
 StartupNotify=true
 StartupWMClass=Visualize
-X-AppImage-Version=0.3.12
+X-AppImage-Version=0.3.13
 Keywords=audio;visualizer;psychedelic;
 MimeType=audio/mpeg;audio/x-wav;audio/ogg;audio/flac;
 DESKTOP_EOF

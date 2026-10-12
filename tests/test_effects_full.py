@@ -15,6 +15,8 @@ os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 EFFECT_MODULES = {
     'trance_scope': 'TranceScopeEffect',
     'pro_trance': 'TranceScopeEffect',
+    'psychedelic_303': 'Psychedelic303Effect',
+    'acid_303': 'Psychedelic303Effect',
     'bars': 'BarEffect',
     'circles': 'CircleEffect',
     'particles': 'ParticleEffect',

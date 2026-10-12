@@ -216,6 +216,7 @@ def run_cli():
                         choices=['trance_scope', 'pro_trance', 'neon_equalizer', 'classic',
                                  'bars', 'circles', 'particles', 'tunnel', 'wave',
                                  'spectrum', 'plasma', 'psychedelic_plasma',
+                                 'psychedelic_303', 'acid_303',
                                  '3d_cyber_tunnel', 'random'])
     parser.add_argument('--color', '-c', default='psychedelic',
                         choices=['psychedelic', 'retro', 'winamp_classic', 'dark', 'rainbow'])

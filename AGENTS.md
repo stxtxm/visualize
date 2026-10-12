@@ -51,6 +51,7 @@ Tous les effets héritent de `BaseEffect` (`effects/base.py`) et doivent implém
 | ID | Classe | Description |
 |----|--------|-------------|
 | `trance_scope` / `pro_trance` | `TranceScopeEffect` | Visualizer premium : fond image optionnel, bloom spectral, interférences, glyphes orbitaux et strobe BPM |
+| `psychedelic_303` / `acid_303` | `Psychedelic303Effect` | Flyer acid-house : smileys jaunes fondants aux spirales hypnotiques, vinyle spectral et séquenceur 303 à 16 pas synchronisé au beat |
 | `neon_equalizer` / `classic` | `ClassicEffect` | Oscilloscope circulaire + barres + rayons + grille |
 | `psychedelic_plasma` / `plasma` | `PlasmaEffect` | Plasma algorithmique avec couleurs dynamiques |
 | `3d_cyber_tunnel` / `tunnel` | `TunnelEffect` | Effet de tunnel 3D style cyberpunk |

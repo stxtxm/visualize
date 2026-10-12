@@ -769,6 +769,7 @@ class MainWindow:
     def _get_effect_key(self):
         effect_name_map = {
             "Trance Scope": "trance_scope",
+            "Psychedelic 303": "psychedelic_303",
             "Neon Equalizer": "neon_equalizer",
             "Psychedelic Plasma": "psychedelic_plasma",
             "3D Cyber Tunnel": "3d_cyber_tunnel",

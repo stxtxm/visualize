@@ -54,7 +54,7 @@ class EffectsTab(tk.Frame):
 
         self._effect_combo = _create_dropdown(
             self, "EFFET", self._effect_var,
-            ['Trance Scope', 'Neon Equalizer', 'Psychedelic Plasma',
+            ['Trance Scope', 'Psychedelic 303', 'Neon Equalizer', 'Psychedelic Plasma',
              '3D Cyber Tunnel', 'Bars', 'Circles', 'Particles',
              'Wave', 'Spectrum'],
             self._effect_cb,
@@ -94,6 +94,7 @@ class EffectsTab(tk.Frame):
     def _update_desc(self, *args):
         descriptions = {
             "Trance Scope": "Visualizer premium : fond image optionnel, bloom spectral, interférences, glyphes orbitaux et strobe BPM.",
+            "Psychedelic 303": "Affiche acid house : smileys jaunes fondants aux spirales hypnotiques, vinyle spectral et séquenceur 303 à 16 pas synchronisé au beat.",
             "Neon Equalizer": "Oscilloscope circulaire + barres + rayons + grille. Style classique moderne.",
             "Psychedelic Plasma": "Plasma algorithmique avec couleurs dynamiques et fluides.",
             "3D Cyber Tunnel": "Effet de tunnel 3D style cyberpunk avec perspective.",

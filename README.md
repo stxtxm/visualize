@@ -11,7 +11,7 @@
 - **Trance Scope visualizer** with a BPM-synced spectral bloom, interference threads, orbital glyphs, glow, and beat strobe
 - **Optional image background** visible instantly in the preview and embedded in MP4 exports
 - **Logo overlay** with nine anchor presets or fully custom X/Y placement, size, and opacity
-- **Additional effects**: Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel, Particles, Wave, Spectrum
+- **Additional effects**: Psychedelic 303 (acid-house flyer style), Neon Equalizer, Psychedelic Plasma, 3D Cyber Tunnel, Particles, Wave, Spectrum
 - **5 color palettes**: Psychedelic, Retro, Winamp Classic, Dark, Rainbow
 - **Tkinter GUI** with real-time preview, effect/palette controls, background image selection, and export settings
 - **Modern responsive controls** with a two-row navigation grid, clear empty-preview call-to-action, live state indicators, and theme-aware widgets
@@ -62,7 +62,7 @@ The GUI offers a streamlined interface :
 
 | Option | Values |
 |--------|--------|
-| `--effect` / `-e` | `trance_scope`, `pro_trance`, `neon_equalizer`, `classic`, `psychedelic_plasma`, `3d_cyber_tunnel`, `bars`, `circles`, `particles`, `wave`, `spectrum`, `random` |
+| `--effect` / `-e` | `trance_scope`, `pro_trance`, `psychedelic_303`, `acid_303`, `neon_equalizer`, `classic`, `psychedelic_plasma`, `3d_cyber_tunnel`, `bars`, `circles`, `particles`, `wave`, `spectrum`, `random` |
 | `--color` / `-c` | `psychedelic`, `retro`, `winamp_classic`, `dark`, `rainbow` |
 | `--background` / `-b` | Optional image path (`.png`, `.jpg`, `.webp`, `.bmp`, etc.) |
 | `--logo` | Optional foreground logo image |
