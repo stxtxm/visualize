@@ -559,6 +559,7 @@ class AudioPlayer:
         except (OSError, AttributeError):
             self._saved_stderr = None
 
+        try:
             blocksize = max(self.chunk_size * 4, 4096)
             kwargs = dict(
                 samplerate=self.sample_rate,
