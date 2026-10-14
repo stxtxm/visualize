@@ -466,8 +466,11 @@ fi
         export PREFERRED_AUDIO_BACKEND=sounddevice
         echo "Audio: sounddevice prioritaire (pw-play et aplay absents)"
     fi
-    # Exporter PULSE_SERVER pour forcer la connexion au serveur Pulse native
-    export PULSE_SERVER=
+    # Ne PAS forcer PULSE_SERVER : un export vide (= "") ferait echouer la
+    # connexion Pulse/PipeWire avec « Serveur invalide ». On s'assure juste que
+    # la variable n'est pas definitivement figee sur une valeur incorrecte en la
+    # retirant ; PipeWire utilise alors sa socket native via XDG_RUNTIME_DIR.
+    unset PULSE_SERVER
 elif [ "$HAS_PULSEAUDIO" = true ]; then
     echo "Audio: PulseAudio détecté"
     export LD_LIBRARY_PATH="$SELF_DIR/usr/lib/python3.11/site-packages/pygame.libs:$SELF_DIR/usr/lib/pulseaudio:$SELF_DIR/usr/lib:$LD_LIBRARY_PATH"
