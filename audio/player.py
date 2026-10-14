@@ -120,18 +120,21 @@ class AudioPlayer:
         # Check for preferred backend from environment
         preferred = os.environ.get('PREFERRED_AUDIO_BACKEND', '')
 
-        # 1. sounddevice (best on Linux - low latency streaming via PortAudio)
-        # sounddevice works with PipeWire via PortAudio's ALSA/Pulse backends
+        # 1. pw-play (PipeWire native - most reliable on modern PipeWire systems).
+        # Prioritised over sounddevice because PortAudio/ALSA routing is silent on
+        # some PipeWire hosts (the callback fires but nothing reaches the sink),
+        # whereas pw-play talks to PipeWire directly and always produces audio.
+        if which('pw-play') is not None:
+            backends.append(('pw-play', None))
+
+        # 2. sounddevice (low latency streaming via PortAudio - used when PipeWire's
+        # pw-play is unavailable, e.g. plain ALSA, macOS or Windows).
         try:
             import sounddevice as sd
             # Don't test check_output_settings - it can hang on some systems
             backends.append(('sounddevice', sd))
         except ImportError:
             pass
-
-        # 2. pw-play (PipeWire native - best for Fedora 44+ with PipeWire)
-        if which('pw-play') is not None:
-            backends.append(('pw-play', None))
 
         # 3. ffplay (compatible - works with PipeWire/Fedora 44)
         if which('ffplay') is not None:
